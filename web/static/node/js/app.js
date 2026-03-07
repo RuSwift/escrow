@@ -16,7 +16,7 @@
         initialPage = 'dashboard';
     }
 
-    new Vue({
+    var vm = new Vue({
         el: '#app',
         delimiters: ['[[', ']]'],
         data: {
@@ -25,4 +25,5 @@
         },
         template: '<component :is="currentPage" :is-node-initialized="isNodeInitialized" />'
     });
+    window.__nodeApp = vm;
 })();
