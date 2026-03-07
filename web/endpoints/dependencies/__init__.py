@@ -10,6 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db import get_db
 from repos.node import NodeRepository
+from services.tron_auth import TronAuth
+from services.wallet_user import WalletUserService
+from services.web3_auth import Web3Auth
 from settings import Settings
 
 
@@ -35,12 +38,41 @@ RedisClient = Annotated[Redis, Depends(get_redis)]
 AppSettings = Annotated[Settings, Depends(get_settings)]
 
 
+def get_wallet_user_service(
+    db: DbSession,
+    redis: RedisClient,
+    settings: AppSettings,
+) -> WalletUserService:
+    """WalletUserService для эндпоинтов auth и profile."""
+    return WalletUserService(session=db, redis=redis, settings=settings)
+
+
+def get_web3_auth(redis: RedisClient, settings: AppSettings) -> Web3Auth:
+    """Web3Auth для Ethereum-авторизации."""
+    return Web3Auth(redis=redis, settings=settings)
+
+
+def get_tron_auth(redis: RedisClient, settings: AppSettings) -> TronAuth:
+    """TronAuth для TRON-авторизации."""
+    return TronAuth(redis=redis, settings=settings)
+
+
+WalletUserServiceDep = Annotated[WalletUserService, Depends(get_wallet_user_service)]
+Web3AuthDep = Annotated[Web3Auth, Depends(get_web3_auth)]
+TronAuthDep = Annotated[TronAuth, Depends(get_tron_auth)]
+
+
 __all__ = [
     "get_db",
     "get_redis",
     "get_settings",
-    "get_node_repo",
+    "get_wallet_user_service",
+    "get_web3_auth",
+    "get_tron_auth",
     "DbSession",
     "RedisClient",
     "AppSettings",
+    "WalletUserServiceDep",
+    "Web3AuthDep",
+    "TronAuthDep",
 ]
