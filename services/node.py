@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from didcomm.crypto import EthCrypto, EthKeyPair, KeyPair as BaseKeyPair
 from didcomm.did import create_peer_did_from_keypair
+from i18n import _
 from repos.node import NodeRepository, NodeResource
 from settings import Settings
 
@@ -64,10 +65,10 @@ class NodeService:
             ValueError: Если мнемоника невалидна или нода уже инициализирована.
         """
         if await self.has_key():
-            raise ValueError("Нода инициализируется только один раз")
+            raise ValueError(_("errors.node_already_init"))
 
         if not EthCrypto.validate_mnemonic(mnemonic):
-            raise ValueError("Invalid mnemonic phrase")
+            raise ValueError(_("errors.invalid_mnemonic"))
 
         keypair = EthKeyPair.from_mnemonic(mnemonic)
         ethereum_address = keypair.address
@@ -117,7 +118,7 @@ class NodeService:
             ValueError: Если PEM невалиден или нода уже инициализирована.
         """
         if await self.has_key():
-            raise ValueError("Нода инициализируется только один раз")
+            raise ValueError(_("errors.node_already_init"))
 
         pem_upper = pem_data.upper()
         has_private_marker = (
@@ -127,16 +128,13 @@ class NodeService:
             or "BEGIN ENCRYPTED PRIVATE KEY" in pem_upper
         )
         if not has_private_marker:
-            raise ValueError(
-                "PEM данные не содержат приватный ключ. "
-                "Ожидается PRIVATE KEY, не PUBLIC KEY или CERTIFICATE"
-            )
+            raise ValueError(_("errors.pem_no_private_key"))
 
         password_bytes = password.encode("utf-8") if password else None
         try:
             keypair = BaseKeyPair.from_pem(pem_data, password_bytes)
         except ValueError as e:
-            raise ValueError(f"Невалидный PEM приватный ключ: {e}") from e
+            raise ValueError(_("errors.pem_invalid_private_key", detail=str(e))) from e
 
         did_obj = create_peer_did_from_keypair(keypair)
         ethereum_address = keypair.address if isinstance(keypair, EthKeyPair) else None

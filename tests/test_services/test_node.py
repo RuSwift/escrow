@@ -64,7 +64,8 @@ async def test_init_from_mnemonic_twice_raises(node_service, valid_mnemonic):
 @pytest.mark.asyncio
 async def test_init_from_mnemonic_invalid_raises(node_service):
     """Невалидная мнемоника поднимает ValueError."""
-    with pytest.raises(ValueError, match="Invalid mnemonic phrase"):
+    # Сообщение переводится через i18n; в тестах контекста нет -> default_locale (ru)
+    with pytest.raises(ValueError, match="Неверная мнемоническая фраза"):
         await node_service.init_from_mnemonic("not a valid mnemonic phrase here")
 
 

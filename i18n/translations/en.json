@@ -1,0 +1,7 @@
+{
+  "errors.node_already_init": "Node can only be initialized once",
+  "errors.invalid_mnemonic": "Invalid mnemonic phrase",
+  "errors.pem_no_private_key": "PEM data does not contain a private key. Expected PRIVATE KEY, not PUBLIC KEY or CERTIFICATE",
+  "errors.pem_invalid_private_key": "Invalid PEM private key: {detail}",
+  "errors.access_denied_deal_owner": "Access denied: Only the deal owner (owner_did={owner_did}) can edit deal {deal_uid}. Attempted by: {attempted_by}"
+}

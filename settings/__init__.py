@@ -305,6 +305,16 @@ class Settings(BaseSettings):
         description="PEM данные для ключа ноды (опционально)"
     )
     
+    # Локализация
+    default_locale: str = Field(
+        default="ru",
+        description="Язык по умолчанию для переводов (когда контекст запроса отсутствует)"
+    )
+    supported_locales: list[str] = Field(
+        default=["ru", "en"],
+        description="Список поддерживаемых кодов локалей для валидации Accept-Language",
+    )
+    
     @property
     def is_node_initialized(self) -> bool:
         return bool(self.mnemonic.phrase or self.mnemonic.encrypted_phrase or self.pem)

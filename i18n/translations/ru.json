@@ -1,0 +1,7 @@
+{
+  "errors.node_already_init": "Нода инициализируется только один раз",
+  "errors.invalid_mnemonic": "Неверная мнемоническая фраза",
+  "errors.pem_no_private_key": "PEM данные не содержат приватный ключ. Ожидается PRIVATE KEY, не PUBLIC KEY или CERTIFICATE",
+  "errors.pem_invalid_private_key": "Невалидный PEM приватный ключ: {detail}",
+  "errors.access_denied_deal_owner": "Доступ запрещён: только владелец сделки (owner_did={owner_did}) может редактировать сделку {deal_uid}. Попытка от: {attempted_by}"
+}

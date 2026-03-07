@@ -1,6 +1,7 @@
 """
 Custom exceptions for the application
 """
+from i18n import _
 
 
 class AccessDeniedError(Exception):
@@ -44,10 +45,11 @@ class DealAccessDeniedError(AccessDeniedError):
             attempted_by: DID of the user who attempted the operation
         """
         self.deal_uid = deal_uid
-        message = (
-            f"Access denied: Only the deal owner (owner_did={owner_did}) "
-            f"can edit deal {deal_uid}. "
-            f"Attempted by: {attempted_by}"
+        message = _(
+            "errors.access_denied_deal_owner",
+            owner_did=owner_did,
+            deal_uid=deal_uid,
+            attempted_by=attempted_by,
         )
         super().__init__(
             message=message,
