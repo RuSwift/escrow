@@ -1,8 +1,0 @@
----
-alwaysApply: true
----
-
-Project structure
-
-- db: database models definitions
-- core: definition of base exceptions and utils to support DID, serialization, media operations 

@@ -5,6 +5,7 @@ alwaysApply: true
 - Используй вирт окружение .venv в корне репозитория 
 - Длина имени *.py файла миграции не длиннее 30 символов если генерируешь alembic миграцию, то следуй ограничениям alembic.ini
 - repos: repositories implementations according to Clean Arch
+    * repo implement abstractions and nuances with secret enc/decrypt
 - services: services that implements business logic
 - web: web applications
     * node.py: Node application (node for participant)
