@@ -1101,7 +1101,7 @@ name = "didcomm"
 version = "1.0.0"
 description = "DIDComm пакет для работы с децентрализованной идентичностью и сообщениями (Ethereum/secp256k1, ECDSA)"
 optional = false
-python-versions = "^3.12"
+python-versions = ">=3.12"
 files = []
 develop = true
 
