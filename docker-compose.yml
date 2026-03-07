@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-escrow}
       POSTGRES_DB: ${DB_DATABASE:-escrow}
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - escrow_postgres_data:/var/lib/postgresql/data
     healthcheck:
