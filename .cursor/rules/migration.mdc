@@ -1,0 +1,5 @@
+---
+alwaysApply: true
+---
+
+Ориентируйся на уже реализованную логику на бэке и Vue компоненте в репозитории https://github.com/RuSwift/garantex

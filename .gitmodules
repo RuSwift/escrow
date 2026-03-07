@@ -1,0 +1,4 @@
+[submodule "didcomm"]
+	path = didcomm
+	url = https://github.com/RuSwift/didcomm.git
+	branch = main
