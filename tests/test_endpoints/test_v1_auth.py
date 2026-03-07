@@ -8,7 +8,7 @@ from eth_account.messages import encode_defunct
 from httpx import ASGITransport, AsyncClient
 
 from db import get_db
-from web.app import create_app
+from web.node import create_app
 from web.endpoints.dependencies import get_redis, get_settings
 
 
