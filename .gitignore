@@ -1,6 +1,7 @@
 .venv/
 venv/
 env/
+_temp/
 
 *.egg-info/
 *.pyc
