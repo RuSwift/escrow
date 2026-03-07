@@ -34,6 +34,22 @@ async def test_get_empty_returns_none(node_repo):
     assert await node_repo.get() is None
 
 
+@pytest.mark.asyncio
+async def test_get_after_create_returns_created_data(node_repo, valid_mnemonic):
+    """После create() get() возвращает ту же запись (id, key_type, is_active)."""
+    data = NodeResource.Create(
+        key_type="mnemonic",
+        service_endpoint="https://node.test/",
+    )
+    created = await node_repo.create(data, mnemonic=valid_mnemonic)
+    got = await node_repo.get()
+    assert got is not None
+    assert got.id == created.id
+    assert got.key_type == created.key_type
+    assert got.service_endpoint == created.service_endpoint
+    assert got.is_active is True
+
+
 # --- create() ---
 
 
@@ -156,3 +172,14 @@ async def test_patch_active_empty_payload_returns_current(node_repo, valid_mnemo
     updated = await node_repo.patch_active(NodeResource.Patch())
     assert updated is not None
     assert updated.id == before.id
+
+
+@pytest.mark.asyncio
+async def test_patch_active_is_active_false(node_repo, valid_mnemonic):
+    """patch_active(is_active=False) деактивирует запись, get() возвращает None."""
+    data = NodeResource.Create(key_type="mnemonic")
+    await node_repo.create(data, mnemonic=valid_mnemonic)
+    assert await node_repo.get() is not None
+    updated = await node_repo.patch_active(NodeResource.Patch(is_active=False))
+    assert updated is None
+    assert await node_repo.get() is None
