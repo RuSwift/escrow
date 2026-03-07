@@ -23,7 +23,7 @@
             currentPage: initialPage,
             isNodeInitialized: isNodeInitialized
         },
-        template: '<component :is="currentPage" :is-node-initialized="isNodeInitialized" />'
+        template: '<transition name="fade" mode="out-in"><component :is="currentPage" :key="currentPage" :is-node-initialized="isNodeInitialized" /></transition>'
     });
     window.__nodeApp = vm;
 })();

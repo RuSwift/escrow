@@ -105,7 +105,7 @@ Vue.component('wallet-users', {
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
               </button>
             </div>
-            <div class="overflow-x-auto rounded-xl border border-zinc-200">
+            <div class="overflow-x-auto rounded-xl border border-zinc-200 fade-in-content">
               <table class="w-full text-left text-[13px]">
                 <thead class="bg-zinc-50 border-b border-zinc-200">
                   <tr>

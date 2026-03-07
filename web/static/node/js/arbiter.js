@@ -48,7 +48,7 @@ Vue.component('arbiter', {
                 Добавить кошелек арбитра
               </button>
             </div>
-            <div class="overflow-x-auto rounded-xl border border-zinc-200">
+            <div class="overflow-x-auto rounded-xl border border-zinc-200 fade-in-content">
               <table class="w-full text-left text-[13px]">
                 <thead class="bg-zinc-50 border-b border-zinc-200">
                   <tr>

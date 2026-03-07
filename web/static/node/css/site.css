@@ -1,4 +1,34 @@
 /* Node app: доп. стили (основа — Tailwind CDN в base.html) */
+
+/* Переход при смене страницы: fade out → fade in */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+.fade-enter,
+.fade-leave-to {
+  opacity: 0;
+}
+.fade-leave-to {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+}
+#app {
+  position: relative;
+  min-height: 100%;
+}
+
+/* Плавное появление блока (таблицы, списки) */
+.fade-in-content {
+  animation: fadeInContent 0.22s ease-out 0.05s both;
+}
+@keyframes fadeInContent {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
