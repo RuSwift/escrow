@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+jobs:
+  test-app:
+    name: Run Application Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Install dependencies
+        run: poetry install --with dev
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Start PostgreSQL and Redis
+        run: |
+          docker compose up -d postgres redis
+          sleep 5
+
+      - name: Wait for PostgreSQL
+        run: |
+          until docker compose exec -T postgres pg_isready -U escrow -d escrow; do
+            echo "Waiting for PostgreSQL..."
+            sleep 2
+          done
+          echo "PostgreSQL is ready!"
+
+      - name: Set environment variables
+        run: |
+          echo "DB_HOST=localhost" >> $GITHUB_ENV
+          echo "DB_PORT=5433" >> $GITHUB_ENV
+          echo "DB_USER=escrow" >> $GITHUB_ENV
+          echo "DB_PASSWORD=escrow" >> $GITHUB_ENV
+          echo "DB_DATABASE=escrow" >> $GITHUB_ENV
+          echo "REDIS_HOST=localhost" >> $GITHUB_ENV
+          echo "REDIS_PORT=6379" >> $GITHUB_ENV
+          echo "REDIS_DB=0" >> $GITHUB_ENV
+          echo "SECRET=test-secret-key-for-ci" >> $GITHUB_ENV
+
+      - name: Run database migrations
+        run: poetry run python run_migrations.py upgrade head
+
+      - name: Run application tests
+        run: poetry run pytest tests/ -vv --tb=long --showlocals -s
+
+      - name: Cleanup
+        if: always()
+        run: docker compose down -v
+
+  test-didcomm:
+    name: Run DIDComm Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install Poetry
+        run: pip install poetry
+
+      - name: Install dependencies
+        run: poetry install --with dev
+
+      - name: Run DIDComm tests
+        run: poetry run pytest didcomm/tests/ -vv --tb=long --showlocals -s

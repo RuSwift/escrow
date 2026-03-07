@@ -34,6 +34,14 @@ bip32 = ">=2.0.0"
 mnemonic = ">=0.20"
 didcomm = {path = "didcomm", develop = true}
 
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+pytest-asyncio = "^0.24"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
