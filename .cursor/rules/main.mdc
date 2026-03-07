@@ -10,3 +10,5 @@ alwaysApply: true
 - web: web applications
     * node.py: Node application (node for participant)
     * main.py: Main application
+    * web/templates: jinja templates for node & main apps
+    * web/static: styles, icons, js files for node & main apps

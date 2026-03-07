@@ -1,0 +1,191 @@
+"""
+Сервис для управления профилями пользователей кошелька (WalletUser).
+Ориентир: https://github.com/RuSwift/garantex/blob/main/services/wallet_user.py
+"""
+import logging
+from typing import Optional
+
+from redis.asyncio import Redis
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from repos.wallet_user import WalletUserRepository, WalletUserResource
+from settings import Settings
+
+logger = logging.getLogger(__name__)
+
+ALLOWED_BLOCKCHAINS = ("tron", "ethereum")
+AVATAR_MAX_BASE64_LEN = 1_500_000  # ~1MB base64
+
+
+class WalletUserService:
+    """Сервис для управления профилями пользователей кошелька."""
+
+    def __init__(
+        self,
+        session: AsyncSession,
+        redis: Redis,
+        settings: Settings,
+    ):
+        self._session = session
+        self._redis = redis
+        self._settings = settings
+        self._repo = WalletUserRepository(
+            session=session, redis=redis, settings=settings
+        )
+
+    async def get_by_wallet_address(
+        self, wallet_address: str
+    ) -> Optional[WalletUserResource.Get]:
+        """
+        Возвращает пользователя по адресу кошелька или None.
+        """
+        return await self._repo.get_by_wallet_address(wallet_address)
+
+    async def get_by_nickname(
+        self, nickname: str
+    ) -> Optional[WalletUserResource.Get]:
+        """
+        Возвращает пользователя по никнейму или None.
+        """
+        return await self._repo.get_by_nickname(nickname)
+
+    async def get_by_id(self, user_id: int) -> Optional[WalletUserResource.Get]:
+        """Возвращает пользователя по id или None."""
+        return await self._repo.get(user_id)
+
+    async def create_user(
+        self,
+        wallet_address: str,
+        blockchain: str,
+        nickname: str,
+        *,
+        avatar: Optional[str] = None,
+        access_to_admin_panel: bool = False,
+        is_verified: bool = False,
+    ) -> WalletUserResource.Get:
+        """
+        Создаёт нового пользователя кошелька.
+
+        Raises:
+            ValueError: если пользователь с таким адресом уже есть или не пройдена валидация.
+        """
+        existing = await self._repo.get_by_wallet_address(wallet_address)
+        if existing:
+            raise ValueError(
+                f"User with wallet address '{wallet_address}' already exists"
+            )
+
+        nickname_clean = nickname.strip() if nickname else ""
+        if not nickname_clean:
+            raise ValueError("Nickname cannot be empty")
+        if len(nickname_clean) > 100:
+            raise ValueError("Nickname cannot exceed 100 characters")
+
+        blockchain_lower = (blockchain or "").strip().lower()
+        if not blockchain_lower or blockchain_lower not in ALLOWED_BLOCKCHAINS:
+            raise ValueError(
+                "Invalid blockchain type; allowed: tron, ethereum, bitcoin"
+            )
+
+        data = WalletUserResource.Create(
+            wallet_address=wallet_address.strip(),
+            blockchain=blockchain_lower,
+            nickname=nickname_clean,
+            avatar=avatar,
+            access_to_admin_panel=access_to_admin_panel,
+            is_verified=is_verified,
+        )
+        created = await self._repo.create(data)
+        await self._session.commit()
+        return created
+
+    async def update_nickname(
+        self,
+        wallet_address: str,
+        new_nickname: str,
+    ) -> WalletUserResource.Get:
+        """
+        Обновляет никнейм пользователя по адресу кошелька.
+
+        Raises:
+            ValueError: если пользователь не найден или валидация не пройдена.
+        """
+        user = await self._repo.get_by_wallet_address(wallet_address)
+        if not user:
+            raise ValueError("User not found")
+
+        nickname_clean = new_nickname.strip() if new_nickname else ""
+        if not nickname_clean:
+            raise ValueError("Nickname cannot be empty")
+        if len(nickname_clean) > 100:
+            raise ValueError("Nickname cannot exceed 100 characters")
+
+        existing = await self._repo.get_by_nickname(nickname_clean)
+        if existing and existing.wallet_address != wallet_address:
+            raise ValueError(f"Nickname '{new_nickname}' is already taken by another user")
+
+        updated = await self._repo.patch(
+            user.id, WalletUserResource.Patch(nickname=nickname_clean)
+        )
+        if not updated:
+            raise ValueError("User not found")
+        await self._session.commit()
+        return updated
+
+    async def update_profile(
+        self,
+        wallet_address: str,
+        *,
+        nickname: Optional[str] = None,
+        avatar: Optional[str] = None,
+    ) -> WalletUserResource.Get:
+        """
+        Обновляет профиль (никнейм и/или аватар) по адресу кошелька.
+        Пустая строка avatar очищает аватар.
+
+        Raises:
+            ValueError: если пользователь не найден, валидация не пройдена
+                       или не передано ни одного поля для обновления.
+        """
+        user = await self._repo.get_by_wallet_address(wallet_address)
+        if not user:
+            raise ValueError("User not found")
+
+        patch_data: dict = {}
+
+        if nickname is not None and nickname.strip():
+            nickname_clean = nickname.strip()
+            if len(nickname_clean) > 100:
+                raise ValueError("Nickname cannot exceed 100 characters")
+            existing = await self._repo.get_by_nickname(nickname_clean)
+            if existing and existing.wallet_address != wallet_address:
+                raise ValueError(f"Nickname '{nickname}' is already taken")
+            patch_data["nickname"] = nickname_clean
+
+        if avatar is not None:
+            if avatar == "":
+                patch_data["avatar"] = None
+            else:
+                if not avatar.startswith("data:image/"):
+                    raise ValueError(
+                        "Avatar must be in base64 format starting with 'data:image/'"
+                    )
+                if len(avatar) > AVATAR_MAX_BASE64_LEN:
+                    raise ValueError("Avatar size is too large (max 1MB)")
+                patch_data["avatar"] = avatar
+
+        if not patch_data:
+            raise ValueError(
+                "At least one field (nickname or avatar) must be provided"
+            )
+
+        updated = await self._repo.patch(
+            user.id, WalletUserResource.Patch(**patch_data)
+        )
+        if not updated:
+            raise ValueError("User not found")
+        await self._session.commit()
+        return updated
+
+
+__all__ = ["WalletUserService"]
