@@ -44,9 +44,15 @@
             var el = this.$el;
             var name = el.getAttribute('data-app-name');
             if (name) this.appName = name;
-            var initial = (el.getAttribute('data-initial-page') || 'dashboard').trim();
-            if (SIDEBAR_ITEMS.some(function(item) { return item.page === initial; })) {
-                this.currentPage = initial;
+            // При прямой загрузке по URL синхронизируем с pathname, иначе — с data-initial-page
+            var pageFromUrl = pathToPage(window.location.pathname);
+            if (SIDEBAR_ITEMS.some(function(item) { return item.page === pageFromUrl; })) {
+                this.currentPage = pageFromUrl;
+            } else {
+                var initial = (el.getAttribute('data-initial-page') || 'dashboard').trim();
+                if (SIDEBAR_ITEMS.some(function(item) { return item.page === initial; })) {
+                    this.currentPage = initial;
+                }
             }
             var self = this;
             function showBallAfterLayout() {

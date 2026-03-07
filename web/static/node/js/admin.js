@@ -59,57 +59,67 @@ Vue.component('admin', {
 
         <div class="space-y-6">
           <div class="bg-white rounded-2xl shadow-sm border border-zinc-200/60 overflow-hidden">
-            <div class="p-5 border-b border-zinc-100 bg-zinc-50/30 flex items-center gap-2">
-              <div class="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 shrink-0">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+            <div class="px-4 py-3 border-b border-zinc-100 bg-zinc-50/30 flex items-center gap-2">
+              <div class="w-7 h-7 bg-blue-50 rounded-lg flex items-center justify-center text-blue-600 shrink-0">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
               </div>
-              <span class="text-[13px] font-bold text-zinc-800 uppercase tracking-tight">Информация об аккаунте</span>
+              <span class="text-[12px] font-bold text-zinc-800 uppercase tracking-tight">Информация об аккаунте</span>
             </div>
-            <div class="p-6 space-y-4">
-              <div>
-                <p class="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Методы аутентификации:</p>
-                <button type="button" class="px-3 py-1.5 bg-blue-100 text-blue-800 rounded-lg text-[13px] font-semibold hover:bg-blue-200">Пароль</button>
-              </div>
-              <div>
-                <p class="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Имя пользователя:</p>
-                <p class="text-[13px] font-medium text-zinc-800">[[ account.username ]]</p>
-              </div>
-              <div>
-                <p class="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Создан:</p>
-                <p class="text-[13px] text-zinc-600">[[ account.createdAt ]]</p>
-              </div>
-              <div>
-                <p class="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-1">Обновлен:</p>
-                <p class="text-[13px] text-zinc-600">[[ account.updatedAt ]]</p>
-              </div>
-              <div>
-                <p class="text-[11px] font-bold text-zinc-500 uppercase tracking-wider mb-1.5">Статус:</p>
-                <span class="inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800">Активен</span>
-              </div>
+            <div class="p-4">
+              <table class="w-full text-[13px] border-collapse">
+                <tbody>
+                  <tr class="border-b border-zinc-100 last:border-0">
+                    <td class="py-2 pr-4 align-top w-48 text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Методы аутентификации:</td>
+                    <td class="py-2"><button type="button" class="px-3 py-1 bg-blue-100 text-blue-800 rounded-lg text-[12px] font-semibold hover:bg-blue-200">Пароль</button></td>
+                  </tr>
+                  <tr class="border-b border-zinc-100 last:border-0">
+                    <td class="py-2 pr-4 align-top text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Имя пользователя:</td>
+                    <td class="py-2 font-medium text-zinc-800">[[ account.username ]]</td>
+                  </tr>
+                  <tr class="border-b border-zinc-100 last:border-0">
+                    <td class="py-2 pr-4 align-top text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Создан:</td>
+                    <td class="py-2 text-zinc-600">[[ account.createdAt ]]</td>
+                  </tr>
+                  <tr class="border-b border-zinc-100 last:border-0">
+                    <td class="py-2 pr-4 align-top text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Обновлен:</td>
+                    <td class="py-2 text-zinc-600">[[ account.updatedAt ]]</td>
+                  </tr>
+                  <tr>
+                    <td class="py-2 pr-4 align-top text-[11px] font-bold text-zinc-500 uppercase tracking-wider">Статус:</td>
+                    <td class="py-2"><span class="inline-flex px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800">Активен</span></td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
 
           <div class="bg-white rounded-2xl shadow-sm border border-zinc-200/60 overflow-hidden">
-            <div class="p-5 border-b border-zinc-100 bg-zinc-50/30 flex items-center gap-2">
-              <div class="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600 shrink-0">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+            <div class="px-4 py-3 border-b border-zinc-100 bg-zinc-50/30 flex items-center gap-2">
+              <div class="w-7 h-7 bg-amber-50 rounded-lg flex items-center justify-center text-amber-600 shrink-0">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
               </div>
-              <span class="text-[13px] font-bold text-zinc-800 uppercase tracking-tight">Сменить пароль</span>
+              <span class="text-[12px] font-bold text-zinc-800 uppercase tracking-tight">Сменить пароль</span>
             </div>
-            <div class="p-6 space-y-4">
-              <div>
-                <label class="block text-[11px] font-bold text-zinc-600 uppercase tracking-wider mb-1.5">Старый пароль</label>
-                <input type="password" v-model="passwordForm.oldPassword" placeholder="Введите текущий пароль" class="w-full px-4 py-2.5 border border-zinc-200 rounded-xl text-[13px] placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400">
+            <div class="p-4">
+              <table class="w-full text-[13px] border-collapse">
+                <tbody>
+                  <tr class="border-b border-zinc-100">
+                    <td class="py-2 pr-4 align-middle w-48 text-[11px] font-bold text-zinc-600 uppercase tracking-wider">Старый пароль:</td>
+                    <td class="py-2"><input type="password" v-model="passwordForm.oldPassword" placeholder="Текущий пароль" class="w-full max-w-xs px-3 py-2 border border-zinc-200 rounded-lg text-[13px] placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"></td>
+                  </tr>
+                  <tr class="border-b border-zinc-100">
+                    <td class="py-2 pr-4 align-middle text-[11px] font-bold text-zinc-600 uppercase tracking-wider">Новый пароль:</td>
+                    <td class="py-2"><input type="password" v-model="passwordForm.newPassword" placeholder="Минимум 8 символов" class="w-full max-w-xs px-3 py-2 border border-zinc-200 rounded-lg text-[13px] placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"></td>
+                  </tr>
+                  <tr>
+                    <td class="py-2 pr-4 align-middle text-[11px] font-bold text-zinc-600 uppercase tracking-wider">Подтверждение:</td>
+                    <td class="py-2"><input type="password" v-model="passwordForm.confirmPassword" placeholder="Повторите пароль" class="w-full max-w-xs px-3 py-2 border border-zinc-200 rounded-lg text-[13px] placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400"></td>
+                  </tr>
+                </tbody>
+              </table>
+              <div class="pt-3">
+                <button type="button" @click="changePassword" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-[13px] font-semibold hover:bg-blue-700">Сменить пароль</button>
               </div>
-              <div>
-                <label class="block text-[11px] font-bold text-zinc-600 uppercase tracking-wider mb-1.5">Новый пароль</label>
-                <input type="password" v-model="passwordForm.newPassword" placeholder="Минимум 8 символов" class="w-full px-4 py-2.5 border border-zinc-200 rounded-xl text-[13px] placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400">
-              </div>
-              <div>
-                <label class="block text-[11px] font-bold text-zinc-600 uppercase tracking-wider mb-1.5">Подтвердите новый пароль</label>
-                <input type="password" v-model="passwordForm.confirmPassword" placeholder="Повторите новый пароль" class="w-full px-4 py-2.5 border border-zinc-200 rounded-xl text-[13px] placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400">
-              </div>
-              <button type="button" @click="changePassword" class="px-4 py-2.5 bg-blue-600 text-white rounded-lg text-[13px] font-semibold hover:bg-blue-700">Сменить пароль</button>
             </div>
           </div>
 
