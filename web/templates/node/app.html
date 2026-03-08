@@ -9,7 +9,7 @@
   </div>
 </div>
 <div id="node-init-modal-container"></div>
-<script id="is-node-initialized" type="application/json">{{ node_init_status_json }}</script>
+<script id="is-node-initialized" type="application/json">{{ node_init_status_json | safe }}</script>
 {% endblock %}
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/vue@2.7.16/dist/vue.min.js"></script>

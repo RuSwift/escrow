@@ -70,43 +70,37 @@
             var initScript = document.getElementById('is-node-initialized');
             var hasKey = false;
             var nodeInitialized = false;
-            var adminConfiguredFromTemplate = false;
+            var adminConfigured = false;
             if (initScript) {
                 try {
                     var data = JSON.parse(initScript.textContent);
                     if (typeof data === 'boolean') {
                         hasKey = data;
                         nodeInitialized = data;
+                        adminConfigured = data;
                     } else {
                         hasKey = !!data.has_key;
                         nodeInitialized = !!data.is_node_initialized;
-                        adminConfiguredFromTemplate = !!data.is_admin_configured;
+                        adminConfigured = !!data.is_admin_configured;
                     }
                 } catch (e) {}
             }
-            Promise.all([
-                fetch(NODE_API + '/is-admin-configured').then(function(r) { return r.ok ? r.json() : { configured: false }; }).catch(function() { return { configured: false }; }),
-                fetch(NODE_API + '/is-service-endpoint-configured').then(function(r) { return r.ok ? r.json() : { configured: false }; }).catch(function() { return { configured: false }; })
-            ]).then(function(results) {
-                var adminConfigured = results[0].configured || adminConfiguredFromTemplate;
-                var endpointConfigured = results[1].configured;
-                if (!nodeInitialized || !adminConfigured || !endpointConfigured) {
-                    self.show = true;
-                    if (!hasKey) {
-                        self.currentStep = 1;
-                        self.$nextTick(function() { self.initCanvas(); });
-                    } else if (!adminConfigured) {
-                        self.currentStep = 2;
-                        self.result = { address: 'Already initialized', keyType: 'existing', message: self.$t('node.init.key_already_created') };
-                    } else {
-                        self.currentStep = 3;
-                        self.result = { address: 'Already initialized', keyType: 'existing' };
-                        self.serviceEndpoint = self.getDefaultEndpoint();
-                        self.endpointVerified = false;
-                        self.loadExistingEndpoint();
-                    }
+            if (!nodeInitialized) {
+                self.show = true;
+                if (!hasKey) {
+                    self.currentStep = 1;
+                    self.$nextTick(function() { self.initCanvas(); });
+                } else if (!adminConfigured) {
+                    self.currentStep = 2;
+                    self.result = { address: 'Already initialized', keyType: 'existing', message: self.$t('node.init.key_already_created') };
+                } else {
+                    self.currentStep = 3;
+                    self.result = { address: 'Already initialized', keyType: 'existing' };
+                    self.serviceEndpoint = self.getDefaultEndpoint();
+                    self.endpointVerified = false;
+                    self.loadExistingEndpoint();
                 }
-            });
+            }
         },
         methods: {
             t: function(key, params) {
