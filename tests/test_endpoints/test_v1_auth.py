@@ -9,7 +9,7 @@ from httpx import ASGITransport, AsyncClient
 
 from db import get_db
 from web.node import create_app
-from web.endpoints.dependencies import get_redis, get_settings
+from web.endpoints.dependencies import get_redis, get_settings, ResolvedSettings
 
 
 def _eth_sign_message(message: str, private_key_hex: str) -> str:
@@ -30,9 +30,17 @@ def auth_app(test_db, test_redis, test_settings):
     async def override_get_redis():
         yield test_redis
 
+    async def override_get_settings():
+        return ResolvedSettings(
+            settings=test_settings,
+            has_key=False,
+            is_admin_configured=False,
+            is_node_initialized=False,
+        )
+
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_redis] = override_get_redis
-    app.dependency_overrides[get_settings] = lambda: test_settings
+    app.dependency_overrides[get_settings] = override_get_settings
     yield app
     app.dependency_overrides.clear()
 

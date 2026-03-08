@@ -16,7 +16,7 @@ from i18n import _
 from i18n.context import get_request_locale
 from i18n.translations import get_translations_for_locale
 from settings import Settings
-from web.endpoints.dependencies import NodeServiceDep
+from web.endpoints.dependencies import AppSettings, NodeServiceDep
 from web.endpoints.health import router as health_router
 from web.endpoints.v1 import router as v1_router
 from web.middleware import install_locale_middleware
@@ -74,52 +74,44 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/", response_class=HTMLResponse)
-    async def index(request: Request, node_service: NodeServiceDep):
+    async def index(request: Request, settings: AppSettings):
         initial_page, page_title_key = _PAGE_MAP["/"]
-        is_node_initialized = await node_service.is_node_initialized()
-        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, is_node_initialized))
+        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, settings.is_node_initialized))
 
     @app.get("/wallet-users", response_class=HTMLResponse)
-    async def wallet_users(request: Request, node_service: NodeServiceDep):
+    async def wallet_users(request: Request, settings: AppSettings):
         initial_page, page_title_key = _PAGE_MAP["/wallet-users"]
-        is_node_initialized = await node_service.is_node_initialized()
-        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, is_node_initialized))
+        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, settings.is_node_initialized))
 
     @app.get("/arbiter", response_class=HTMLResponse)
-    async def arbiter(request: Request, node_service: NodeServiceDep):
+    async def arbiter(request: Request, settings: AppSettings):
         initial_page, page_title_key = _PAGE_MAP["/arbiter"]
-        is_node_initialized = await node_service.is_node_initialized()
-        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, is_node_initialized))
+        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, settings.is_node_initialized))
 
     @app.get("/wallets", response_class=HTMLResponse)
-    async def wallets(request: Request, node_service: NodeServiceDep):
+    async def wallets(request: Request, settings: AppSettings):
         initial_page, page_title_key = _PAGE_MAP["/wallets"]
-        is_node_initialized = await node_service.is_node_initialized()
-        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, is_node_initialized))
+        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, settings.is_node_initialized))
 
     @app.get("/node", response_class=HTMLResponse)
-    async def node_page(request: Request, node_service: NodeServiceDep):
+    async def node_page(request: Request, settings: AppSettings):
         initial_page, page_title_key = _PAGE_MAP["/node"]
-        is_node_initialized = await node_service.is_node_initialized()
-        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, is_node_initialized))
+        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, settings.is_node_initialized))
 
     @app.get("/admin", response_class=HTMLResponse)
-    async def admin(request: Request, node_service: NodeServiceDep):
+    async def admin(request: Request, settings: AppSettings):
         initial_page, page_title_key = _PAGE_MAP["/admin"]
-        is_node_initialized = await node_service.is_node_initialized()
-        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, is_node_initialized))
+        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, settings.is_node_initialized))
 
     @app.get("/settings", response_class=HTMLResponse)
-    async def settings(request: Request, node_service: NodeServiceDep):
+    async def settings_page(request: Request, settings: AppSettings):
         initial_page, page_title_key = _PAGE_MAP["/settings"]
-        is_node_initialized = await node_service.is_node_initialized()
-        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, is_node_initialized))
+        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, settings.is_node_initialized))
 
     @app.get("/support", response_class=HTMLResponse)
-    async def support(request: Request, node_service: NodeServiceDep):
+    async def support(request: Request, settings: AppSettings):
         initial_page, page_title_key = _PAGE_MAP["/support"]
-        is_node_initialized = await node_service.is_node_initialized()
-        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, is_node_initialized))
+        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, settings.is_node_initialized))
 
     return app
 

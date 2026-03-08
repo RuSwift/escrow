@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.utils import get_user_did
 from db import get_db
 from repos.node import NodeRepository
+from services.admin import AdminService
 from services.billing import BillingService
 from services.node import NodeService
 from services.tron_auth import TronAuth
@@ -21,6 +22,27 @@ from services.web3_auth import Web3Auth
 from settings import Settings
 
 security = HTTPBearer()
+
+
+class ResolvedSettings:
+    """
+    Settings resolved in two stages: first from env, then from DB.
+    Delegates attribute access to .settings for compatibility.
+    """
+    def __init__(
+        self,
+        settings: Settings,
+        has_key: bool,
+        is_admin_configured: bool,
+        is_node_initialized: bool,
+    ):
+        self.settings = settings
+        self.has_key = has_key
+        self.is_admin_configured = is_admin_configured
+        self.is_node_initialized = is_node_initialized
+
+    def __getattr__(self, name: str):
+        return getattr(self.settings, name)
 
 
 class UserInfo(BaseModel):
@@ -37,13 +59,44 @@ class UserInfo(BaseModel):
     )
 
 
-def get_settings() -> Settings:
-    """Возвращает настройки приложения (из env)."""
-    return Settings()
+async def get_settings(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ResolvedSettings:
+    """
+    Настройки в два этапа: сначала env, затем БД.
+    Возвращает ResolvedSettings (has_key, is_admin_configured, is_node_initialized из env или БД).
+    """
+    settings = Settings()
+    redis = Redis.from_url(settings.redis.url, decode_responses=True)
+    try:
+        node_repo = NodeRepository(session=db, redis=redis, settings=settings)
+        admin_svc = AdminService(session=db, redis=redis, settings=settings)
+        node = await node_repo.get()
+        has_key_env = bool(
+            settings.mnemonic.phrase
+            or settings.mnemonic.encrypted_phrase
+            or settings.pem
+        )
+        has_keypair_from_db = (
+            (node is not None)
+            and (await node_repo.get_active_keypair() is not None)
+        )
+        has_key = has_key_env or has_keypair_from_db
+        is_admin = settings.admin.is_configured or await admin_svc.is_admin_configured()
+        service_endpoint = (node.service_endpoint or "").strip() if node else ""
+        is_node_initialized = has_key and is_admin and bool(service_endpoint)
+        return ResolvedSettings(
+            settings=settings,
+            has_key=has_key,
+            is_admin_configured=is_admin,
+            is_node_initialized=is_node_initialized,
+        )
+    finally:
+        await redis.aclose()
 
 
 async def get_redis(
-    settings: Settings = Depends(get_settings),
+    settings: ResolvedSettings = Depends(get_settings),
 ) -> AsyncGenerator[Redis, None]:
     """Отдаёт клиент Redis на запрос; после ответа соединение закрывается."""
     client = Redis.from_url(settings.redis.url, decode_responses=True)
@@ -56,7 +109,7 @@ async def get_redis(
 # Annotated-алиасы для эндпоинтов (избавляет от явного Depends в каждом роуте)
 DbSession = Annotated[AsyncSession, Depends(get_db)]
 RedisClient = Annotated[Redis, Depends(get_redis)]
-AppSettings = Annotated[Settings, Depends(get_settings)]
+AppSettings = Annotated[ResolvedSettings, Depends(get_settings)]
 
 
 def get_wallet_user_service(
@@ -96,9 +149,19 @@ def get_billing_service(
     return BillingService(session=db, redis=redis, settings=settings)
 
 
+def get_admin_service(
+    db: DbSession,
+    redis: RedisClient,
+    settings: AppSettings,
+) -> AdminService:
+    """AdminService для эндпоинтов админки."""
+    return AdminService(session=db, redis=redis, settings=settings.settings)
+
+
 WalletUserServiceDep = Annotated[WalletUserService, Depends(get_wallet_user_service)]
 BillingServiceDep = Annotated[BillingService, Depends(get_billing_service)]
 NodeServiceDep = Annotated[NodeService, Depends(get_node_service)]
+AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
 Web3AuthDep = Annotated[Web3Auth, Depends(get_web3_auth)]
 TronAuthDep = Annotated[TronAuth, Depends(get_tron_auth)]
 
@@ -163,18 +226,21 @@ __all__ = [
     "get_wallet_user_service",
     "get_billing_service",
     "get_node_service",
+    "get_admin_service",
     "get_web3_auth",
     "get_tron_auth",
     "get_current_web3_user",
     "get_current_tron_user",
     "security",
     "UserInfo",
+    "ResolvedSettings",
     "DbSession",
     "RedisClient",
     "AppSettings",
     "WalletUserServiceDep",
     "BillingServiceDep",
     "NodeServiceDep",
+    "AdminServiceDep",
     "Web3AuthDep",
     "TronAuthDep",
     "CurrentWeb3User",

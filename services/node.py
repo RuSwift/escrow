@@ -174,8 +174,18 @@ class NodeService:
         return await self._repo.get_active_keypair()
 
     async def has_key(self) -> bool:
-        """Проверяет, существует ли ключ ноды (активная запись)."""
-        return (await self._repo.get()) is not None
+        """
+        Проверяет наличие ключа ноды: сначала env (mnemonic/pem),
+        при отсутствии — наличие активной ключевой пары в репозитории.
+        """
+        has_key_env = bool(
+            self._settings.mnemonic.phrase
+            or self._settings.mnemonic.encrypted_phrase
+            or self._settings.pem
+        )
+        if has_key_env:
+            return True
+        return await self._repo.get_active_keypair() is not None
 
     async def is_node_initialized(self) -> bool:
         """
