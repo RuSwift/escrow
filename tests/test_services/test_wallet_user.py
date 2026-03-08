@@ -283,3 +283,49 @@ async def test_update_profile_nickname_taken_raises(wallet_user_service):
         await wallet_user_service.update_profile(
             WALLET_TRON, nickname="bob"
         )
+
+
+# --- get_by_identifier ---
+
+
+@pytest.mark.asyncio
+async def test_get_by_identifier_by_id_int(wallet_user_service):
+    """get_by_identifier с целым id возвращает пользователя."""
+    created = await wallet_user_service.create_user(WALLET_TRON, "tron", "alice")
+    found = await wallet_user_service.get_by_identifier(created.id)
+    assert found is not None
+    assert found.id == created.id
+    assert found.nickname == "alice"
+
+
+@pytest.mark.asyncio
+async def test_get_by_identifier_by_id_string(wallet_user_service):
+    """get_by_identifier со строкой-числом (id) возвращает пользователя."""
+    created = await wallet_user_service.create_user(WALLET_TRON, "tron", "bob")
+    found = await wallet_user_service.get_by_identifier(str(created.id))
+    assert found is not None
+    assert found.id == created.id
+
+
+@pytest.mark.asyncio
+async def test_get_by_identifier_by_did(wallet_user_service):
+    """get_by_identifier с DID возвращает пользователя."""
+    created = await wallet_user_service.create_user(WALLET_TRON, "tron", "carol")
+    found = await wallet_user_service.get_by_identifier(created.did)
+    assert found is not None
+    assert found.did == created.did
+    assert found.nickname == "carol"
+
+
+@pytest.mark.asyncio
+async def test_get_by_identifier_invalid_raises(wallet_user_service):
+    """get_by_identifier с невалидной строкой (не число и не did:) поднимает ValueError."""
+    with pytest.raises(ValueError, match="identifier must be user id"):
+        await wallet_user_service.get_by_identifier("not-a-number-or-did")
+
+
+@pytest.mark.asyncio
+async def test_get_by_identifier_not_found_returns_none(wallet_user_service):
+    """get_by_identifier с несуществующим id возвращает None."""
+    found = await wallet_user_service.get_by_identifier(999999)
+    assert found is None

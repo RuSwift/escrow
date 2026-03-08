@@ -2,10 +2,7 @@
 Роутер Web3/TRON авторизации через кошельки.
 Ориентир: https://github.com/RuSwift/garantex/blob/main/routers/auth.py
 """
-from typing import Optional
-
 from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field
 
 from web.endpoints.dependencies import (
     CurrentTronUser,
@@ -15,42 +12,14 @@ from web.endpoints.dependencies import (
     WalletUserServiceDep,
     Web3AuthDep,
 )
+from web.endpoints.v1.schemas.auth import (
+    AuthResponse,
+    NonceRequest,
+    NonceResponse,
+    VerifyRequest,
+)
 
 router = APIRouter(prefix="/auth", tags=["Авторизация"])
-
-# --- Схемы запросов/ответов ---
-
-
-class NonceRequest(BaseModel):
-    """Запрос nonce для подписи."""
-
-    wallet_address: str = Field(..., description="Адрес кошелька пользователя")
-
-
-class NonceResponse(BaseModel):
-    """Ответ с nonce и сообщением для подписи."""
-
-    nonce: str = Field(..., description="Nonce для подписи")
-    message: str = Field(..., description="Сообщение для подписи")
-
-
-class VerifyRequest(BaseModel):
-    """Запрос верификации подписи."""
-
-    wallet_address: str = Field(..., description="Адрес кошелька пользователя")
-    signature: str = Field(..., description="Подпись сообщения")
-    message: Optional[str] = Field(
-        None,
-        description="Сообщение (опционально, если отличается от стандартного)",
-    )
-
-
-class AuthResponse(BaseModel):
-    """Ответ с JWT и адресом после успешной верификации."""
-
-    token: str = Field(..., description="JWT токен для авторизации")
-    wallet_address: str = Field(..., description="Адрес кошелька")
-
 
 # --- Ethereum ---
 

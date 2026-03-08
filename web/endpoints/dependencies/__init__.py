@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.utils import get_user_did
 from db import get_db
 from repos.node import NodeRepository
+from services.billing import BillingService
 from services.node import NodeService
 from services.tron_auth import TronAuth
 from services.wallet_user import WalletUserService
@@ -86,7 +87,17 @@ def get_node_service(
     return NodeService(session=db, redis=redis, settings=settings)
 
 
+def get_billing_service(
+    db: DbSession,
+    redis: RedisClient,
+    settings: AppSettings,
+) -> BillingService:
+    """BillingService для эндпоинтов profile (история биллинга)."""
+    return BillingService(session=db, redis=redis, settings=settings)
+
+
 WalletUserServiceDep = Annotated[WalletUserService, Depends(get_wallet_user_service)]
+BillingServiceDep = Annotated[BillingService, Depends(get_billing_service)]
 NodeServiceDep = Annotated[NodeService, Depends(get_node_service)]
 Web3AuthDep = Annotated[Web3Auth, Depends(get_web3_auth)]
 TronAuthDep = Annotated[TronAuth, Depends(get_tron_auth)]
@@ -150,6 +161,7 @@ __all__ = [
     "get_redis",
     "get_settings",
     "get_wallet_user_service",
+    "get_billing_service",
     "get_node_service",
     "get_web3_auth",
     "get_tron_auth",
@@ -161,6 +173,7 @@ __all__ = [
     "RedisClient",
     "AppSettings",
     "WalletUserServiceDep",
+    "BillingServiceDep",
     "NodeServiceDep",
     "Web3AuthDep",
     "TronAuthDep",

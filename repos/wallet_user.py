@@ -93,6 +93,13 @@ class WalletUserRepository(BaseRepository):
         model = result.scalar_one_or_none()
         return _model_to_get(model) if model else None
 
+    async def get_by_did(self, did: str) -> Optional[WalletUserResource.Get]:
+        """Возвращает пользователя по DID или None."""
+        stmt = select(WalletUser).where(WalletUser.did == did)
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        return _model_to_get(model) if model else None
+
     async def create(self, data: WalletUserResource.Create) -> WalletUserResource.Get:
         """Create: создаёт пользователя. DID генерируется при вставке (event listener)."""
         model = WalletUser(

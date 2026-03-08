@@ -53,6 +53,25 @@ class WalletUserService:
         """Возвращает пользователя по id или None."""
         return await self._repo.get(user_id)
 
+    async def get_by_identifier(
+        self, identifier: str | int
+    ) -> Optional[WalletUserResource.Get]:
+        """
+        Возвращает пользователя по идентификатору: id (int или строка-число) или DID (строка, начинается с 'did:').
+        Иначе — ValueError.
+        """
+        if isinstance(identifier, int):
+            return await self._repo.get(identifier)
+        if isinstance(identifier, str) and identifier.strip().startswith("did:"):
+            return await self._repo.get_by_did(identifier.strip())
+        try:
+            user_id = int(identifier)
+            return await self._repo.get(user_id)
+        except (TypeError, ValueError):
+            raise ValueError(
+                "identifier must be user id (integer) or DID (string starting with 'did:')"
+            )
+
     async def create_user(
         self,
         wallet_address: str,
