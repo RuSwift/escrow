@@ -1,11 +1,11 @@
 {% extends "node/base.html" %}
-{% block title %}{{ page_title | default("Дашборд") }} — {{ app_name }}{% endblock %}
+{% block title %}{{ page_title }} — {{ app_name }}{% endblock %}
 {% block content %}
 <div id="app"
      data-initial-page="{{ initial_page | default('dashboard') }}"
      data-is-node-initialized="{{ 'true' if is_node_initialized else 'false' }}">
   <div class="p-8 bg-zinc-50/50 flex-1 overflow-y-auto flex items-center justify-center">
-    <p class="text-zinc-400 text-sm">Загрузка...</p>
+    <p class="text-zinc-400 text-sm">{{ _('node.loading') }}</p>
   </div>
 </div>
 {% endblock %}

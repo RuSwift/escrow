@@ -44,4 +44,13 @@ def get_translation(key: str, locale: str, **params: str) -> str:
     return msg
 
 
-__all__ = ["get_translation"]
+def get_translations_for_locale(locale: str) -> dict[str, str]:
+    """Возвращает полный словарь переводов для локали (с fallback на en)."""
+    translations = _load_translations()
+    locale = locale.split("-")[0].lower() if locale else "en"
+    table = dict(translations.get("en") or {})
+    table.update(translations.get(locale) or {})
+    return table
+
+
+__all__ = ["get_translation", "get_translations_for_locale"]
