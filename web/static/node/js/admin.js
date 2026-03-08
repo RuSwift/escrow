@@ -61,20 +61,6 @@ Vue.component('admin', {
     },
     mounted: function() {
         this.loadData();
-        var self = this;
-        var searchEl = document.getElementById('header-search');
-        if (searchEl) {
-            searchEl.value = '';
-            searchEl.dispatchEvent(new Event('input', { bubbles: true }));
-            self.adminSearchQuery = '';
-        }
-        self._onHeaderSearch = function(e) {
-            self.adminSearchQuery = (e.detail && e.detail.query !== undefined) ? e.detail.query : '';
-        };
-        window.addEventListener('header-search', self._onHeaderSearch);
-    },
-    beforeDestroy: function() {
-        if (this._onHeaderSearch) window.removeEventListener('header-search', this._onHeaderSearch);
     },
     computed: {
         deleteModalTitle: function() {
