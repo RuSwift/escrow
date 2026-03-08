@@ -16,7 +16,7 @@ from i18n import _
 from i18n.context import get_request_locale
 from i18n.translations import get_translations_for_locale
 from settings import Settings
-from web.endpoints.dependencies import AppSettings, NodeServiceDep
+from web.endpoints.dependencies import AdminDepends, AppSettings, NodeServiceDep
 from web.endpoints.didcomm import router as didcomm_router
 from web.endpoints.health import router as health_router
 from web.endpoints.v1 import router as v1_router
@@ -89,45 +89,79 @@ def create_app() -> FastAPI:
             "translations_json": json.dumps(translations, ensure_ascii=False),
         }
 
+    def _login_context(request: Request):
+        """Контекст для страницы входа админа (node initialized, не авторизован)."""
+        locale = get_request_locale() or Settings().default_locale
+        translations = get_translations_for_locale(locale)
+        return {
+            "request": request,
+            "_": _,
+            "app_name": _("node.app_name"),
+            "locale": locale,
+            "translations": translations,
+            "translations_json": json.dumps(translations, ensure_ascii=False),
+        }
+
+    def _maybe_login_page(
+        request: Request,
+        settings: AppSettings,
+        admin: AdminDepends,
+        initial_page: str,
+        page_title_key: str,
+    ):
+        """Если нода инициализирована и админ не авторизован — страница входа, иначе app.html."""
+        if settings.is_node_initialized and admin is None:
+            return templates.TemplateResponse(
+                "node/login.html",
+                _login_context(request),
+            )
+        return templates.TemplateResponse(
+            "node/app.html",
+            _node_context(
+                request, initial_page, page_title_key,
+                settings.is_node_initialized, settings.has_key, settings.is_admin_configured,
+            ),
+        )
+
     @app.get("/", response_class=HTMLResponse)
-    async def index(request: Request, settings: AppSettings):
+    async def index(request: Request, settings: AppSettings, admin: AdminDepends):
         initial_page, page_title_key = _PAGE_MAP["/"]
-        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, settings.is_node_initialized, settings.has_key, settings.is_admin_configured))
+        return _maybe_login_page(request, settings, admin, initial_page, page_title_key)
 
     @app.get("/wallet-users", response_class=HTMLResponse)
-    async def wallet_users(request: Request, settings: AppSettings):
+    async def wallet_users(request: Request, settings: AppSettings, admin: AdminDepends):
         initial_page, page_title_key = _PAGE_MAP["/wallet-users"]
-        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, settings.is_node_initialized, settings.has_key, settings.is_admin_configured))
+        return _maybe_login_page(request, settings, admin, initial_page, page_title_key)
 
     @app.get("/arbiter", response_class=HTMLResponse)
-    async def arbiter(request: Request, settings: AppSettings):
+    async def arbiter(request: Request, settings: AppSettings, admin: AdminDepends):
         initial_page, page_title_key = _PAGE_MAP["/arbiter"]
-        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, settings.is_node_initialized, settings.has_key, settings.is_admin_configured))
+        return _maybe_login_page(request, settings, admin, initial_page, page_title_key)
 
     @app.get("/wallets", response_class=HTMLResponse)
-    async def wallets(request: Request, settings: AppSettings):
+    async def wallets(request: Request, settings: AppSettings, admin: AdminDepends):
         initial_page, page_title_key = _PAGE_MAP["/wallets"]
-        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, settings.is_node_initialized, settings.has_key, settings.is_admin_configured))
+        return _maybe_login_page(request, settings, admin, initial_page, page_title_key)
 
     @app.get("/node", response_class=HTMLResponse)
-    async def node_page(request: Request, settings: AppSettings):
+    async def node_page(request: Request, settings: AppSettings, admin: AdminDepends):
         initial_page, page_title_key = _PAGE_MAP["/node"]
-        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, settings.is_node_initialized, settings.has_key, settings.is_admin_configured))
+        return _maybe_login_page(request, settings, admin, initial_page, page_title_key)
 
     @app.get("/admin", response_class=HTMLResponse)
-    async def admin(request: Request, settings: AppSettings):
+    async def admin(request: Request, settings: AppSettings, admin: AdminDepends):
         initial_page, page_title_key = _PAGE_MAP["/admin"]
-        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, settings.is_node_initialized, settings.has_key, settings.is_admin_configured))
+        return _maybe_login_page(request, settings, admin, initial_page, page_title_key)
 
     @app.get("/settings", response_class=HTMLResponse)
-    async def settings_page(request: Request, settings: AppSettings):
+    async def settings_page(request: Request, settings: AppSettings, admin: AdminDepends):
         initial_page, page_title_key = _PAGE_MAP["/settings"]
-        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, settings.is_node_initialized, settings.has_key, settings.is_admin_configured))
+        return _maybe_login_page(request, settings, admin, initial_page, page_title_key)
 
     @app.get("/support", response_class=HTMLResponse)
-    async def support(request: Request, settings: AppSettings):
+    async def support(request: Request, settings: AppSettings, admin: AdminDepends):
         initial_page, page_title_key = _PAGE_MAP["/support"]
-        return templates.TemplateResponse("node/app.html", _node_context(request, initial_page, page_title_key, settings.is_node_initialized, settings.has_key, settings.is_admin_configured))
+        return _maybe_login_page(request, settings, admin, initial_page, page_title_key)
 
     return app
 

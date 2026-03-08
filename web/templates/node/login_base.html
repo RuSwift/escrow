@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="{{ locale | default('ru') }}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}{{ _('node.login.page_title') }} — {{ app_name }}{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: { fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] } } }
+    };
+  </script>
+  <link rel="stylesheet" href="/static/node/css/site.css" />
+</head>
+<body class="min-h-screen bg-zinc-50 font-sans antialiased text-zinc-900 flex flex-col items-center justify-center p-4">
+  <script>
+    window.__LOCALE__ = "{{ locale | default('ru') }}";
+    window.__TRANSLATIONS__ = {{ translations_json | default('{}') | safe }};
+  </script>
+  {% block content %}{% endblock %}
+  {% block scripts %}{% endblock %}
+</body>
+</html>

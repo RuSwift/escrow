@@ -1,0 +1,27 @@
+{% extends "node/login_base.html" %}
+{% block content %}
+<div id="admin-login-app" class="w-full max-w-md">
+  <div class="bg-white rounded-2xl shadow-sm border border-zinc-200/60 p-8 space-y-6">
+    <h1 class="text-xl font-bold text-zinc-900 tracking-tight">[[ $t('node.login.heading') ]]</h1>
+    <p class="text-[13px] text-zinc-600">[[ $t('node.login.subheading') ]]</p>
+    <div class="space-y-5">
+      <div>
+        <span class="block text-[11px] font-bold text-zinc-600 uppercase tracking-wider mb-2">[[ $t('node.login.method_password') ]]</span>
+        <div v-if="loginError" class="mb-2 p-3 rounded-lg bg-red-50 text-red-800 text-sm">[[ loginError ]]</div>
+        <input type="text" v-model="loginForm.username" :placeholder="$t('node.login.login_placeholder')" class="block w-full px-3 py-2 border border-zinc-200 rounded-lg text-[13px] mb-2 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400" autocomplete="username" />
+        <input type="password" v-model="loginForm.password" :placeholder="$t('node.login.password_placeholder')" class="block w-full px-3 py-2 border border-zinc-200 rounded-lg text-[13px] mb-3 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400" autocomplete="current-password" />
+        <button type="button" :disabled="loginSubmitting" @click="doPasswordLogin" class="w-full px-4 py-2 bg-blue-600 text-white rounded-lg text-[13px] font-semibold hover:bg-blue-700 disabled:opacity-50">[[ $t('node.login.login_btn') ]]</button>
+      </div>
+      <div class="border-t border-zinc-200 pt-5">
+        <span class="block text-[11px] font-bold text-zinc-600 uppercase tracking-wider mb-2">[[ $t('node.login.method_tron') ]]</span>
+        <admin-tron-login @success="onTronSuccess"></admin-tron-login>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/vue@2.7.16/dist/vue.min.js"></script>
+<script src="/static/node/js/tron-login.js"></script>
+<script src="/static/node/js/admin-login.js"></script>
+{% endblock %}

@@ -142,5 +142,20 @@
   "node.admin.delete_btn": "Delete",
   "node.admin.cancel_btn": "Cancel",
   "node.admin.search_no_results": "No results",
-  "node.admin.no_tron_addresses": "No TRON addresses"
+  "node.admin.no_tron_addresses": "No TRON addresses",
+
+  "node.login.page_title": "Admin login",
+  "node.login.heading": "Node admin login",
+  "node.login.subheading": "Node is initialized. Sign in with password or TronLink.",
+  "node.login.method_password": "Login and password",
+  "node.login.method_tron": "TronLink",
+  "node.login.login_placeholder": "Login",
+  "node.login.password_placeholder": "Password",
+  "node.login.login_btn": "Sign in",
+  "node.login.connecting": "Connecting...",
+  "node.login.connect_tron": "Sign in with TronLink",
+  "node.login.install_tronlink": "Install TronLink and unlock your wallet",
+  "node.login.invalid_credentials": "Invalid login or password",
+  "node.login.error_verify": "Signature verification error",
+  "node.login.error_prefix": "Error: "
 }

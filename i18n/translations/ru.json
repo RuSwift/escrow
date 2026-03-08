@@ -142,5 +142,20 @@
   "node.admin.delete_btn": "Удалить",
   "node.admin.cancel_btn": "Отмена",
   "node.admin.search_no_results": "Ничего не найдено",
-  "node.admin.no_tron_addresses": "Нет TRON-адресов"
+  "node.admin.no_tron_addresses": "Нет TRON-адресов",
+
+  "node.login.page_title": "Вход в панель администратора",
+  "node.login.heading": "Вход в панель ноды",
+  "node.login.subheading": "Нода инициализирована. Войдите по паролю или через TronLink.",
+  "node.login.method_password": "Логин и пароль",
+  "node.login.method_tron": "TronLink",
+  "node.login.login_placeholder": "Логин",
+  "node.login.password_placeholder": "Пароль",
+  "node.login.login_btn": "Войти",
+  "node.login.connecting": "Подключение...",
+  "node.login.connect_tron": "Войти через TronLink",
+  "node.login.install_tronlink": "Установите TronLink и разблокируйте кошелёк",
+  "node.login.invalid_credentials": "Неверный логин или пароль",
+  "node.login.error_verify": "Ошибка верификации подписи",
+  "node.login.error_prefix": "Ошибка: "
 }
