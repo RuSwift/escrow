@@ -1,13 +1,16 @@
 """
-FastAPI Depends: БД, Redis, Settings, NodeRepository.
+FastAPI Depends: БД, Redis, Settings, NodeRepository, текущий пользователь (Web3/TRON).
 Использование через Annotated в сигнатурах эндпоинтов.
 """
-from typing import Annotated, AsyncGenerator
+from typing import Annotated, AsyncGenerator, Literal
 
-from fastapi import Depends
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, Field
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.utils import get_user_did
 from db import get_db
 from repos.node import NodeRepository
 from services.node import NodeService
@@ -15,6 +18,22 @@ from services.tron_auth import TronAuth
 from services.wallet_user import WalletUserService
 from services.web3_auth import Web3Auth
 from settings import Settings
+
+security = HTTPBearer()
+
+
+class UserInfo(BaseModel):
+    """Информация о текущем пользователе."""
+
+    space: Literal["web3", "tron"] = Field(
+        ..., description="Пространство авторизации: web3 (Ethereum) или tron"
+    )
+    wallet_address: str = Field(
+        ..., description="Адрес кошелька пользователя"
+    )
+    did: str = Field(
+        ..., description="DID в формате did:method:address"
+    )
 
 
 def get_settings() -> Settings:
@@ -73,6 +92,59 @@ Web3AuthDep = Annotated[Web3Auth, Depends(get_web3_auth)]
 TronAuthDep = Annotated[TronAuth, Depends(get_tron_auth)]
 
 
+async def get_current_web3_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    web3_auth: Web3Auth = Depends(get_web3_auth),
+) -> UserInfo:
+    """Зависимость: текущий пользователь из JWT (Ethereum)."""
+    token = credentials.credentials
+    payload = web3_auth.verify_jwt_token(token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+    wallet_address = payload.get("wallet_address")
+    if not wallet_address:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+        )
+    did = get_user_did(wallet_address, "web3")
+    return UserInfo(space="web3", wallet_address=wallet_address, did=did)
+
+
+async def get_current_tron_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    tron_auth: TronAuth = Depends(get_tron_auth),
+) -> UserInfo:
+    """Зависимость: текущий TRON-пользователь из JWT."""
+    token = credentials.credentials
+    payload = tron_auth.verify_jwt_token(token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+    wallet_address = payload.get("wallet_address")
+    if not wallet_address:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+        )
+    if payload.get("blockchain") != "tron":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token: not a TRON token",
+        )
+    did = get_user_did(wallet_address, "tron")
+    return UserInfo(space="tron", wallet_address=wallet_address, did=did)
+
+
+CurrentWeb3User = Annotated[UserInfo, Depends(get_current_web3_user)]
+CurrentTronUser = Annotated[UserInfo, Depends(get_current_tron_user)]
+
+
 __all__ = [
     "get_db",
     "get_redis",
@@ -81,6 +153,10 @@ __all__ = [
     "get_node_service",
     "get_web3_auth",
     "get_tron_auth",
+    "get_current_web3_user",
+    "get_current_tron_user",
+    "security",
+    "UserInfo",
     "DbSession",
     "RedisClient",
     "AppSettings",
@@ -88,4 +164,6 @@ __all__ = [
     "NodeServiceDep",
     "Web3AuthDep",
     "TronAuthDep",
+    "CurrentWeb3User",
+    "CurrentTronUser",
 ]

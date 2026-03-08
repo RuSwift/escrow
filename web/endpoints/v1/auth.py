@@ -4,18 +4,16 @@
 """
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
 
-from services.tron_auth import TronAuth
-from services.web3_auth import Web3Auth
 from web.endpoints.dependencies import (
+    CurrentTronUser,
+    CurrentWeb3User,
+    UserInfo,
     TronAuthDep,
     WalletUserServiceDep,
     Web3AuthDep,
-    get_tron_auth,
-    get_web3_auth,
 )
 
 router = APIRouter(prefix="/auth", tags=["Авторизация"])
@@ -52,17 +50,6 @@ class AuthResponse(BaseModel):
 
     token: str = Field(..., description="JWT токен для авторизации")
     wallet_address: str = Field(..., description="Адрес кошелька")
-
-
-class UserInfo(BaseModel):
-    """Информация о текущем пользователе."""
-
-    wallet_address: str = Field(
-        ..., description="Адрес кошелька пользователя"
-    )
-
-
-security = HTTPBearer()
 
 
 # --- Ethereum ---
@@ -130,30 +117,9 @@ async def verify_signature(
     return AuthResponse(token=token, wallet_address=wallet_address)
 
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    web3_auth: Web3Auth = Depends(get_web3_auth),
-) -> UserInfo:
-    """Зависимость: текущий пользователь из JWT (Ethereum)."""
-    token = credentials.credentials
-    payload = web3_auth.verify_jwt_token(token)
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-        )
-    wallet_address = payload.get("wallet_address")
-    if not wallet_address:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token payload",
-        )
-    return UserInfo(wallet_address=wallet_address)
-
-
 @router.get("/me", response_model=UserInfo)
 async def get_current_user_info(
-    current_user: UserInfo = Depends(get_current_user),
+    current_user: CurrentWeb3User,
 ):
     """Информация о текущем авторизованном пользователе (Ethereum)."""
     return current_user
@@ -221,35 +187,9 @@ async def verify_tron_signature(
     return AuthResponse(token=token, wallet_address=wallet_address)
 
 
-async def get_current_tron_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-    tron_auth: TronAuth = Depends(get_tron_auth),
-) -> UserInfo:
-    """Зависимость: текущий TRON-пользователь из JWT."""
-    token = credentials.credentials
-    payload = tron_auth.verify_jwt_token(token)
-    if not payload:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired token",
-        )
-    wallet_address = payload.get("wallet_address")
-    if not wallet_address:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token payload",
-        )
-    if payload.get("blockchain") != "tron":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token: not a TRON token",
-        )
-    return UserInfo(wallet_address=wallet_address)
-
-
 @router.get("/tron/me", response_model=UserInfo)
 async def get_current_tron_user_info(
-    current_user: UserInfo = Depends(get_current_tron_user),
+    current_user: CurrentTronUser,
 ):
     """Информация о текущем TRON-пользователе."""
     return current_user
