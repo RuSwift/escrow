@@ -47,12 +47,26 @@ class TronAuth:
         """Проверяет формат TRON-адреса (T + 34 символа base58)."""
         return _validate_tron_address_static((address or "").strip())
 
+    def _nonce_key(self, wallet_address: str) -> str:
+        return f"{NONCE_PREFIX}{wallet_address.strip()}"
+
     async def get_nonce(self, wallet_address: str) -> str:
         """Генерирует и сохраняет nonce для адреса."""
         nonce = secrets.token_hex(16)
-        key = f"{NONCE_PREFIX}{wallet_address.strip()}"
-        await self._redis.setex(key, NONCE_TTL_SEC, nonce)
+        await self._redis.setex(
+            self._nonce_key(wallet_address), NONCE_TTL_SEC, nonce
+        )
         return nonce
+
+    async def get_stored_nonce(self, wallet_address: str) -> Optional[str]:
+        """Читает сохранённый nonce для адреса (без удаления)."""
+        key = self._nonce_key(wallet_address)
+        value = await self._redis.get(key)
+        return value if isinstance(value, str) else None
+
+    async def consume_nonce(self, wallet_address: str) -> None:
+        """Удаляет nonce для адреса (одноразовое использование)."""
+        await self._redis.delete(self._nonce_key(wallet_address))
 
     def verify_signature(
         self,

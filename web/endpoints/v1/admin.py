@@ -84,13 +84,19 @@ async def admin_tron_nonce(
     """
     Nonce для TRON-подписи. Адрес должен быть в whitelist.
     """
-    is_whitelisted = await admin_service.verify_tron_auth(request.tron_address)
+    tron_address = (request.tron_address or "").strip()
+    if not tron_address:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="TRON address is required",
+        )
+    is_whitelisted = await admin_service.verify_tron_auth(tron_address)
     if not is_whitelisted:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="TRON address not authorized for admin access",
         )
-    nonce = await tron_auth.get_nonce(request.tron_address)
+    nonce = await tron_auth.get_nonce(tron_address)
     message = f"Please sign this message to authenticate:\n\nNonce: {nonce}"
     return AdminTronNonceResponse(nonce=nonce, message=message)
 
@@ -104,26 +110,46 @@ async def admin_tron_verify(
 ):
     """
     Верификация TRON-подписи и выдача JWT админа.
+    Сообщение должно содержать nonce, выданный для этого адреса; nonce одноразовый.
     """
-    is_whitelisted = await admin_service.verify_tron_auth(request.tron_address)
+    tron_address = (request.tron_address or "").strip()
+    if not tron_address:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="TRON address is required",
+        )
+    is_whitelisted = await admin_service.verify_tron_auth(tron_address)
     if not is_whitelisted:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="TRON address not authorized for admin access",
         )
+    stored_nonce = await tron_auth.get_stored_nonce(tron_address)
+    if not stored_nonce:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Nonce expired or already used. Request a new nonce.",
+        )
+    message = request.message or ""
+    if stored_nonce not in message:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Message does not contain the issued nonce.",
+        )
     is_valid = tron_auth.verify_signature(
-        request.tron_address,
+        tron_address,
         request.signature,
-        request.message,
+        message,
     )
     if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid signature",
         )
+    await tron_auth.consume_nonce(tron_address)
     payload = {
         "admin": True,
-        "tron_address": request.tron_address,
+        "tron_address": tron_address,
         "blockchain": "tron",
     }
     token = _encode_admin_jwt(settings.secret.get_secret_value(), payload)
