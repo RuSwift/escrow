@@ -25,7 +25,9 @@
                 editWallet: null,
                 deleteWallet: null,
                 submitting: false,
-                submitError: ''
+                submitError: '',
+                copyFeedback: '',
+                _copyFeedbackTimer: null
             };
         },
         computed: {
@@ -58,6 +60,26 @@
             this.loadWallets();
         },
         methods: {
+            _walletErrorDetail: function(data) {
+                if (!data) return '';
+                var d = data.detail;
+                if (typeof d === 'string') return d;
+                if (Array.isArray(d) && d.length > 0) {
+                    return d.map(function(x) { return x.msg || (x.loc ? (x.loc.join('.') + ': ' + (x.msg || '')) : JSON.stringify(x)); }).join('; ');
+                }
+                return '';
+            },
+            _walletCreateErrorDetail: function(data) {
+                var raw = this._walletErrorDetail(data);
+                if (!raw) return '';
+                var lower = raw.toLowerCase();
+                if (lower.indexOf('name already exists') !== -1 || (lower.indexOf('this name') !== -1 && lower.indexOf('already') !== -1)) return this.$t('node.wallets.error_duplicate_name');
+                if (lower.indexOf('addresses already') !== -1) return this.$t('node.wallets.error_duplicate_addresses');
+                if (lower.indexOf('invalid mnemonic') !== -1 || (lower.indexOf('мнемоническ') !== -1 && lower.indexOf('неверн') !== -1)) return this.$t('node.wallets.error_invalid_mnemonic');
+                if (lower.indexOf('mnemonic') !== -1 && lower.indexOf('required') !== -1) return this.$t('node.wallets.error_mnemonic_required');
+                if (lower.indexOf('name') !== -1 && lower.indexOf('required') !== -1) return this.$t('node.wallets.error_name_required');
+                return raw;
+            },
             loadWallets: function() {
                 var self = this;
                 self.loading = true;
@@ -94,6 +116,35 @@
                 if (!addr || addr.length < 14) return addr;
                 return addr.substring(0, 6) + '...' + addr.substring(addr.length - 4);
             },
+            copyToClipboard: function(text, label) {
+                var self = this;
+                if (!text) return;
+                function showFeedback() {
+                    self.copyFeedback = label || 'OK';
+                    if (self._copyFeedbackTimer) clearTimeout(self._copyFeedbackTimer);
+                    self._copyFeedbackTimer = setTimeout(function() { self.copyFeedback = ''; }, 2000);
+                }
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).then(showFeedback).catch(function() {
+                        fallbackCopy();
+                    });
+                } else {
+                    fallbackCopy();
+                }
+                function fallbackCopy() {
+                    var ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.style.position = 'fixed';
+                    ta.style.opacity = '0';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    try {
+                        document.execCommand('copy');
+                        showFeedback();
+                    } catch (e) {}
+                    document.body.removeChild(ta);
+                }
+            },
             blockchainForAddress: function(addr) {
                 if (!addr) return '';
                 if (addr.startsWith('T') && addr.length === 34) return 'TRON';
@@ -110,24 +161,36 @@
             },
             submitAddWallet: function() {
                 var self = this;
-                if (!this.addForm.name.trim()) return;
-                if (!this.addForm.mnemonic.trim()) return;
-                self.submitting = true;
                 self.submitError = '';
+                if (!this.addForm.name.trim()) {
+                    self.submitError = this.$t('node.wallets.error_name_required');
+                    return;
+                }
+                if (!this.addForm.mnemonic.trim()) {
+                    self.submitError = this.$t('node.wallets.error_mnemonic_required');
+                    return;
+                }
+                self.submitting = true;
                 fetch(WALLETS_API, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     credentials: 'same-origin',
                     body: JSON.stringify({ name: self.addForm.name.trim(), mnemonic: self.addForm.mnemonic.trim() })
                 })
-                    .then(function(r) { return r.json().then(function(d) { return { ok: r.ok, data: d }; }); })
+                    .then(function(r) {
+                        return r.json().then(function(d) {
+                            return { ok: r.ok, status: r.status, data: d };
+                        }).catch(function() {
+                            return { ok: false, status: r.status, data: { detail: r.statusText || self.$t('node.wallets.error_create') } };
+                        });
+                    })
                     .then(function(result) {
                         self.submitting = false;
-                        if (result.ok && result.data.id) {
+                        if (result.ok && result.data && result.data.id != null) {
                             self.walletList.unshift(result.data);
                             self.closeAddWallet();
                         } else {
-                            self.submitError = (result.data.detail || self.$t('node.wallets.error_create'));
+                            self.submitError = self._walletCreateErrorDetail(result.data) || self.$t('node.wallets.error_create');
                         }
                     })
                     .catch(function(err) {
@@ -164,7 +227,7 @@
                             if (idx !== -1) self.walletList.splice(idx, 1, result.data);
                             self.closeEdit();
                         } else {
-                            self.submitError = (result.data.detail || self.$t('node.wallets.error_update'));
+                            self.submitError = self._walletErrorDetail(result.data) || self.$t('node.wallets.error_update');
                         }
                     })
                     .catch(function(err) {
@@ -195,7 +258,7 @@
                             self.walletList = self.walletList.filter(function(w) { return w.id !== id; });
                             self.closeDelete();
                         } else {
-                            return r.json().then(function(d) { self.submitError = d.detail || self.$t('node.wallets.error_delete'); });
+                            return r.json().then(function(d) { self.submitError = self._walletErrorDetail(d) || self.$t('node.wallets.error_delete'); });
                         }
                     })
                     .catch(function(err) {
@@ -250,8 +313,20 @@
                     <tr v-for="w in filteredWallets" :key="w.id" class="border-b border-zinc-100 hover:bg-zinc-50/80 transition-colors">
                       <td class="px-4 py-3 font-medium text-zinc-800">[[ w.name ]]</td>
                       <td class="px-4 py-3 font-mono text-zinc-600">
-                        <span :title="w.tron_address">[[ shortAddress(w.tron_address) ]]</span>
-                        <span v-if="w.ethereum_address" class="block text-[11px] text-zinc-400" :title="w.ethereum_address">[[ shortAddress(w.ethereum_address) ]]</span>
+                        <div class="flex flex-col gap-0.5">
+                          <div class="flex items-center gap-1.5">
+                            <span :title="w.tron_address">[[ shortAddress(w.tron_address) ]]</span>
+                            <button type="button" @click.stop="copyToClipboard(w.tron_address, 'TRON')" class="p-1 text-zinc-400 hover:text-amber-600 rounded" :title="$t('node.wallets.copy_address')">
+                              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                            </button>
+                          </div>
+                          <div v-if="w.ethereum_address" class="flex items-center gap-1.5">
+                            <span class="text-[11px] text-zinc-400" :title="w.ethereum_address">[[ shortAddress(w.ethereum_address) ]]</span>
+                            <button type="button" @click.stop="copyToClipboard(w.ethereum_address, 'ETH')" class="p-1 text-zinc-400 hover:text-blue-600 rounded" :title="$t('node.wallets.copy_address')">
+                              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                            </button>
+                          </div>
+                        </div>
                       </td>
                       <td class="px-4 py-3">
                         <span class="inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800">TRON</span>
@@ -308,11 +383,11 @@
         <div class="space-y-4">
           <div>
             <label class="block text-[11px] font-bold text-zinc-600 uppercase tracking-wider mb-1.5">[[ $t('node.wallets.modal_add_name_label') ]]</label>
-            <input type="text" v-model="addForm.name" :placeholder="$t('node.wallets.modal_add_name_placeholder')" class="w-full px-4 py-2.5 border border-zinc-200 rounded-lg text-[13px] placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400">
+            <input type="text" v-model="addForm.name" @input="submitError = ''" :placeholder="$t('node.wallets.modal_add_name_placeholder')" class="w-full px-4 py-2.5 border border-zinc-200 rounded-lg text-[13px] placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400">
           </div>
           <div>
             <label class="block text-[11px] font-bold text-zinc-600 uppercase tracking-wider mb-1.5">[[ $t('node.wallets.modal_add_mnemonic_label') ]]</label>
-            <textarea v-model="addForm.mnemonic" rows="4" :placeholder="$t('node.wallets.modal_add_mnemonic_placeholder')" class="w-full px-4 py-2.5 border border-zinc-200 rounded-lg text-[13px] placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 resize-none"></textarea>
+            <textarea v-model="addForm.mnemonic" @input="submitError = ''" rows="4" :placeholder="$t('node.wallets.modal_add_mnemonic_placeholder')" class="w-full px-4 py-2.5 border border-zinc-200 rounded-lg text-[13px] placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 resize-none"></textarea>
             <p class="mt-1.5 text-[12px] text-zinc-400">[[ $t('node.wallets.modal_add_mnemonic_hint') ]]</p>
           </div>
           <p v-if="submitError" class="text-red-600 text-[13px]">[[ submitError ]]</p>
@@ -345,6 +420,8 @@
           <button type="button" @click="confirmDelete" :disabled="submitting" class="px-4 py-2 bg-red-600 text-white rounded-lg text-[13px] font-semibold hover:bg-red-700 disabled:opacity-60">[[ $t('node.wallets.delete') ]]</button>
         </template>
       </modal>
+
+      <div v-if="copyFeedback" class="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 bg-zinc-800 text-white text-[13px] rounded-lg shadow-lg">[[ $t('node.wallets.copied') ]]</div>
     </div>
     `
     });

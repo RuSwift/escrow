@@ -71,6 +71,13 @@
   "node.wallets.error_create": "Error creating wallet",
   "node.wallets.error_update": "Error updating wallet",
   "node.wallets.error_delete": "Error deleting wallet",
+  "node.wallets.error_name_required": "Enter wallet name",
+  "node.wallets.error_mnemonic_required": "Enter mnemonic phrase",
+  "node.wallets.error_duplicate_name": "A wallet with this name already exists",
+  "node.wallets.error_duplicate_addresses": "A wallet with these addresses already exists",
+  "node.wallets.error_invalid_mnemonic": "Invalid mnemonic phrase. Use 12 or 24 words.",
+  "node.wallets.copy_address": "Copy address",
+  "node.wallets.copied": "Copied",
 
   "node.init.step_title": "Node initialization — Step {step} of 3",
   "node.init.key_for_node": "Key for node",

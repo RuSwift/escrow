@@ -71,6 +71,13 @@
   "node.wallets.error_create": "Ошибка создания кошелька",
   "node.wallets.error_update": "Ошибка обновления кошелька",
   "node.wallets.error_delete": "Ошибка удаления кошелька",
+  "node.wallets.error_name_required": "Введите имя кошелька",
+  "node.wallets.error_mnemonic_required": "Введите мнемоническую фразу",
+  "node.wallets.error_duplicate_name": "Кошелёк с таким именем уже существует",
+  "node.wallets.error_duplicate_addresses": "Кошелёк с такими адресами уже существует",
+  "node.wallets.error_invalid_mnemonic": "Неверная мнемоническая фраза. Используйте 12 или 24 слова.",
+  "node.wallets.copy_address": "Скопировать адрес",
+  "node.wallets.copied": "Скопировано",
 
   "node.init.step_title": "Инициализация ноды — Шаг {step} из 3",
   "node.init.key_for_node": "Ключ для ноды",

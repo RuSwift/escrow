@@ -59,6 +59,33 @@ async def test_create_wallet_duplicate_addresses_raises(wallet_service):
         await wallet_service.create_wallet("Second", VALID_MNEMONIC)
 
 
+@pytest.mark.asyncio
+async def test_create_wallet_empty_name_raises(wallet_service):
+    """Пустое имя поднимает ValueError."""
+    with pytest.raises(ValueError, match="Wallet name is required"):
+        await wallet_service.create_wallet("", VALID_MNEMONIC)
+    with pytest.raises(ValueError, match="Wallet name is required"):
+        await wallet_service.create_wallet("   ", VALID_MNEMONIC)
+
+
+@pytest.mark.asyncio
+async def test_create_wallet_empty_mnemonic_raises(wallet_service):
+    """Пустая мнемоника поднимает ValueError."""
+    with pytest.raises(ValueError, match="Mnemonic phrase is required"):
+        await wallet_service.create_wallet("W", "")
+    with pytest.raises(ValueError, match="Mnemonic phrase is required"):
+        await wallet_service.create_wallet("W", "   ")
+
+
+@pytest.mark.asyncio
+async def test_create_wallet_duplicate_name_raises(wallet_service):
+    """Повторное создание с тем же именем поднимает ValueError."""
+    await wallet_service.create_wallet("SameName", VALID_MNEMONIC)
+    other_mnemonic = "legal winner thank year wave sausage worth useful legal winner thank yellow"
+    with pytest.raises(ValueError, match="Wallet with this name already exists"):
+        await wallet_service.create_wallet("SameName", other_mnemonic)
+
+
 # --- get_wallets ---
 
 

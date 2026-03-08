@@ -114,6 +114,17 @@ class WalletRepository(BaseRepository):
         result = await self._session.execute(stmt)
         return result.rowcount > 0
 
+    async def exists_operation_wallet_with_name(self, name: str) -> bool:
+        """Проверка: есть ли уже кошелёк с таким именем (среди role=None)."""
+        stmt = (
+            select(Wallet.id)
+            .where(Wallet.role.is_(None))
+            .where(Wallet.name == name.strip())
+            .limit(1)
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
     async def exists_operation_wallet_with_addresses(
         self, tron_address: str, ethereum_address: str
     ) -> bool:

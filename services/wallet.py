@@ -41,18 +41,27 @@ class WalletService:
         return {"tron_address": tron_address, "ethereum_address": ethereum_address}
 
     async def create_wallet(self, name: str, mnemonic: str) -> WalletResource.Get:
-        """Создать кошелёк. Шифрует мнемонику, проверяет дубликаты адресов."""
-        addresses = self._addresses_from_mnemonic(mnemonic)
+        """Создать кошелёк. Шифрует мнемонику, проверяет дубликаты имени и адресов."""
+        name_stripped = name.strip()
+        if not name_stripped:
+            raise ValueError("Wallet name is required")
+        mnemonic_normalized = " ".join((mnemonic or "").split())
+        if not mnemonic_normalized:
+            raise ValueError("Mnemonic phrase is required")
+        name_exists = await self._repo.exists_operation_wallet_with_name(name_stripped)
+        if name_exists:
+            raise ValueError("Wallet with this name already exists")
+        addresses = self._addresses_from_mnemonic(mnemonic_normalized)
         exists = await self._repo.exists_operation_wallet_with_addresses(
             addresses["tron_address"],
             addresses["ethereum_address"],
         )
         if exists:
             raise ValueError("Wallet with these addresses already exists")
-        encrypted = self._repo.encrypt_data(mnemonic)
+        encrypted = self._repo.encrypt_data(mnemonic_normalized)
         created = await self._repo.create(
             WalletResource.Create(
-                name=name.strip(),
+                name=name_stripped,
                 encrypted_mnemonic=encrypted,
                 tron_address=addresses["tron_address"],
                 ethereum_address=addresses["ethereum_address"],
