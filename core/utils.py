@@ -1,6 +1,7 @@
 """
 Utility functions for working with DIDs and other ledger-related identifiers
 """
+import hashlib
 from typing import Optional, Tuple
 import uuid
 import base58
@@ -38,6 +39,22 @@ def get_user_did(wallet_address: str, blockchain: str) -> str:
 
 def get_deal_did(deal_uid: str) -> str:
     return f'did:deal:{deal_uid}'
+
+
+def get_wallet_did(wallet_id: int, node_did: str) -> str:
+    """
+    Уникальный DID кошелька с префиксом ноды.
+    Формат: did:ruswift:{node_prefix}:wallet:{wallet_id}
+    node_prefix берётся из DID ноды (суффикс после did:peer:1: или хеш).
+    """
+    if not node_did or not node_did.strip():
+        node_prefix = "local"
+    elif node_did.startswith("did:peer:1:"):
+        suffix = node_did[len("did:peer:1:"):].strip()
+        node_prefix = suffix if suffix else "local"
+    else:
+        node_prefix = hashlib.sha256(node_did.encode()).hexdigest()[:16]
+    return f"did:{node_prefix}:wallet:{wallet_id}"
 
 
 def generate_base58_uuid() -> str:

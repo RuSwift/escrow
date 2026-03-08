@@ -210,5 +210,45 @@ class WalletUserService:
         await self._session.commit()
         return updated
 
+    async def update_admin_access(
+        self, user_id: int, access_to_admin_panel: bool
+    ) -> Optional[WalletUserResource.Get]:
+        """
+        Обновить доступ в админ-панель по id пользователя (для админа ноды).
+        Возвращает обновлённого пользователя или None.
+        """
+        updated = await self._repo.patch(
+            user_id,
+            WalletUserResource.Patch(access_to_admin_panel=access_to_admin_panel),
+        )
+        if updated:
+            await self._session.commit()
+        return updated
+
+    async def add_manager(
+        self,
+        wallet_address: str,
+        blockchain: str,
+        nickname: str,
+    ) -> WalletUserResource.Get:
+        """
+        Добавить менеджера: выдать доступ в админку.
+        Если пользователь с таким адресом уже есть — только включаем access_to_admin_panel.
+        Иначе создаём нового WalletUser с access_to_admin_panel=True.
+
+        Raises:
+            ValueError: при невалидных данных или занятом никнейме.
+        """
+        existing = await self._repo.get_by_wallet_address(wallet_address.strip())
+        if existing:
+            updated = await self.update_admin_access(existing.id, True)
+            return updated
+        return await self.create_user(
+            wallet_address,
+            blockchain,
+            nickname,
+            access_to_admin_panel=True,
+        )
+
 
 __all__ = ["WalletUserService"]

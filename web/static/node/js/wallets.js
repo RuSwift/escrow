@@ -20,6 +20,15 @@
                 showAddWalletModal: false,
                 showEditModal: false,
                 showDeleteModal: false,
+                showDidDocModal: false,
+                didDocWallet: null,
+                managerLoadError: '',
+                showManagerDidDocModal: false,
+                managerDidDocManager: null,
+                showRevokeManagerModal: false,
+                revokeManagerTarget: null,
+                showAddManagerModal: false,
+                addManagerForm: { wallet_address: '', blockchain: 'tron', nickname: '' },
                 addForm: { name: '', mnemonic: '' },
                 editForm: { name: '' },
                 editWallet: null,
@@ -100,16 +109,115 @@
             },
             loadManagers: function() {
                 var self = this;
+                self.managerLoadError = '';
                 fetch(WALLETS_API + '/managers', { credentials: 'same-origin' })
                     .then(function(r) {
-                        if (!r.ok) return r.json().then(function(d) { throw new Error(d.detail || ''); });
+                        if (!r.ok) return r.json().then(function(d) { throw new Error(d.detail || self.$t('node.wallets.managers_load_error')); });
                         return r.json();
                     })
                     .then(function(data) {
                         self.managerList = data.managers || [];
                     })
-                    .catch(function() {
+                    .catch(function(err) {
+                        self.managerLoadError = err.message || self.$t('node.wallets.managers_load_error');
                         self.managerList = [];
+                    });
+            },
+            openManagerDidDoc: function(m) {
+                this.managerDidDocManager = m;
+                this.showManagerDidDocModal = true;
+            },
+            closeManagerDidDoc: function() {
+                this.showManagerDidDocModal = false;
+                this.managerDidDocManager = null;
+            },
+            openAddManager: function() {
+                this.addManagerForm = { wallet_address: '', blockchain: 'tron', nickname: '' };
+                this.submitError = '';
+                this.showAddManagerModal = true;
+            },
+            closeAddManagerModal: function() {
+                this.showAddManagerModal = false;
+            },
+            submitAddManager: function() {
+                var self = this;
+                self.submitError = '';
+                var addr = (this.addManagerForm.wallet_address || '').trim();
+                var nick = (this.addManagerForm.nickname || '').trim();
+                if (!addr) {
+                    self.submitError = this.$t('node.wallets.manager_add_error_address');
+                    return;
+                }
+                if (!nick) {
+                    self.submitError = this.$t('node.wallets.manager_add_error_nickname');
+                    return;
+                }
+                var chain = (this.addManagerForm.blockchain || 'tron').toLowerCase();
+                if (chain !== 'tron' && chain !== 'ethereum') chain = 'tron';
+                self.submitting = true;
+                fetch(WALLETS_API + '/managers', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ wallet_address: addr, blockchain: chain, nickname: nick })
+                })
+                    .then(function(r) {
+                        return r.json().then(function(d) {
+                            return { ok: r.ok, status: r.status, data: d };
+                        }).catch(function() { return { ok: false, status: r.status, data: { detail: r.statusText } }; });
+                    })
+                    .then(function(result) {
+                        self.submitting = false;
+                        if (result.ok && result.data && result.data.id != null) {
+                            self.managerList.unshift(result.data);
+                            self.closeAddManagerModal();
+                        } else {
+                            self.submitError = (result.data && result.data.detail) || self.$t('node.wallets.manager_add_error');
+                        }
+                    })
+                    .catch(function(err) {
+                        self.submitting = false;
+                        self.submitError = err.message || self.$t('node.wallets.manager_add_error');
+                    });
+            },
+            openRevokeManager: function(m) {
+                this.revokeManagerTarget = m;
+                this.submitError = '';
+                this.showRevokeManagerModal = true;
+            },
+            closeRevokeManager: function() {
+                this.showRevokeManagerModal = false;
+                this.revokeManagerTarget = null;
+            },
+            confirmRevokeManager: function() {
+                var self = this;
+                if (!this.revokeManagerTarget) { self.closeRevokeManager(); return; }
+                var id = this.revokeManagerTarget.id;
+                self.submitting = true;
+                self.submitError = '';
+                fetch(WALLETS_API + '/managers/' + id, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ access_to_admin_panel: false })
+                })
+                    .then(function(r) {
+                        return r.json().then(function(d) {
+                            return { ok: r.ok, data: d };
+                        }).catch(function() { return { ok: false, data: { detail: r.statusText } }; });
+                    })
+                    .then(function(result) {
+                        self.submitting = false;
+                        if (result.ok) {
+                            self.managerList = self.managerList.filter(function(m) { return m.id !== id; });
+                            self.closeRevokeManager();
+                        } else {
+                            self.submitError = (result.data && result.data.detail) || self.$t('node.wallets.manager_revoke_error');
+                        }
+                    })
+                    .catch(function(err) {
+                        self.submitting = false;
+                        self.submitError = err.message || self.$t('node.wallets.manager_revoke_error');
                     });
             },
             shortAddress: function(addr) {
@@ -197,6 +305,14 @@
                         self.submitting = false;
                         self.submitError = err.message || self.$t('node.wallets.error_create');
                     });
+            },
+            openDidDoc: function(w) {
+                this.didDocWallet = w;
+                this.showDidDocModal = true;
+            },
+            closeDidDoc: function() {
+                this.showDidDocModal = false;
+                this.didDocWallet = null;
             },
             openEdit: function(w) {
                 this.editWallet = w;
@@ -289,7 +405,12 @@
             <div v-show="activeTab === 'wallets'" class="space-y-4">
               <div class="flex flex-wrap items-center justify-between gap-4">
                 <div class="flex flex-wrap items-center gap-3">
-                  <input type="text" v-model="searchQuery" :placeholder="$t('node.wallets.search_placeholder')" class="px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-[13px] w-64 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400">
+                  <div class="relative flex items-center w-64">
+                    <input type="text" v-model="searchQuery" :placeholder="$t('node.wallets.search_placeholder')" class="w-full pl-4 pr-9 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-[13px] placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400">
+                    <button type="button" v-show="searchQuery" @click="searchQuery = ''" class="absolute right-2 p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-200/80 shrink-0" :title="$t('node.search_clear')" :aria-label="$t('node.search_clear')">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
                   <span class="text-[13px] text-zinc-500">[[ $t('node.wallets.all_wallets') ]]</span>
                 </div>
                 <button type="button" @click="openAddWallet" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-[13px] font-semibold hover:bg-blue-700 flex items-center gap-2">
@@ -333,12 +454,17 @@
                         <span class="inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-100 text-blue-800 ml-1">Ethereum</span>
                       </td>
                       <td class="px-4 py-3">
-                        <button type="button" @click="openEdit(w)" class="p-1.5 text-zinc-400 hover:text-blue-600 rounded" :title="$t('node.wallets.edit')">
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                        </button>
-                        <button type="button" @click="openDelete(w)" class="p-1.5 text-zinc-400 hover:text-red-600 rounded" :title="$t('node.wallets.delete')">
-                          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                        </button>
+                        <div class="flex items-center gap-0.5">
+                          <button type="button" @click="openDidDoc(w)" class="p-1.5 text-zinc-400 hover:text-indigo-600 rounded shrink-0" :title="$t('node.wallets.view_diddoc')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                          </button>
+                          <button type="button" @click="openEdit(w)" class="p-1.5 text-zinc-400 hover:text-blue-600 rounded shrink-0" :title="$t('node.wallets.edit')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                          </button>
+                          <button type="button" @click="openDelete(w)" class="p-1.5 text-zinc-400 hover:text-red-600 rounded shrink-0" :title="$t('node.wallets.delete')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                     <tr v-if="!loading && filteredWallets.length === 0">
@@ -350,25 +476,55 @@
             </div>
 
             <div v-show="activeTab === 'managers'" class="space-y-4">
-              <div class="flex flex-wrap items-center gap-3">
-                <input type="text" v-model="searchQuery" :placeholder="$t('node.wallets.search_placeholder')" class="px-4 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-[13px] w-64 placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400">
+              <div class="flex flex-wrap items-center justify-between gap-4">
+                <div class="flex flex-wrap items-center gap-3">
+                  <div class="relative flex items-center w-64">
+                    <input type="text" v-model="searchQuery" :placeholder="$t('node.wallets.search_placeholder')" class="w-full pl-4 pr-9 py-2.5 bg-zinc-50 border border-zinc-200 rounded-xl text-[13px] placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400">
+                    <button type="button" v-show="searchQuery" @click="searchQuery = ''" class="absolute right-2 p-1.5 rounded-lg text-zinc-400 hover:text-zinc-600 hover:bg-zinc-200/80 shrink-0" :title="$t('node.search_clear')" :aria-label="$t('node.search_clear')">
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </div>
+                </div>
+                <button type="button" @click="openAddManager" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-[13px] font-semibold hover:bg-blue-700 flex items-center gap-2">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>
+                  [[ $t('node.wallets.add_manager') ]]
+                </button>
               </div>
-              <div v-if="filteredManagers.length === 0" class="py-8 text-center text-zinc-500 text-[13px]">[[ $t('node.wallets.managers_empty') ]]</div>
-              <div v-else class="overflow-x-auto rounded-xl border border-zinc-200">
+              <p v-if="managerLoadError" class="text-red-600 text-[13px]">[[ managerLoadError ]]</p>
+              <div v-if="!managerLoadError && filteredManagers.length === 0" class="py-8 text-center text-zinc-500 text-[13px]">[[ $t('node.wallets.managers_empty') ]]</div>
+              <div v-else-if="!managerLoadError" class="overflow-x-auto rounded-xl border border-zinc-200">
                 <table class="w-full text-left text-[13px]">
                   <thead class="bg-zinc-50 border-b border-zinc-200">
                     <tr>
                       <th class="px-4 py-3 font-bold text-zinc-500 uppercase tracking-wider">[[ $t('node.wallets.col_name') ]]</th>
                       <th class="px-4 py-3 font-bold text-zinc-500 uppercase tracking-wider">[[ $t('node.wallets.col_address') ]]</th>
                       <th class="px-4 py-3 font-bold text-zinc-500 uppercase tracking-wider">[[ $t('node.wallets.col_blockchain') ]]</th>
+                      <th class="px-4 py-3 font-bold text-zinc-500 uppercase tracking-wider w-24">[[ $t('node.wallets.col_actions') ]]</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr v-for="m in filteredManagers" :key="m.id" class="border-b border-zinc-100 hover:bg-zinc-50/80">
                       <td class="px-4 py-3 font-medium text-zinc-800">[[ m.nickname ]]</td>
-                      <td class="px-4 py-3 font-mono text-zinc-600">[[ shortAddress(m.wallet_address) ]]</td>
+                      <td class="px-4 py-3 font-mono text-zinc-600">
+                        <div class="flex items-center gap-1.5">
+                          <span :title="m.wallet_address">[[ shortAddress(m.wallet_address) ]]</span>
+                          <button type="button" @click.stop="copyToClipboard(m.wallet_address, 'OK')" class="p-1 text-zinc-400 hover:text-blue-600 rounded shrink-0" :title="$t('node.wallets.copy_address')">
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                          </button>
+                        </div>
+                      </td>
                       <td class="px-4 py-3">
                         <span class="inline-flex px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-zinc-100 text-zinc-800">[[ m.blockchain ]]</span>
+                      </td>
+                      <td class="px-4 py-3">
+                        <div class="flex items-center gap-0.5">
+                          <button type="button" @click="openManagerDidDoc(m)" class="p-1.5 text-zinc-400 hover:text-indigo-600 rounded shrink-0" :title="$t('node.wallets.view_diddoc')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                          </button>
+                          <button type="button" @click="openRevokeManager(m)" class="p-1.5 text-zinc-400 hover:text-red-600 rounded shrink-0" :title="$t('node.wallets.manager_revoke_btn')">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" /></svg>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   </tbody>
@@ -418,6 +574,43 @@
         <template slot="footer">
           <button type="button" @click="closeDelete" class="px-4 py-2 border border-zinc-200 rounded-lg text-[13px] font-medium text-zinc-700 hover:bg-zinc-100">[[ $t('node.wallets.cancel') ]]</button>
           <button type="button" @click="confirmDelete" :disabled="submitting" class="px-4 py-2 bg-red-600 text-white rounded-lg text-[13px] font-semibold hover:bg-red-700 disabled:opacity-60">[[ $t('node.wallets.delete') ]]</button>
+        </template>
+      </modal>
+
+      <wallet-diddoc-modal :show="showDidDocModal" :wallet="didDocWallet" @close="closeDidDoc"></wallet-diddoc-modal>
+      <manager-diddoc-modal :show="showManagerDidDocModal" :manager="managerDidDocManager" @close="closeManagerDidDoc"></manager-diddoc-modal>
+
+      <modal :show="showAddManagerModal" :title="$t('node.wallets.modal_add_manager_title')" @close="closeAddManagerModal">
+        <div class="space-y-4">
+          <div>
+            <label class="block text-[11px] font-bold text-zinc-600 uppercase tracking-wider mb-1.5">[[ $t('node.wallets.modal_add_manager_address_label') ]]</label>
+            <input type="text" v-model="addManagerForm.wallet_address" @input="submitError = ''" :placeholder="$t('node.wallets.modal_add_manager_address_placeholder')" class="w-full px-4 py-2.5 border border-zinc-200 rounded-lg text-[13px] font-mono placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400">
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-zinc-600 uppercase tracking-wider mb-1.5">[[ $t('node.wallets.modal_add_manager_blockchain_label') ]]</label>
+            <select v-model="addManagerForm.blockchain" class="w-full px-4 py-2.5 border border-zinc-200 rounded-lg text-[13px] focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400">
+              <option value="tron">TRON</option>
+              <option value="ethereum">Ethereum</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] font-bold text-zinc-600 uppercase tracking-wider mb-1.5">[[ $t('node.wallets.modal_add_manager_nickname_label') ]]</label>
+            <input type="text" v-model="addManagerForm.nickname" @input="submitError = ''" :placeholder="$t('node.wallets.modal_add_manager_nickname_placeholder')" class="w-full px-4 py-2.5 border border-zinc-200 rounded-lg text-[13px] placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400">
+          </div>
+          <p v-if="submitError" class="text-red-600 text-[13px]">[[ submitError ]]</p>
+        </div>
+        <template slot="footer">
+          <button type="button" @click="closeAddManagerModal" class="px-4 py-2 border border-zinc-200 rounded-lg text-[13px] font-medium text-zinc-700 hover:bg-zinc-100">[[ $t('node.wallets.cancel') ]]</button>
+          <button type="button" @click="submitAddManager" :disabled="submitting" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-[13px] font-semibold hover:bg-blue-700 disabled:opacity-60">[[ $t('node.wallets.add_manager') ]]</button>
+        </template>
+      </modal>
+
+      <modal :show="showRevokeManagerModal" :title="$t('node.wallets.manager_revoke_title')" @close="closeRevokeManager">
+        <p class="text-zinc-700">[[ revokeManagerTarget ? $t('node.wallets.manager_revoke_message', { name: revokeManagerTarget.nickname }) : '' ]]</p>
+        <p v-if="submitError" class="mt-2 text-red-600 text-[13px]">[[ submitError ]]</p>
+        <template slot="footer">
+          <button type="button" @click="closeRevokeManager" class="px-4 py-2 border border-zinc-200 rounded-lg text-[13px] font-medium text-zinc-700 hover:bg-zinc-100">[[ $t('node.wallets.cancel') ]]</button>
+          <button type="button" @click="confirmRevokeManager" :disabled="submitting" class="px-4 py-2 bg-red-600 text-white rounded-lg text-[13px] font-semibold hover:bg-red-700 disabled:opacity-60">[[ $t('node.wallets.manager_revoke_btn') ]]</button>
         </template>
       </modal>
 
