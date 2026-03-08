@@ -68,21 +68,31 @@
         mounted: function() {
             var self = this;
             var initScript = document.getElementById('is-node-initialized');
+            var hasKey = false;
             var nodeInitialized = false;
+            var adminConfiguredFromTemplate = false;
             if (initScript) {
                 try {
-                    nodeInitialized = JSON.parse(initScript.textContent);
+                    var data = JSON.parse(initScript.textContent);
+                    if (typeof data === 'boolean') {
+                        hasKey = data;
+                        nodeInitialized = data;
+                    } else {
+                        hasKey = !!data.has_key;
+                        nodeInitialized = !!data.is_node_initialized;
+                        adminConfiguredFromTemplate = !!data.is_admin_configured;
+                    }
                 } catch (e) {}
             }
             Promise.all([
                 fetch(NODE_API + '/is-admin-configured').then(function(r) { return r.ok ? r.json() : { configured: false }; }).catch(function() { return { configured: false }; }),
                 fetch(NODE_API + '/is-service-endpoint-configured').then(function(r) { return r.ok ? r.json() : { configured: false }; }).catch(function() { return { configured: false }; })
             ]).then(function(results) {
-                var adminConfigured = results[0].configured;
+                var adminConfigured = results[0].configured || adminConfiguredFromTemplate;
                 var endpointConfigured = results[1].configured;
                 if (!nodeInitialized || !adminConfigured || !endpointConfigured) {
                     self.show = true;
-                    if (!nodeInitialized) {
+                    if (!hasKey) {
                         self.currentStep = 1;
                         self.$nextTick(function() { self.initCanvas(); });
                     } else if (!adminConfigured) {
@@ -489,7 +499,8 @@
             '    <div v-if="currentMethod === \'pem\'" class="space-y-3">',
             '      <div class="text-xs text-zinc-500">[[ $t(\'node.init.pem_hint\') ]]</div>',
             '      <input type="file" ref="pemFileInput" @change="handlePemFileSelect" accept=".pem,.key" class="block w-full text-sm text-zinc-700 border border-zinc-300 rounded-lg p-2" />',
-            '      <input v-if="pemFile" type="password" v-model="pemPassword" :placeholder="$t(\'node.init.pem_password_placeholder\')" class="block w-full border border-zinc-300 rounded-lg p-2 text-sm" />',
+            '      <input v-if="pemFile" type="password" v-model="pemPassword" :placeholder="$t(\'node.init.pem_password_placeholder\')" autocomplete="off" class="block w-full border border-zinc-300 rounded-lg p-2 text-sm" />',
+            '      <p v-if="pemFile" class="mt-1 text-xs text-zinc-500">[[ $t(\'node.init.pem_password_hint\') ]]</p>',
             '      <button type="button" :disabled="!pemContent" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium disabled:opacity-50" @click="generateFromPem">[[ $t(\'node.init.load_pem_btn\') ]]</button>',
             '    </div>',
             '    <div v-if="currentMethod === \'mouse\'" class="space-y-3">',

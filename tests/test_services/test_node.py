@@ -1,10 +1,15 @@
 """
 Тесты NodeService на реальной БД и Redis (fixtures из tests/conftest.py).
 """
+from pathlib import Path
+
 import pytest
 from didcomm.crypto import EthKeyPair, KeyPair as BaseKeyPair
 
 from services.node import NodeService
+
+# Путь к тестовому PEM (EC SECP256K1, создаётся/обновляется для тестов флоу)
+TEST_PEM_PATH = Path(__file__).resolve().parent.parent / "data" / "test.pem"
 
 
 @pytest.fixture
@@ -100,6 +105,20 @@ async def test_init_from_pem_no_private_key_raises(node_service):
     pem_public = "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA\n-----END PUBLIC KEY-----"
     with pytest.raises(ValueError, match="PEM данные не содержат приватный ключ"):
         await node_service.init_from_pem(pem_public)
+
+
+@pytest.mark.asyncio
+async def test_init_from_pem_with_test_pem_file(node_service):
+    """Флоу инициализации ноды из файла tests/data/test.pem."""
+    if not TEST_PEM_PATH.exists():
+        pytest.skip(f"Test PEM file not found: {TEST_PEM_PATH}")
+    pem_str = TEST_PEM_PATH.read_text()
+    out = await node_service.init_from_pem(pem_str)
+    assert out.did.startswith("did:peer:1:")
+    assert out.key_type == "pem"
+    assert out.public_key
+    assert "id" in out.did_document
+    assert await node_service.has_key() is True
 
 
 # --- get_active_keypair ---

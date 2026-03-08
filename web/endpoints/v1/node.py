@@ -93,15 +93,22 @@ async def init_node_from_pem(
     request: NodeInitPemRequest,
     node_service: NodeServiceDep,
     settings: AppSettings,
-    _admin: RequireAdminDepends,
+    admin: AdminDepends,
 ):
     """
-    Инициализация ноды из PEM ключа. Требует авторизации админа.
+    Инициализация ноды из PEM ключа.
+    При первой инициализации (нода ещё не инициализирована) вызов без авторизации.
+    Если нода уже инициализирована — требуется авторизация админа.
     """
     if not settings.secret.get_secret_value():
         raise HTTPException(
             status_code=500,
             detail="SECRET not configured in environment variables",
+        )
+    if settings.is_node_initialized and admin is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Node already initialized, please login as admin",
         )
     try:
         result = await node_service.init_from_pem(
