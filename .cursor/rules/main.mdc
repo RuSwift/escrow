@@ -12,3 +12,4 @@ alwaysApply: true
     * main.py: Main application
     * web/templates: jinja templates for node & main apps
     * web/static: styles, icons, js files for node & main apps
+- при создании Vue компонента или верстке HTML заранее используй мультиязычность, переводы лежат в каталоге i18n

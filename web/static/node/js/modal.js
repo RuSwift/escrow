@@ -15,11 +15,12 @@ Vue.component('modal', {
     delimiters: ['[[', ']]'],
     props: {
         show: { type: Boolean, default: false },
-        title: { type: String, default: '' }
+        title: { type: String, default: '' },
+        size: { type: String, default: 'default' }  // 'default' | 'large'
     },
     template: `
     <div v-show="show" class="modal-overlay" @click.self="$emit('close')" role="dialog" aria-modal="true" :aria-label="title">
-      <div class="modal-box">
+      <div class="modal-box" :class="{ 'modal-box--large': size === 'large' }">
         <div class="modal-header">
           <h2 class="modal-title">[[ title ]]</h2>
           <button type="button" class="modal-close" @click="$emit('close')" aria-label="Закрыть">
