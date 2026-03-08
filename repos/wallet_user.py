@@ -1,7 +1,7 @@
 import logging
 from datetime import datetime
 from decimal import Decimal
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import Field
 from sqlalchemy import select, update, delete
@@ -99,6 +99,16 @@ class WalletUserRepository(BaseRepository):
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
         return _model_to_get(model) if model else None
+
+    async def list_users(
+        self, *, access_to_admin_panel: Optional[bool] = None
+    ) -> List[WalletUserResource.Get]:
+        """Список пользователей, опционально с фильтром по доступу в админку."""
+        stmt = select(WalletUser).order_by(WalletUser.created_at.desc())
+        if access_to_admin_panel is not None:
+            stmt = stmt.where(WalletUser.access_to_admin_panel == access_to_admin_panel)
+        result = await self._session.execute(stmt)
+        return [_model_to_get(m) for m in result.scalars().all()]
 
     async def create(self, data: WalletUserResource.Create) -> WalletUserResource.Get:
         """Create: создаёт пользователя. DID генерируется при вставке (event listener)."""

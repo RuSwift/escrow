@@ -3,7 +3,7 @@
 Ориентир: https://github.com/RuSwift/garantex/blob/main/services/wallet_user.py
 """
 import logging
-from typing import Optional
+from typing import List, Optional
 
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -52,6 +52,10 @@ class WalletUserService:
     async def get_by_id(self, user_id: int) -> Optional[WalletUserResource.Get]:
         """Возвращает пользователя по id или None."""
         return await self._repo.get(user_id)
+
+    async def list_managers(self) -> List[WalletUserResource.Get]:
+        """Список пользователей с доступом в админку (менеджеры)."""
+        return await self._repo.list_users(access_to_admin_panel=True)
 
     async def get_by_identifier(
         self, identifier: str | int

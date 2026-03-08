@@ -19,6 +19,7 @@ from services.admin import AdminService
 from services.billing import BillingService
 from services.node import NodeService
 from services.tron_auth import TronAuth
+from services.wallet import WalletService
 from services.wallet_user import WalletUserService
 from services.web3_auth import Web3Auth
 from settings import Settings
@@ -163,6 +164,15 @@ def get_admin_service(
     return AdminService(session=db, redis=redis, settings=settings.settings)
 
 
+def get_wallet_service(
+    db: DbSession,
+    redis: RedisClient,
+    settings: AppSettings,
+) -> WalletService:
+    """WalletService для эндпоинтов кошельков."""
+    return WalletService(session=db, redis=redis, settings=settings.settings)
+
+
 async def get_admin(
     request: Request,
     credentials: Annotated[
@@ -210,6 +220,7 @@ async def get_require_admin(
 
 
 WalletUserServiceDep = Annotated[WalletUserService, Depends(get_wallet_user_service)]
+WalletServiceDep = Annotated[WalletService, Depends(get_wallet_service)]
 BillingServiceDep = Annotated[BillingService, Depends(get_billing_service)]
 NodeServiceDep = Annotated[NodeService, Depends(get_node_service)]
 AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
