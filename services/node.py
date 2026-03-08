@@ -187,20 +187,6 @@ class NodeService:
             return True
         return await self._repo.get_active_keypair() is not None
 
-    async def is_node_initialized(self) -> bool:
-        """
-        Проверяет, полностью ли инициализирована нода:
-        есть ключ, настроен админ (из env), задан service_endpoint.
-        """
-        if not await self.has_key():
-            return False
-        if not self._settings.is_admin_configured_from_env:
-            return False
-        node = await self._repo.get()
-        if not node or not (node.service_endpoint or "").strip():
-            return False
-        return True
-
     async def set_service_endpoint(self, service_endpoint: str) -> bool:
         """
         Устанавливает service_endpoint для активной ноды.

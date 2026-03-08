@@ -191,15 +191,3 @@ async def test_get_service_endpoint_response_empty(node_service):
     resp = await node_service.get_service_endpoint_response()
     assert resp.service_endpoint is None
 
-
-# --- is_node_initialized ---
-
-
-@pytest.mark.asyncio
-async def test_is_node_initialized_false_without_admin(node_service, valid_mnemonic):
-    """Без настроенного админа (env) is_node_initialized возвращает False даже при ключе и endpoint."""
-    await node_service.init_from_mnemonic(valid_mnemonic)
-    await node_service.set_service_endpoint("https://node.test/")
-    # test_settings по умолчанию не имеет админа из env
-    assert await node_service.is_node_initialized() is False
-

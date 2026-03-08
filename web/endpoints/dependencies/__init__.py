@@ -2,9 +2,10 @@
 FastAPI Depends: БД, Redis, Settings, NodeRepository, текущий пользователь (Web3/TRON).
 Использование через Annotated в сигнатурах эндпоинтов.
 """
-from typing import Annotated, AsyncGenerator, Literal
+import jwt
+from typing import Annotated, AsyncGenerator, Literal, Optional
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from redis.asyncio import Redis
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.utils import get_user_did
 from db import get_db
+from db.models import AdminUser
 from repos.node import NodeRepository
 from services.admin import AdminService
 from services.billing import BillingService
@@ -22,6 +24,8 @@ from services.web3_auth import Web3Auth
 from settings import Settings
 
 security = HTTPBearer()
+optional_bearer = HTTPBearer(auto_error=False)
+ADMIN_JWT_ALGORITHM = "HS256"
 
 
 class ResolvedSettings:
@@ -158,12 +162,80 @@ def get_admin_service(
     return AdminService(session=db, redis=redis, settings=settings.settings)
 
 
+async def get_admin(
+    credentials: Annotated[
+        Optional[HTTPAuthorizationCredentials],
+        Depends(optional_bearer),
+    ],
+    admin_service: Annotated[AdminService, Depends(get_admin_service)],
+    settings: AppSettings,
+) -> Optional[AdminUser]:
+    """
+    Опциональная зависимость: текущий авторизованный админ или None.
+    Читает JWT из Authorization: Bearer; payload должен содержать "admin": True.
+    """
+    if not credentials:
+        return None
+    try:
+        payload = jwt.decode(
+            credentials.credentials,
+            settings.secret.get_secret_value(),
+            algorithms=[ADMIN_JWT_ALGORITHM],
+        )
+    except Exception:
+        return None
+    if not payload.get("admin"):
+        return None
+    admin = await admin_service.get_admin()
+    return admin
+
+
+async def get_require_admin(
+    admin: Annotated[Optional[AdminUser], Depends(get_admin)],
+) -> AdminUser:
+    """Зависимость: текущий админ или 401."""
+    if admin is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Admin authentication required",
+        )
+    return admin
+
+
 WalletUserServiceDep = Annotated[WalletUserService, Depends(get_wallet_user_service)]
 BillingServiceDep = Annotated[BillingService, Depends(get_billing_service)]
 NodeServiceDep = Annotated[NodeService, Depends(get_node_service)]
 AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
+AdminDepends = Annotated[Optional[AdminUser], Depends(get_admin)]
+RequireAdminDepends = Annotated[AdminUser, Depends(get_require_admin)]
 Web3AuthDep = Annotated[Web3Auth, Depends(get_web3_auth)]
 TronAuthDep = Annotated[TronAuth, Depends(get_tron_auth)]
+
+
+async def get_node_keypair_optional(
+    node_service: NodeServiceDep,
+):
+    """Зависимость: ключ ноды или None (для публичного GET /endpoint)."""
+    return await node_service.get_active_keypair()
+
+
+async def get_node_keypair_required(
+    node_service: NodeServiceDep,
+):
+    """Зависимость: ключ ноды для DIDComm; 503, если ключа нет (для POST /endpoint)."""
+    keypair = await node_service.get_active_keypair()
+    if keypair is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Node key not available",
+        )
+    return keypair
+
+
+NodeKeypairOptionalDep = Annotated[
+    object, Depends(get_node_keypair_optional)
+]  # Optional[Union[EthKeyPair, BaseKeyPair]]
+NodeKeypairRequiredDep = Annotated[object, Depends(get_node_keypair_required)]
 
 
 async def get_current_web3_user(
@@ -241,8 +313,17 @@ __all__ = [
     "BillingServiceDep",
     "NodeServiceDep",
     "AdminServiceDep",
+    "AdminDepends",
+    "RequireAdminDepends",
+    "get_admin",
+    "get_require_admin",
+    "optional_bearer",
     "Web3AuthDep",
     "TronAuthDep",
+    "get_node_keypair_optional",
+    "get_node_keypair_required",
+    "NodeKeypairOptionalDep",
+    "NodeKeypairRequiredDep",
     "CurrentWeb3User",
     "CurrentTronUser",
 ]
