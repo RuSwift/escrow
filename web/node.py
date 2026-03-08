@@ -17,6 +17,7 @@ from i18n.context import get_request_locale
 from i18n.translations import get_translations_for_locale
 from settings import Settings
 from web.endpoints.dependencies import NodeServiceDep
+from web.endpoints.health import router as health_router
 from web.endpoints.v1 import router as v1_router
 from web.middleware import install_locale_middleware
 
@@ -43,6 +44,7 @@ def create_app() -> FastAPI:
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+    app.include_router(health_router, prefix="/health")
     app.include_router(v1_router)
 
     _PAGE_MAP = {
