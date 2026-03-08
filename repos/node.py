@@ -23,6 +23,7 @@ class NodeResource(BaseResource):
     class Create(BaseResource.Create):
         key_type: str = Field(default="mnemonic", description="mnemonic | pem")
         ethereum_address: Optional[str] = Field(default=None, max_length=42)
+        did: Optional[str] = Field(default=None, max_length=255, description="Peer DID (set at init)")
         service_endpoint: Optional[str] = Field(default=None, max_length=255)
 
     class Patch(BaseResource.Patch):
@@ -33,6 +34,7 @@ class NodeResource(BaseResource):
         id: int
         key_type: str
         ethereum_address: Optional[str] = None
+        did: Optional[str] = None
         service_endpoint: Optional[str] = None
         is_active: bool
         created_at: datetime
@@ -45,6 +47,7 @@ def _model_to_get(model: NodeSettings) -> NodeResource.Get:
         id=model.id,
         key_type=model.key_type,
         ethereum_address=model.ethereum_address,
+        did=getattr(model, "did", None),
         service_endpoint=model.service_endpoint,
         is_active=model.is_active,
         created_at=model.created_at,
@@ -89,6 +92,7 @@ class NodeRepository(BaseRepository):
                 NodeSettings.encrypted_pem,
                 NodeSettings.key_type,
                 NodeSettings.ethereum_address,
+                NodeSettings.did,
                 NodeSettings.service_endpoint,
                 NodeSettings.is_active,
             ],
@@ -97,6 +101,7 @@ class NodeRepository(BaseRepository):
                 literal(encrypted_pem),
                 literal(data.key_type),
                 literal(data.ethereum_address),
+                literal(data.did),
                 literal(data.service_endpoint),
                 literal(True),
             ).where(no_active),

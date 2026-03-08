@@ -28,6 +28,9 @@ class NodeSettings(Base):
     # Ethereum address derived from the key
     ethereum_address = Column(String(42), nullable=True, unique=True, index=True, comment="Ethereum address")
     
+    # Peer DID of the node (set once at initialization)
+    did = Column(String(255), nullable=True, index=True, comment="Peer DID (did:peer:1:...)")
+    
     # Service endpoint for DIDComm (e.g. https://node.example.com/endpoint)
     service_endpoint = Column(String(255), nullable=True, comment="Service endpoint URL for DIDComm")
     

@@ -59,6 +59,19 @@ async def test_init_from_mnemonic_success(node_service, valid_mnemonic):
 
 
 @pytest.mark.asyncio
+async def test_init_from_mnemonic_sets_did_in_db(node_service, valid_mnemonic, test_db, test_redis, test_settings):
+    """При инициализации ноды DID единожды сохраняется в NodeSettings."""
+    from repos.node import NodeRepository
+    out = await node_service.init_from_mnemonic(valid_mnemonic)
+    repo = NodeRepository(session=test_db, redis=test_redis, settings=test_settings)
+    node = await repo.get()
+    assert node is not None
+    assert node.did is not None
+    assert node.did.startswith("did:peer:1:")
+    assert node.did == out.did
+
+
+@pytest.mark.asyncio
 async def test_init_from_mnemonic_twice_raises(node_service, valid_mnemonic):
     """Повторный init_from_mnemonic поднимает ValueError."""
     await node_service.init_from_mnemonic(valid_mnemonic)
@@ -87,6 +100,21 @@ async def test_init_from_pem_success(node_service):
     assert out.key_type == "pem"
     assert out.public_key
     assert "id" in out.did_document
+
+
+@pytest.mark.asyncio
+async def test_init_from_pem_sets_did_in_db(node_service, test_db, test_redis, test_settings):
+    """При инициализации ноды из PEM DID единожды сохраняется в NodeSettings."""
+    from repos.node import NodeRepository
+    key = BaseKeyPair.generate_ec()
+    pem_str = key.to_pem(format="PKCS8").decode("utf-8")
+    out = await node_service.init_from_pem(pem_str)
+    repo = NodeRepository(session=test_db, redis=test_redis, settings=test_settings)
+    node = await repo.get()
+    assert node is not None
+    assert node.did is not None
+    assert node.did.startswith("did:peer:1:")
+    assert node.did == out.did
 
 
 @pytest.mark.asyncio

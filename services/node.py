@@ -78,6 +78,7 @@ class NodeService:
             NodeResource.Create(
                 key_type="mnemonic",
                 ethereum_address=ethereum_address,
+                did=did_obj.did,
             ),
             mnemonic=mnemonic,
         )
@@ -143,6 +144,7 @@ class NodeService:
             NodeResource.Create(
                 key_type="pem",
                 ethereum_address=ethereum_address,
+                did=did_obj.did,
             ),
             pem=pem_data,
         )
