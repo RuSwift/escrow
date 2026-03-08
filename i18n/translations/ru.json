@@ -29,6 +29,17 @@
   "node.sidebar.section_marketplace": "Маркетплейс",
   "node.sidebar.section_admin": "Администратор",
 
+  "node.profile.edit_endpoint": "Редактировать",
+  "node.profile.save_endpoint": "Сохранить",
+  "node.profile.cancel": "Отмена",
+  "node.profile.test_get": "Проверить GET запросом",
+  "node.profile.endpoint_hint": "HTTP адрес для приема DIDComm сообщений",
+  "node.profile.endpoint_saved": "Service endpoint сохранён",
+  "node.profile.endpoint_test_ok": "Эндпоинт доступен ({{ms}} мс)",
+  "node.profile.endpoint_test_fail": "Эндпоинт недоступен или ошибка",
+  "node.profile.load_error": "Не удалось загрузить данные ноды",
+  "node.profile.enter_url": "Введите URL эндпоинта",
+
   "node.init.step_title": "Инициализация ноды — Шаг {step} из 3",
   "node.init.key_for_node": "Ключ для ноды",
   "node.init.method_pem": "PEM файл",

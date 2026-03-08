@@ -29,6 +29,17 @@
   "node.sidebar.section_marketplace": "Marketplace",
   "node.sidebar.section_admin": "Administrator",
 
+  "node.profile.edit_endpoint": "Edit",
+  "node.profile.save_endpoint": "Save",
+  "node.profile.cancel": "Cancel",
+  "node.profile.test_get": "Test with GET request",
+  "node.profile.endpoint_hint": "HTTP URL for receiving DIDComm messages",
+  "node.profile.endpoint_saved": "Service endpoint saved",
+  "node.profile.endpoint_test_ok": "Endpoint is accessible ({{ms}} ms)",
+  "node.profile.endpoint_test_fail": "Endpoint unavailable or error",
+  "node.profile.load_error": "Failed to load node data",
+  "node.profile.enter_url": "Enter endpoint URL",
+
   "node.init.step_title": "Node initialization — Step {step} of 3",
   "node.init.key_for_node": "Key for node",
   "node.init.method_pem": "PEM file",
