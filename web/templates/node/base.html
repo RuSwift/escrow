@@ -27,10 +27,19 @@
   <div class="flex-1 flex flex-col overflow-hidden">
     <header class="h-16 bg-white border-b border-zinc-200 flex items-center justify-between px-8 sticky top-0 z-10 shrink-0">
       <div class="flex items-center gap-6">
-        <div class="hidden md:flex items-center bg-zinc-100 rounded-full px-4 py-1.5 w-80 border border-transparent focus-within:border-blue-500/30 focus-within:bg-white focus-within:shadow-sm transition-all">
+        <div id="header-search-wrap" class="hidden md:flex items-center bg-zinc-100 rounded-full pl-4 pr-2 py-1.5 w-80 border border-transparent focus-within:border-blue-500/30 focus-within:bg-white focus-within:shadow-sm transition-all relative">
           <svg class="w-4 h-4 text-zinc-400 mr-2 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
-          <input type="text" placeholder="{{ _('node.search_placeholder') }}" class="bg-transparent border-none outline-none text-[13px] w-full placeholder:text-zinc-400" />
+          <input type="text" id="header-search" placeholder="{{ _('node.search_placeholder') }}" class="bg-transparent border-none outline-none text-[13px] flex-1 min-w-0 placeholder:text-zinc-400" autocomplete="off" />
+          <button type="button" id="header-search-clear" class="hidden p-1.5 rounded-full text-zinc-400 hover:text-zinc-600 hover:bg-zinc-200/80 shrink-0" aria-label="{{ _('node.search_clear') }}" title="{{ _('node.search_clear') }}">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
         </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <button type="button" id="header-logout" class="inline-flex items-center gap-2 px-4 py-2 text-[13px] font-medium text-zinc-600 hover:text-zinc-900 hover:bg-zinc-100 rounded-lg transition-colors" title="{{ _('node.logout') }}">
+          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
+          <span>{{ _('node.logout') }}</span>
+        </button>
       </div>
     </header>
     <main class="flex-1 overflow-hidden flex flex-col relative">
@@ -41,5 +50,39 @@
     </main>
   </div>
   {% block scripts %}{% endblock %}
+  <script>
+    (function() {
+      function dispatchHeaderSearch(query) {
+        try {
+          window.dispatchEvent(new CustomEvent('header-search', { detail: { query: query } }));
+        } catch (e) {}
+      }
+      var searchInput = document.getElementById('header-search');
+      var searchClear = document.getElementById('header-search-clear');
+      if (searchInput) {
+        searchInput.addEventListener('input', function() {
+          var val = (searchInput.value || '').trim();
+          if (searchClear) searchClear.classList.toggle('hidden', !searchInput.value);
+          dispatchHeaderSearch(val);
+        });
+      }
+      if (searchClear && searchInput) {
+        searchClear.addEventListener('click', function() {
+          searchInput.value = '';
+          searchClear.classList.add('hidden');
+          dispatchHeaderSearch('');
+          searchInput.focus();
+        });
+        if (searchInput.value) searchClear.classList.remove('hidden');
+      }
+      var logoutEl = document.getElementById('header-logout');
+      if (logoutEl) {
+        logoutEl.addEventListener('click', function() {
+          document.cookie = 'admin_token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax';
+          window.location.href = '/';
+        });
+      }
+    })();
+  </script>
 </body>
 </html>

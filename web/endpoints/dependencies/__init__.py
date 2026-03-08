@@ -26,6 +26,7 @@ from settings import Settings
 security = HTTPBearer()
 optional_bearer = HTTPBearer(auto_error=False)
 ADMIN_JWT_ALGORITHM = "HS256"
+ADMIN_TOKEN_COOKIE = "admin_token"
 
 
 class ResolvedSettings:
@@ -163,6 +164,7 @@ def get_admin_service(
 
 
 async def get_admin(
+    request: Request,
     credentials: Annotated[
         Optional[HTTPAuthorizationCredentials],
         Depends(optional_bearer),
@@ -172,13 +174,18 @@ async def get_admin(
 ) -> Optional[AdminUser]:
     """
     Опциональная зависимость: текущий авторизованный админ или None.
-    Читает JWT из Authorization: Bearer; payload должен содержать "admin": True.
+    Читает JWT из Authorization: Bearer или из cookie admin_token; payload должен содержать "admin": True.
     """
-    if not credentials:
+    token = None
+    if credentials:
+        token = credentials.credentials
+    elif request.cookies.get(ADMIN_TOKEN_COOKIE):
+        token = request.cookies.get(ADMIN_TOKEN_COOKIE)
+    if not token:
         return None
     try:
         payload = jwt.decode(
-            credentials.credentials,
+            token,
             settings.secret.get_secret_value(),
             algorithms=[ADMIN_JWT_ALGORITHM],
         )

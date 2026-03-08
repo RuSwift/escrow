@@ -37,3 +37,32 @@ Vue.component('modal', {
     </div>
     `
 });
+
+/**
+ * Модальное диалоговое окно с подтверждением (Confirm/Cancel).
+ * Использование:
+ *   <modal-dialog :show="show" :title="title" :message="message"
+ *     confirm-label="Удалить" cancel-label="Отмена" confirm-class="bg-red-600 hover:bg-red-700 text-white"
+ *     @confirm="onConfirm" @cancel="show = false">
+ *   </modal-dialog>
+ */
+Vue.component('modal-dialog', {
+    delimiters: ['[[', ']]'],
+    props: {
+        show: { type: Boolean, default: false },
+        title: { type: String, default: '' },
+        message: { type: String, default: '' },
+        confirmLabel: { type: String, default: 'OK' },
+        cancelLabel: { type: String, default: 'Cancel' },
+        confirmClass: { type: String, default: 'bg-blue-600 hover:bg-blue-700 text-white' }
+    },
+    template: `
+    <modal :show="show" :title="title" @close="$emit('cancel')">
+      <p class="text-zinc-700 text-[13px]">[[ message ]]</p>
+      <template slot="footer">
+        <button type="button" class="px-4 py-2 bg-zinc-200 text-zinc-700 rounded-lg text-sm font-medium hover:bg-zinc-300" @click="$emit('cancel')">[[ cancelLabel ]]</button>
+        <button type="button" class="px-4 py-2 rounded-lg text-sm font-medium disabled:opacity-50" :class="confirmClass" @click="$emit('confirm')">[[ confirmLabel ]]</button>
+      </template>
+    </modal>
+    `
+});

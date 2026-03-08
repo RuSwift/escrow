@@ -4,9 +4,15 @@
  */
 (function() {
     if (typeof Vue !== "undefined") {
-        Vue.prototype.$t = function(key) {
+        Vue.prototype.$t = function(key, params) {
             var t = window.__TRANSLATIONS__;
-            return (t && t[key] !== undefined) ? t[key] : key;
+            var s = (t && t[key] !== undefined) ? t[key] : key;
+            if (params && typeof s === 'string') {
+                Object.keys(params).forEach(function(k) {
+                    s = s.replace(new RegExp('\\{\\{\\s*' + k + '\\s*\\}\\}', 'g'), params[k]);
+                });
+            }
+            return s;
         };
     }
     var SIDEBAR_ITEMS = [
