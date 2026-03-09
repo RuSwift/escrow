@@ -460,10 +460,10 @@ class Wallet(Base):
     
     __tablename__ = "wallets"
     
-    # Table constraints - unique addresses per role
+    # Table constraints - unique addresses per role and owner
     __table_args__ = (
-        UniqueConstraint('tron_address', 'role', name='uq_wallets_tron_address_role'),
-        UniqueConstraint('ethereum_address', 'role', name='uq_wallets_ethereum_address_role'),
+        UniqueConstraint('tron_address', 'role', 'owner_did', name='uq_wallets_tron_address_role'),
+        UniqueConstraint('ethereum_address', 'role', 'owner_did', name='uq_wallets_ethereum_address_role'),
         Index('ix_wallets_tron_address', 'tron_address'),
         Index('ix_wallets_ethereum_address', 'ethereum_address'),
         Index('ix_wallets_role', 'role'),
@@ -471,13 +471,16 @@ class Wallet(Base):
     
     id = Column(Integer, primary_key=True, index=True, comment="Primary key")
     
+    # Owner DID (node that owns this wallet; set from NodeSettings.did)
+    owner_did = Column(String(255), nullable=True, index=True, comment="Owner node DID (did:peer:1:...)")
+    
     # Wallet name (editable)
     name = Column(String(255), nullable=False, comment="Wallet name (editable)")
     
     # Encrypted mnemonic phrase
     encrypted_mnemonic = Column(Text, nullable=False, comment="Encrypted mnemonic phrase")
     
-    # Blockchain addresses (unique per role, not globally unique)
+    # Blockchain addresses (unique per role and owner_did, not globally unique)
     tron_address = Column(String(34), nullable=False, comment="TRON address")
     ethereum_address = Column(String(42), nullable=False, comment="Ethereum address")
     

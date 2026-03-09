@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
 
 from didcomm.crypto import EthCrypto, EthKeyPair
+from repos.node import NodeRepository
 from repos.wallet import WalletResource, WalletRepository
 from services.tron.utils import keypair_from_mnemonic
 from settings import Settings
@@ -58,6 +59,9 @@ class WalletService:
         )
         if exists:
             raise ValueError("Wallet with these addresses already exists")
+        node_repo = NodeRepository(session=self._session, redis=self._redis, settings=self._settings)
+        node = await node_repo.get()
+        owner_did = node.did if node else None
         encrypted = self._repo.encrypt_data(mnemonic_normalized)
         created = await self._repo.create(
             WalletResource.Create(
@@ -65,6 +69,7 @@ class WalletService:
                 encrypted_mnemonic=encrypted,
                 tron_address=addresses["tron_address"],
                 ethereum_address=addresses["ethereum_address"],
+                owner_did=owner_did,
             )
         )
         await self._session.commit()

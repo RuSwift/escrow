@@ -27,12 +27,14 @@ class WalletResource(BaseResource):
         encrypted_mnemonic: str = Field(..., description="Encrypted mnemonic phrase")
         tron_address: str = Field(..., max_length=34, description="TRON address")
         ethereum_address: str = Field(..., max_length=42, description="Ethereum address")
+        owner_did: Optional[str] = Field(None, max_length=255, description="Owner node DID")
 
     class Get(BaseResource.Get):
         id: int
         name: str
         tron_address: str
         ethereum_address: str
+        owner_did: Optional[str] = None
         account_permissions: Optional[Dict[str, Any]] = None
         created_at: datetime
         updated_at: datetime
@@ -44,6 +46,7 @@ def _model_to_get(model: Wallet) -> WalletResource.Get:
         name=model.name,
         tron_address=model.tron_address,
         ethereum_address=model.ethereum_address,
+        owner_did=getattr(model, "owner_did", None),
         account_permissions=model.account_permissions,
         created_at=model.created_at,
         updated_at=model.updated_at,
@@ -84,6 +87,7 @@ class WalletRepository(BaseRepository):
             tron_address=data.tron_address,
             ethereum_address=data.ethereum_address,
             role=None,
+            owner_did=data.owner_did,
         )
         self._session.add(model)
         await self._session.flush()

@@ -14,7 +14,8 @@ def wallet_user_service(test_db, test_redis, test_settings) -> WalletUserService
     )
 
 
-WALLET_TRON = "TXyz123456789012345678901234567890AB"
+# Валидные форматы: TRON — T + 34 base58; Ethereum — 0x + 40 hex
+WALLET_TRON = "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH"
 WALLET_ETH = "0x1234567890123456789012345678901234567890"
 
 
@@ -154,12 +155,54 @@ async def test_create_user_invalid_blockchain_raises(wallet_user_service):
 
 
 @pytest.mark.asyncio
+async def test_create_user_invalid_tron_address_raises(wallet_user_service):
+    """create_user с невалидным TRON-адресом поднимает ValueError."""
+    with pytest.raises(ValueError, match="Invalid TRON address"):
+        await wallet_user_service.create_user(
+            "0x1234567890123456789012345678901234567890", "tron", "alice"
+        )
+    with pytest.raises(ValueError, match="Invalid TRON address"):
+        await wallet_user_service.create_user(
+            "Tshort", "tron", "alice"
+        )
+
+
+@pytest.mark.asyncio
+async def test_create_user_invalid_ethereum_address_raises(wallet_user_service):
+    """create_user с невалидным Ethereum-адресом поднимает ValueError."""
+    with pytest.raises(ValueError, match="Invalid Ethereum address"):
+        await wallet_user_service.create_user(
+            WALLET_TRON, "ethereum", "bob"
+        )
+    with pytest.raises(ValueError, match="Invalid Ethereum address"):
+        await wallet_user_service.create_user(
+            "0xzzzz", "ethereum", "bob"
+        )
+
+
+@pytest.mark.asyncio
 async def test_create_user_blockchain_normalized_to_lowercase(wallet_user_service):
     """create_user принимает blockchain в любом регистре (tron/TRON)."""
     out = await wallet_user_service.create_user(
         WALLET_TRON, "TRON", "alice"
     )
     assert out.blockchain == "tron"
+
+
+# --- add_manager ---
+
+
+@pytest.mark.asyncio
+async def test_add_manager_invalid_address_raises(wallet_user_service):
+    """add_manager с невалидным адресом поднимает ValueError (валидация как в create_user)."""
+    with pytest.raises(ValueError, match="Invalid TRON address"):
+        await wallet_user_service.add_manager(
+            "0x1234567890123456789012345678901234567890", "tron", "manager1"
+        )
+    with pytest.raises(ValueError, match="Invalid Ethereum address"):
+        await wallet_user_service.add_manager(
+            WALLET_TRON, "ethereum", "manager2"
+        )
 
 
 # --- update_nickname ---

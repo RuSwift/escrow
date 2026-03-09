@@ -9,12 +9,41 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from repos.wallet_user import WalletUserRepository, WalletUserResource
+from services.tron_auth import TronAuth
 from settings import Settings
 
 logger = logging.getLogger(__name__)
 
 ALLOWED_BLOCKCHAINS = ("tron", "ethereum")
 AVATAR_MAX_BASE64_LEN = 1_500_000  # ~1MB base64
+
+
+def _validate_ethereum_address(address: str) -> bool:
+    """Проверка формата Ethereum-адреса: 0x + 40 hex-символов."""
+    s = (address or "").strip()
+    if len(s) != 42 or not s.startswith("0x"):
+        return False
+    return all(c in "0123456789abcdefABCDEF" for c in s[2:])
+
+
+def _validate_wallet_address(wallet_address: str, blockchain: str) -> None:
+    """
+    Проверяет формат адреса кошелька для указанного блокчейна.
+    Raises ValueError при невалидном формате.
+    """
+    addr = (wallet_address or "").strip()
+    if not addr:
+        raise ValueError("Wallet address cannot be empty")
+    if blockchain == "tron":
+        if not TronAuth.validate_tron_address(addr):
+            raise ValueError(
+                "Invalid TRON address format (expected: T + 34 base58 characters)"
+            )
+    elif blockchain == "ethereum":
+        if not _validate_ethereum_address(addr):
+            raise ValueError(
+                "Invalid Ethereum address format (expected: 0x + 40 hex characters)"
+            )
 
 
 class WalletUserService:
@@ -109,6 +138,8 @@ class WalletUserService:
             raise ValueError(
                 "Invalid blockchain type; allowed: tron, ethereum, bitcoin"
             )
+
+        _validate_wallet_address(wallet_address, blockchain_lower)
 
         data = WalletUserResource.Create(
             wallet_address=wallet_address.strip(),
