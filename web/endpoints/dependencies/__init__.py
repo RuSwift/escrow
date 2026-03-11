@@ -16,6 +16,7 @@ from db import get_db
 from db.models import AdminUser
 from repos.node import NodeRepository
 from services.admin import AdminService
+from services.arbiter import ArbiterService
 from services.billing import BillingService
 from services.node import NodeService
 from services.tron_auth import TronAuth
@@ -173,6 +174,15 @@ def get_wallet_service(
     return WalletService(session=db, redis=redis, settings=settings.settings)
 
 
+def get_arbiter_service(
+    db: DbSession,
+    redis: RedisClient,
+    settings: AppSettings,
+) -> ArbiterService:
+    """ArbiterService для эндпоинтов арбитра."""
+    return ArbiterService(session=db, redis=redis, settings=settings.settings)
+
+
 async def get_admin(
     request: Request,
     credentials: Annotated[
@@ -221,6 +231,7 @@ async def get_require_admin(
 
 WalletUserServiceDep = Annotated[WalletUserService, Depends(get_wallet_user_service)]
 WalletServiceDep = Annotated[WalletService, Depends(get_wallet_service)]
+ArbiterServiceDep = Annotated[ArbiterService, Depends(get_arbiter_service)]
 BillingServiceDep = Annotated[BillingService, Depends(get_billing_service)]
 NodeServiceDep = Annotated[NodeService, Depends(get_node_service)]
 AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
@@ -328,6 +339,7 @@ __all__ = [
     "RedisClient",
     "AppSettings",
     "WalletUserServiceDep",
+    "ArbiterServiceDep",
     "BillingServiceDep",
     "NodeServiceDep",
     "AdminServiceDep",

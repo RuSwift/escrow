@@ -5,6 +5,10 @@ import pytest
 
 from services.billing import BillingService
 
+# Валидные TRON-адреса (base58: T + 34 символа без 0/O/I/l)
+TRON_BILLING_1 = "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH"
+TRON_BILLING_2 = "T" + "2" * 33
+
 
 @pytest.fixture
 def billing_service(test_db, test_redis, test_settings) -> BillingService:
@@ -33,11 +37,9 @@ async def test_get_history_empty_returns_empty_list_and_zero(
 ):
     """Для пользователя без записей биллинга get_history возвращает ([], 0)."""
     await wallet_user_service.create_user(
-        "TXyz123456789012345678901234567890AB", "tron", "billing_user"
+        TRON_BILLING_1, "tron", "billing_user"
     )
-    user = await wallet_user_service.get_by_wallet_address(
-        "TXyz123456789012345678901234567890AB"
-    )
+    user = await wallet_user_service.get_by_wallet_address(TRON_BILLING_1)
     assert user is not None
     items, total = await billing_service.get_history(user.id, page=1, page_size=20)
     assert items == []
@@ -50,11 +52,9 @@ async def test_get_history_returns_list_and_total(
 ):
     """get_history делегирует в repo и возвращает (list, total) с пагинацией."""
     await wallet_user_service.create_user(
-        "TXyz123456789012345678901234567890CD", "tron", "billing_user2"
+        TRON_BILLING_2, "tron", "billing_user2"
     )
-    user = await wallet_user_service.get_by_wallet_address(
-        "TXyz123456789012345678901234567890CD"
-    )
+    user = await wallet_user_service.get_by_wallet_address(TRON_BILLING_2)
     assert user is not None
     from decimal import Decimal
     from db.models import Billing
