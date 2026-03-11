@@ -25,6 +25,8 @@
   "node.sidebar.admin": "Админ",
   "node.sidebar.settings": "Настройки",
   "node.sidebar.support": "Поддержка",
+  "node.support.description": "Наша команда поддержки готова провести консультацию и оказать помощь по любым вопросам.",
+  "node.support.telegram_text": "Связаться с нами в Telegram:",
   "node.sidebar.section_tools": "Инструменты",
   "node.sidebar.section_marketplace": "Маркетплейс",
   "node.sidebar.section_admin": "Администратор",

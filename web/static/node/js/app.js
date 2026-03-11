@@ -11,7 +11,7 @@
     var initialPage = (el.getAttribute('data-initial-page') || 'dashboard').trim();
     var isNodeInitialized = el.getAttribute('data-is-node-initialized') === 'true';
 
-    var validPages = ['dashboard', 'wallet-users', 'arbiter', 'wallets', 'node', 'admin', 'settings', 'support'];
+    var validPages = ['dashboard', 'wallet-users', 'arbiter', 'wallets', 'node', 'admin'];
     if (validPages.indexOf(initialPage) === -1) {
         initialPage = 'dashboard';
     }

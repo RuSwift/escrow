@@ -56,8 +56,6 @@ def create_app() -> FastAPI:
         "/wallets": ("wallets", "wallets"),
         "/node": ("node", "node"),
         "/admin": ("admin", "admin"),
-        "/settings": ("settings", "settings"),
-        "/support": ("support", "support"),
     }
 
     def _node_context(
@@ -151,16 +149,6 @@ def create_app() -> FastAPI:
     @app.get("/admin", response_class=HTMLResponse)
     async def admin(request: Request, settings: AppSettings, admin: AdminDepends):
         initial_page, page_title_key = _PAGE_MAP["/admin"]
-        return _maybe_login_page(request, settings, admin, initial_page, page_title_key)
-
-    @app.get("/settings", response_class=HTMLResponse)
-    async def settings_page(request: Request, settings: AppSettings, admin: AdminDepends):
-        initial_page, page_title_key = _PAGE_MAP["/settings"]
-        return _maybe_login_page(request, settings, admin, initial_page, page_title_key)
-
-    @app.get("/support", response_class=HTMLResponse)
-    async def support(request: Request, settings: AppSettings, admin: AdminDepends):
-        initial_page, page_title_key = _PAGE_MAP["/support"]
         return _maybe_login_page(request, settings, admin, initial_page, page_title_key)
 
     return app
