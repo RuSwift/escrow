@@ -66,3 +66,12 @@ class TestServiceEndpointResponse(BaseModel):
     status_code: Optional[int] = Field(None, description="HTTP код ответа")
     message: str = Field(..., description="Сообщение")
     response_time_ms: Optional[float] = Field(None, description="Время ответа в мс")
+
+
+class DashboardStatisticsResponse(BaseModel):
+    """Статистика для дашборда (пользователи, менеджеры, кошельки, кошельки арбитража)."""
+
+    users_count: int = Field(..., description="Всего пользователей (WalletUser)")
+    managers_count: int = Field(..., description="Пользователей с доступом в админ-панель")
+    wallets_count: int = Field(..., description="Всего кошельков (Wallet)")
+    arbiter_wallets_count: int = Field(..., description="Кошельков арбитража (role arbiter/arbiter-backup)")

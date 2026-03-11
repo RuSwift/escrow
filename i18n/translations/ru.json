@@ -29,6 +29,16 @@
   "node.sidebar.section_marketplace": "Маркетплейс",
   "node.sidebar.section_admin": "Администратор",
 
+  "node.dashboard.welcome": "Добро пожаловать в админ-панель!",
+  "node.dashboard.statistics": "Статистика",
+  "node.dashboard.users": "Пользователи",
+  "node.dashboard.managers": "Менеджеры",
+  "node.dashboard.wallets": "Кошельки",
+  "node.dashboard.arbiter_wallets": "Кошельки арбитража",
+  "node.dashboard.node_initialized": "Нода инициализирована: ключ и service endpoint настроены.",
+  "node.dashboard.node_not_initialized": "Нода не инициализирована. Настройте ключ и service endpoint через API.",
+  "node.dashboard.load_error": "Не удалось загрузить статистику",
+
   "node.profile.edit_endpoint": "Редактировать",
   "node.profile.save_endpoint": "Сохранить",
   "node.profile.cancel": "Отмена",

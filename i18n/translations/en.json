@@ -29,6 +29,16 @@
   "node.sidebar.section_marketplace": "Marketplace",
   "node.sidebar.section_admin": "Administrator",
 
+  "node.dashboard.welcome": "Welcome to the admin panel!",
+  "node.dashboard.statistics": "Statistics",
+  "node.dashboard.users": "Users",
+  "node.dashboard.managers": "Managers",
+  "node.dashboard.wallets": "Wallets",
+  "node.dashboard.arbiter_wallets": "Arbitration wallets",
+  "node.dashboard.node_initialized": "Node initialized: key and service endpoint configured.",
+  "node.dashboard.node_not_initialized": "Node not initialized. Configure key and service endpoint via API.",
+  "node.dashboard.load_error": "Failed to load statistics",
+
   "node.profile.edit_endpoint": "Edit",
   "node.profile.save_endpoint": "Save",
   "node.profile.cancel": "Cancel",
