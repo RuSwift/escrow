@@ -1,0 +1,98 @@
+/* Main app: стили для сплэш, сайдбара и страниц */
+
+/* Карточки и таблицы */
+.cmc-card {
+  background: #fff;
+  border: 1px solid #eff2f5;
+  border-radius: 0.75rem;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+.cmc-table-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #58667e;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #eff2f5;
+}
+.cmc-table-cell {
+  padding: 1rem;
+  border-bottom: 1px solid #eff2f5;
+  font-size: 0.875rem;
+}
+.cmc-btn-primary {
+  background: #3861fb;
+  color: #fff;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 600;
+  transition: opacity 0.2s;
+}
+.cmc-btn-primary:hover {
+  opacity: 0.9;
+}
+.text-cmc-muted {
+  color: #58667e;
+}
+.text-main-blue { color: #3861fb; }
+.text-main-green { color: #16c784; }
+.text-main-red { color: #ea3943; }
+.bg-main-blue\/10 { background-color: rgba(56, 97, 251, 0.1); }
+.bg-main-green\/10 { background-color: rgba(22, 199, 132, 0.1); }
+.bg-main-red\/10 { background-color: rgba(234, 57, 67, 0.1); }
+
+/* Переход при смене страницы */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.18s ease;
+}
+.fade-enter,
+.fade-leave-to {
+  opacity: 0;
+}
+.fade-leave-to {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+}
+#app-main {
+  position: relative;
+  min-height: 100%;
+}
+
+/* Сайдбар main */
+.sidebar-wrap {
+  position: relative;
+}
+.main-sidebar-ball {
+  position: absolute;
+  right: 24px;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: #fff;
+  pointer-events: none;
+  transition: top 0.2s ease-out;
+}
+.main-sidebar-item {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  margin: 0.125rem 0.25rem;
+  border-radius: 0.75rem;
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.6);
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.main-sidebar-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+.main-sidebar-item.active {
+  background: #3861fb;
+  color: #fff;
+}

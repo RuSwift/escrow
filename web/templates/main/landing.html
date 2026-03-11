@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="{{ locale | default('ru') }}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ app_name }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] },
+          colors: { 'main-blue': '#3861fb' }
+        }
+      }
+    };
+  </script>
+  <link rel="stylesheet" href="/static/main/css/site.css" />
+</head>
+<body class="min-h-screen bg-[#050505] text-white flex flex-col overflow-hidden font-sans antialiased">
+  <header class="p-6 flex justify-between items-center z-10">
+    <div class="flex items-center gap-2">
+      <div class="w-10 h-10 rounded-xl bg-main-blue flex items-center justify-center text-white shadow-lg shadow-main-blue/40">
+        <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/></svg>
+      </div>
+      <span class="text-2xl font-bold tracking-tighter">{{ app_name }}</span>
+    </div>
+    <a href="/app" class="px-6 py-2.5 bg-white text-black rounded-full font-bold hover:bg-main-blue hover:text-white transition-all duration-300 inline-flex items-center gap-2">
+      {{ _('main.login') }}
+      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>
+    </a>
+  </header>
+
+  <main class="flex-1 flex flex-col lg:flex-row items-center justify-center px-6 lg:px-12 relative">
+    <div class="absolute top-1/4 left-1/4 w-[500px] h-[500px] bg-main-blue/10 rounded-full blur-[150px] -z-0"></div>
+    <div class="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] bg-purple-500/5 rounded-full blur-[150px] -z-0"></div>
+
+    <div class="w-full lg:w-2/5 z-10 text-center lg:text-left mb-6 lg:mb-0 lg:pr-10">
+      <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-main-blue/10 border border-main-blue/20 text-main-blue text-xs font-bold uppercase tracking-widest mb-6 animate-pulse">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+        {{ _('main.landing.badge') }}
+      </div>
+      <h1 class="text-5xl lg:text-7xl font-black tracking-tighter leading-[0.9] mb-6">
+        {{ _('main.landing.hero_line1') }} <span class="text-main-blue">{{ _('main.landing.hero_highlight') }}</span><br />
+        {{ _('main.landing.hero_line2') }}
+      </h1>
+      <p class="text-lg text-white/50 max-w-lg mb-10 leading-relaxed">
+        {{ _('main.landing.subtitle') }}
+      </p>
+      <div class="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+        <a href="/app" class="px-8 py-4 bg-main-blue text-white rounded-2xl font-bold hover:scale-105 transition-transform shadow-xl shadow-main-blue/30 text-center">
+          {{ _('main.landing.cta_primary') }}
+        </a>
+        <a href="/app?initial_page=how-it-works" class="px-8 py-4 bg-white/5 border border-white/10 rounded-2xl font-bold hover:bg-white/10 transition-colors text-center">
+          {{ _('main.landing.cta_docs') }}
+        </a>
+      </div>
+    </div>
+
+    <div class="w-full lg:w-3/5 h-[50vh] sm:h-[70vh] lg:h-[80vh] relative flex items-center justify-center overflow-hidden">
+      <svg viewBox="0 0 1000 500" class="w-full h-full opacity-90 scale-[2.2] sm:scale-150 lg:scale-110 transition-transform duration-1000" aria-hidden="true">
+        <path d="M150,100 Q200,80 250,100 T350,120 T450,100 T550,130 T650,110 T750,140 T850,120 T900,180 T800,250 T700,300 T600,350 T500,320 T400,380 T300,350 T200,300 T100,250 T50,180 Z" fill="none" stroke="white" stroke-width="0.5" stroke-dasharray="2 4" opacity="0.2" />
+        <defs>
+          <linearGradient id="landingLineGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+            <stop offset="0%" stop-color="#00e0ff" stop-opacity="0" />
+            <stop offset="50%" stop-color="#00e0ff" stop-opacity="1" />
+            <stop offset="100%" stop-color="#00e0ff" stop-opacity="0" />
+          </linearGradient>
+        </defs>
+        <!-- Connections: path + animated particle + amount (dots: 0=200,150 1=180,180 2=450,140 3=480,160 4=520,220 5=700,180 6=720,150 7=750,250 8=300,300 9=500,350) -->
+        <g><path d="M 200 150 Q 325 80 450 140" fill="none" stroke="url(#landingLineGradient)" stroke-width="1" opacity="0.3" /><circle r="2" fill="#00e0ff"><animateMotion path="M 200 150 Q 325 80 450 140" dur="6.5s" repeatCount="indefinite" begin="0.4s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" /></circle><text fill="#00e0ff" font-size="10" font-family="monospace" font-weight="bold" opacity="0.8"><animateMotion path="M 200 150 Q 325 80 450 140" dur="6.5s" repeatCount="indefinite" begin="0.4s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" />$12.5M</text></g>
+        <g><path d="M 450 140 Q 485 155 520 220" fill="none" stroke="url(#landingLineGradient)" stroke-width="1" opacity="0.3" /><circle r="2" fill="#00e0ff"><animateMotion path="M 450 140 Q 485 155 520 220" dur="8s" repeatCount="indefinite" begin="0.8s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" /></circle><text fill="#00e0ff" font-size="10" font-family="monospace" font-weight="bold" opacity="0.8"><animateMotion path="M 450 140 Q 485 155 520 220" dur="8s" repeatCount="indefinite" begin="0.8s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" />$45.2K</text></g>
+        <g><path d="M 520 220 Q 610 200 700 180" fill="none" stroke="url(#landingLineGradient)" stroke-width="1" opacity="0.3" /><circle r="2" fill="#00e0ff"><animateMotion path="M 520 220 Q 610 200 700 180" dur="7s" repeatCount="indefinite" begin="1.2s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" /></circle><text fill="#00e0ff" font-size="10" font-family="monospace" font-weight="bold" opacity="0.8"><animateMotion path="M 520 220 Q 610 200 700 180" dur="7s" repeatCount="indefinite" begin="1.2s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" />$8.1M</text></g>
+        <g><path d="M 700 180 Q 710 165 720 150" fill="none" stroke="url(#landingLineGradient)" stroke-width="1" opacity="0.3" /><circle r="2" fill="#00e0ff"><animateMotion path="M 700 180 Q 710 165 720 150" dur="5.5s" repeatCount="indefinite" begin="0s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" /></circle><text fill="#00e0ff" font-size="10" font-family="monospace" font-weight="bold" opacity="0.8"><animateMotion path="M 700 180 Q 710 165 720 150" dur="5.5s" repeatCount="indefinite" begin="0s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" />$22K</text></g>
+        <g><path d="M 720 150 Q 735 200 750 250" fill="none" stroke="url(#landingLineGradient)" stroke-width="1" opacity="0.3" /><circle r="2" fill="#00e0ff"><animateMotion path="M 720 150 Q 735 200 750 250" dur="8.5s" repeatCount="indefinite" begin="1.5s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" /></circle><text fill="#00e0ff" font-size="10" font-family="monospace" font-weight="bold" opacity="0.8"><animateMotion path="M 720 150 Q 735 200 750 250" dur="8.5s" repeatCount="indefinite" begin="1.5s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" />$3.1M</text></g>
+        <g><path d="M 200 150 Q 250 225 300 300" fill="none" stroke="url(#landingLineGradient)" stroke-width="1" opacity="0.3" /><circle r="2" fill="#00e0ff"><animateMotion path="M 200 150 Q 250 225 300 300" dur="7.5s" repeatCount="indefinite" begin="0.6s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" /></circle><text fill="#00e0ff" font-size="10" font-family="monospace" font-weight="bold" opacity="0.8"><animateMotion path="M 200 150 Q 250 225 300 300" dur="7.5s" repeatCount="indefinite" begin="0.6s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" />$67K</text></g>
+        <g><path d="M 300 300 Q 400 325 500 350" fill="none" stroke="url(#landingLineGradient)" stroke-width="1" opacity="0.3" /><circle r="2" fill="#00e0ff"><animateMotion path="M 300 300 Q 400 325 500 350" dur="9s" repeatCount="indefinite" begin="1s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" /></circle><text fill="#00e0ff" font-size="10" font-family="monospace" font-weight="bold" opacity="0.8"><animateMotion path="M 300 300 Q 400 325 500 350" dur="9s" repeatCount="indefinite" begin="1s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" />$1.2M</text></g>
+        <g><path d="M 500 350 Q 510 285 520 220" fill="none" stroke="url(#landingLineGradient)" stroke-width="1" opacity="0.3" /><circle r="2" fill="#00e0ff"><animateMotion path="M 500 350 Q 510 285 520 220" dur="7s" repeatCount="indefinite" begin="0.2s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" /></circle><text fill="#00e0ff" font-size="10" font-family="monospace" font-weight="bold" opacity="0.8"><animateMotion path="M 500 350 Q 510 285 520 220" dur="7s" repeatCount="indefinite" begin="0.2s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" />$890K</text></g>
+        <g><path d="M 180 180 Q 240 240 300 300" fill="none" stroke="url(#landingLineGradient)" stroke-width="1" opacity="0.3" /><circle r="2" fill="#00e0ff"><animateMotion path="M 180 180 Q 240 240 300 300" dur="6.5s" repeatCount="indefinite" begin="1.8s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" /></circle><text fill="#00e0ff" font-size="10" font-family="monospace" font-weight="bold" opacity="0.8"><animateMotion path="M 180 180 Q 240 240 300 300" dur="6.5s" repeatCount="indefinite" begin="1.8s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" />$156K</text></g>
+        <g><path d="M 480 160 Q 590 170 700 180" fill="none" stroke="url(#landingLineGradient)" stroke-width="1" opacity="0.3" /><circle r="2" fill="#00e0ff"><animateMotion path="M 480 160 Q 590 170 700 180" dur="8s" repeatCount="indefinite" begin="0.3s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" /></circle><text fill="#00e0ff" font-size="10" font-family="monospace" font-weight="bold" opacity="0.8"><animateMotion path="M 480 160 Q 590 170 700 180" dur="8s" repeatCount="indefinite" begin="0.3s" /><animate attributeName="opacity" values="0;1;1;0" dur="3s" repeatCount="indefinite" />$4.5M</text></g>
+        <!-- Liquidity points: pulsing dots + rings -->
+        <g><circle cx="200" cy="150" r="4" fill="#00e0ff"><animate attributeName="r" values="3;6;3" dur="2s" repeatCount="indefinite" /></circle><circle cx="200" cy="150" r="12" fill="none" stroke="#00e0ff" stroke-width="0.5" opacity="0.5"><animate attributeName="r" values="4;15" dur="1.5s" repeatCount="indefinite" /><animate attributeName="opacity" values="0.5;0" dur="1.5s" repeatCount="indefinite" /></circle><text x="208" y="154" fill="white" font-size="8" font-family="monospace" opacity="0.4">NY</text></g>
+        <g><circle cx="180" cy="180" r="4" fill="#00e0ff"><animate attributeName="r" values="3;6;3" dur="2s" repeatCount="indefinite" begin="0.2s" /></circle><circle cx="180" cy="180" r="12" fill="none" stroke="#00e0ff" stroke-width="0.5" opacity="0.5"><animate attributeName="r" values="4;15" dur="1.5s" repeatCount="indefinite" begin="0.2s" /><animate attributeName="opacity" values="0.5;0" dur="1.5s" repeatCount="indefinite" begin="0.2s" /></circle><text x="188" y="184" fill="white" font-size="8" font-family="monospace" opacity="0.4">Miami</text></g>
+        <g><circle cx="450" cy="140" r="4" fill="#00e0ff"><animate attributeName="r" values="3;6;3" dur="2s" repeatCount="indefinite" begin="0.4s" /></circle><circle cx="450" cy="140" r="12" fill="none" stroke="#00e0ff" stroke-width="0.5" opacity="0.5"><animate attributeName="r" values="4;15" dur="1.5s" repeatCount="indefinite" begin="0.4s" /><animate attributeName="opacity" values="0.5;0" dur="1.5s" repeatCount="indefinite" begin="0.4s" /></circle><text x="458" y="144" fill="white" font-size="8" font-family="monospace" opacity="0.4">London</text></g>
+        <g><circle cx="480" cy="160" r="4" fill="#00e0ff"><animate attributeName="r" values="3;6;3" dur="2s" repeatCount="indefinite" begin="0.6s" /></circle><circle cx="480" cy="160" r="12" fill="none" stroke="#00e0ff" stroke-width="0.5" opacity="0.5"><animate attributeName="r" values="4;15" dur="1.5s" repeatCount="indefinite" begin="0.6s" /><animate attributeName="opacity" values="0.5;0" dur="1.5s" repeatCount="indefinite" begin="0.6s" /></circle><text x="488" y="164" fill="white" font-size="8" font-family="monospace" opacity="0.4">Paris</text></g>
+        <g><circle cx="520" cy="220" r="4" fill="#00e0ff"><animate attributeName="r" values="3;6;3" dur="2s" repeatCount="indefinite" begin="0.1s" /></circle><circle cx="520" cy="220" r="12" fill="none" stroke="#00e0ff" stroke-width="0.5" opacity="0.5"><animate attributeName="r" values="4;15" dur="1.5s" repeatCount="indefinite" begin="0.1s" /><animate attributeName="opacity" values="0.5;0" dur="1.5s" repeatCount="indefinite" begin="0.1s" /></circle><text x="528" y="224" fill="white" font-size="8" font-family="monospace" opacity="0.4">Dubai</text></g>
+        <g><circle cx="700" cy="180" r="4" fill="#00e0ff"><animate attributeName="r" values="3;6;3" dur="2s" repeatCount="indefinite" begin="0.3s" /></circle><circle cx="700" cy="180" r="12" fill="none" stroke="#00e0ff" stroke-width="0.5" opacity="0.5"><animate attributeName="r" values="4;15" dur="1.5s" repeatCount="indefinite" begin="0.3s" /><animate attributeName="opacity" values="0.5;0" dur="1.5s" repeatCount="indefinite" begin="0.3s" /></circle><text x="708" y="184" fill="white" font-size="8" font-family="monospace" opacity="0.4">Singapore</text></g>
+        <g><circle cx="720" cy="150" r="4" fill="#00e0ff"><animate attributeName="r" values="3;6;3" dur="2s" repeatCount="indefinite" begin="0.5s" /></circle><circle cx="720" cy="150" r="12" fill="none" stroke="#00e0ff" stroke-width="0.5" opacity="0.5"><animate attributeName="r" values="4;15" dur="1.5s" repeatCount="indefinite" begin="0.5s" /><animate attributeName="opacity" values="0.5;0" dur="1.5s" repeatCount="indefinite" begin="0.5s" /></circle><text x="728" y="154" fill="white" font-size="8" font-family="monospace" opacity="0.4">HK</text></g>
+        <g><circle cx="750" cy="250" r="4" fill="#00e0ff"><animate attributeName="r" values="3;6;3" dur="2s" repeatCount="indefinite" begin="0.7s" /></circle><circle cx="750" cy="250" r="12" fill="none" stroke="#00e0ff" stroke-width="0.5" opacity="0.5"><animate attributeName="r" values="4;15" dur="1.5s" repeatCount="indefinite" begin="0.7s" /><animate attributeName="opacity" values="0.5;0" dur="1.5s" repeatCount="indefinite" begin="0.7s" /></circle><text x="758" y="254" fill="white" font-size="8" font-family="monospace" opacity="0.4">Sydney</text></g>
+        <g><circle cx="300" cy="300" r="4" fill="#00e0ff"><animate attributeName="r" values="3;6;3" dur="2s" repeatCount="indefinite" begin="0.15s" /></circle><circle cx="300" cy="300" r="12" fill="none" stroke="#00e0ff" stroke-width="0.5" opacity="0.5"><animate attributeName="r" values="4;15" dur="1.5s" repeatCount="indefinite" begin="0.15s" /><animate attributeName="opacity" values="0.5;0" dur="1.5s" repeatCount="indefinite" begin="0.15s" /></circle><text x="308" y="304" fill="white" font-size="8" font-family="monospace" opacity="0.4">Sao Paulo</text></g>
+        <g><circle cx="500" cy="350" r="4" fill="#00e0ff"><animate attributeName="r" values="3;6;3" dur="2s" repeatCount="indefinite" begin="0.35s" /></circle><circle cx="500" cy="350" r="12" fill="none" stroke="#00e0ff" stroke-width="0.5" opacity="0.5"><animate attributeName="r" values="4;15" dur="1.5s" repeatCount="indefinite" begin="0.35s" /><animate attributeName="opacity" values="0.5;0" dur="1.5s" repeatCount="indefinite" begin="0.35s" /></circle><text x="508" y="354" fill="white" font-size="8" font-family="monospace" opacity="0.4">Johannesburg</text></g>
+      </svg>
+    </div>
+  </main>
+
+  <div class="p-10 grid grid-cols-2 md:grid-cols-4 gap-8 border-t border-white/5 bg-black/40 backdrop-blur-md z-10">
+    <div class="text-center">
+      <div class="text-2xl font-black text-white">{{ _('main.landing.stat_volume') }}</div>
+      <div class="text-[10px] uppercase font-bold tracking-widest text-white/30">{{ _('main.landing.stat_volume_label') }}</div>
+    </div>
+    <div class="text-center">
+      <div class="text-2xl font-black text-white">{{ _('main.landing.stat_escrows') }}</div>
+      <div class="text-[10px] uppercase font-bold tracking-widest text-white/30">{{ _('main.landing.stat_escrows_label') }}</div>
+    </div>
+    <div class="text-center">
+      <div class="text-2xl font-black text-white">{{ _('main.landing.stat_audit') }}</div>
+      <div class="text-[10px] uppercase font-bold tracking-widest text-white/30">{{ _('main.landing.stat_audit_label') }}</div>
+    </div>
+    <div class="text-center">
+      <div class="text-2xl font-black text-white">{{ _('main.landing.stat_nodes') }}</div>
+      <div class="text-[10px] uppercase font-bold tracking-widest text-white/30">{{ _('main.landing.stat_nodes_label') }}</div>
+    </div>
+  </div>
+</body>
+</html>
