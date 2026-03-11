@@ -19,6 +19,10 @@ from settings import Settings
 class BillingResource(BaseResource):
     """Resource-схемы для операций с биллингом (Billing)."""
 
+    class Create(BaseResource.Create):
+        wallet_user_id: int = Field(..., description="ID пользователя")
+        usdt_amount: Decimal = Field(..., description="Сумма: положительная — пополнение, отрицательная — списание")
+
     class Get(BaseResource.Get):
         id: int
         wallet_user_id: int
@@ -69,3 +73,14 @@ class BillingRepository(BaseRepository):
         rows = result.scalars().all()
         items = [_model_to_get(r) for r in rows]
         return items, total
+
+    async def create(self, data: BillingResource.Create) -> BillingResource.Get:
+        """Вставка одной записи Billing."""
+        model = Billing(
+            wallet_user_id=data.wallet_user_id,
+            usdt_amount=data.usdt_amount,
+        )
+        self._session.add(model)
+        await self._session.flush()
+        await self._session.refresh(model)
+        return _model_to_get(model)

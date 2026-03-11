@@ -372,3 +372,178 @@ async def test_get_by_identifier_not_found_returns_none(wallet_user_service):
     """get_by_identifier с несуществующим id возвращает None."""
     found = await wallet_user_service.get_by_identifier(999999)
     assert found is None
+
+
+# --- list_users_for_admin ---
+
+
+@pytest.mark.asyncio
+async def test_list_users_for_admin_empty_returns_empty_list_and_zero(
+    wallet_user_service,
+):
+    """Без пользователей list_users_for_admin возвращает ([], 0)."""
+    users, total = await wallet_user_service.list_users_for_admin(
+        page=1, page_size=20
+    )
+    assert users == []
+    assert total == 0
+
+
+@pytest.mark.asyncio
+async def test_list_users_for_admin_returns_all_with_pagination(
+    wallet_user_service,
+):
+    """list_users_for_admin возвращает список и total с пагинацией."""
+    await wallet_user_service.create_user(WALLET_TRON, "tron", "alice")
+    await wallet_user_service.create_user(WALLET_ETH, "ethereum", "bob")
+    users, total = await wallet_user_service.list_users_for_admin(
+        page=1, page_size=20
+    )
+    assert len(users) == 2
+    assert total == 2
+    nicknames = {u.nickname for u in users}
+    assert nicknames == {"alice", "bob"}
+
+
+@pytest.mark.asyncio
+async def test_list_users_for_admin_page_size_limits_results(
+    wallet_user_service,
+):
+    """list_users_for_admin с page_size=1 возвращает одну запись и total=2."""
+    await wallet_user_service.create_user(WALLET_TRON, "tron", "alice")
+    await wallet_user_service.create_user(WALLET_ETH, "ethereum", "bob")
+    users, total = await wallet_user_service.list_users_for_admin(
+        page=1, page_size=1
+    )
+    assert len(users) == 1
+    assert total == 2
+
+
+@pytest.mark.asyncio
+async def test_list_users_for_admin_search_by_nickname(wallet_user_service):
+    """list_users_for_admin с search по никнейму фильтрует."""
+    await wallet_user_service.create_user(WALLET_TRON, "tron", "alice")
+    await wallet_user_service.create_user(WALLET_ETH, "ethereum", "bob")
+    users, total = await wallet_user_service.list_users_for_admin(
+        search="ali", page=1, page_size=20
+    )
+    assert len(users) == 1
+    assert total == 1
+    assert users[0].nickname == "alice"
+
+
+@pytest.mark.asyncio
+async def test_list_users_for_admin_search_by_wallet_address(
+    wallet_user_service,
+):
+    """list_users_for_admin с search по адресу кошелька фильтрует."""
+    await wallet_user_service.create_user(WALLET_TRON, "tron", "alice")
+    users, total = await wallet_user_service.list_users_for_admin(
+        search=WALLET_TRON[:10], page=1, page_size=20
+    )
+    assert len(users) == 1
+    assert total == 1
+    assert users[0].wallet_address == WALLET_TRON
+
+
+@pytest.mark.asyncio
+async def test_list_users_for_admin_blockchain_filter(wallet_user_service):
+    """list_users_for_admin с blockchain возвращает только этот блокчейн."""
+    await wallet_user_service.create_user(WALLET_TRON, "tron", "alice")
+    await wallet_user_service.create_user(WALLET_ETH, "ethereum", "bob")
+    users, total = await wallet_user_service.list_users_for_admin(
+        blockchain="ethereum", page=1, page_size=20
+    )
+    assert len(users) == 1
+    assert total == 1
+    assert users[0].blockchain == "ethereum"
+    assert users[0].nickname == "bob"
+
+
+# --- update_user_admin ---
+
+
+@pytest.mark.asyncio
+async def test_update_user_admin_nickname_success(wallet_user_service):
+    """update_user_admin обновляет nickname и возвращает пользователя."""
+    created = await wallet_user_service.create_user(
+        WALLET_TRON, "tron", "alice"
+    )
+    updated = await wallet_user_service.update_user_admin(
+        created.id, nickname="alice_v2"
+    )
+    assert updated is not None
+    assert updated.nickname == "alice_v2"
+
+
+@pytest.mark.asyncio
+async def test_update_user_admin_is_verified_and_access(wallet_user_service):
+    """update_user_admin обновляет is_verified и access_to_admin_panel."""
+    created = await wallet_user_service.create_user(
+        WALLET_TRON, "tron", "alice"
+    )
+    updated = await wallet_user_service.update_user_admin(
+        created.id,
+        is_verified=True,
+        access_to_admin_panel=True,
+    )
+    assert updated is not None
+    assert updated.is_verified is True
+    assert updated.access_to_admin_panel is True
+
+
+@pytest.mark.asyncio
+async def test_update_user_admin_empty_nickname_raises(wallet_user_service):
+    """update_user_admin с пустым nickname поднимает ValueError."""
+    created = await wallet_user_service.create_user(
+        WALLET_TRON, "tron", "alice"
+    )
+    with pytest.raises(ValueError, match="Nickname cannot be empty"):
+        await wallet_user_service.update_user_admin(
+            created.id, nickname="   "
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_user_admin_nickname_taken_raises(wallet_user_service):
+    """update_user_admin на занятый другим пользователем никнейм поднимает ValueError."""
+    await wallet_user_service.create_user(WALLET_TRON, "tron", "alice")
+    created2 = await wallet_user_service.create_user(
+        WALLET_ETH, "ethereum", "bob"
+    )
+    with pytest.raises(ValueError, match="already taken"):
+        await wallet_user_service.update_user_admin(
+            created2.id, nickname="alice"
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_user_admin_no_fields_returns_current(wallet_user_service):
+    """update_user_admin без полей возвращает текущего пользователя (без изменений)."""
+    created = await wallet_user_service.create_user(
+        WALLET_TRON, "tron", "alice"
+    )
+    updated = await wallet_user_service.update_user_admin(created.id)
+    assert updated is not None
+    assert updated.nickname == "alice"
+
+
+# --- delete_user ---
+
+
+@pytest.mark.asyncio
+async def test_delete_user_success(wallet_user_service):
+    """delete_user удаляет пользователя и возвращает True."""
+    created = await wallet_user_service.create_user(
+        WALLET_TRON, "tron", "alice"
+    )
+    deleted = await wallet_user_service.delete_user(created.id)
+    assert deleted is True
+    assert await wallet_user_service.get_by_id(created.id) is None
+
+
+@pytest.mark.asyncio
+async def test_delete_user_not_found_returns_false(wallet_user_service):
+    """delete_user для несуществующего id возвращает False."""
+    deleted = await wallet_user_service.delete_user(999999)
+    assert deleted is False

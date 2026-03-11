@@ -68,3 +68,71 @@ async def test_get_history_returns_list_and_total(
     assert len(items) == 1
     assert total == 1
     assert float(items[0].usdt_amount) == 100.5
+
+
+# --- add_transaction ---
+
+
+@pytest.mark.asyncio
+async def test_add_transaction_replenish_updates_balance(
+    billing_service, wallet_user_service
+):
+    """add_transaction с положительной суммой пополняет баланс и создаёт запись."""
+    await wallet_user_service.create_user(
+        TRON_BILLING_1, "tron", "billing_user"
+    )
+    user = await wallet_user_service.get_by_wallet_address(TRON_BILLING_1)
+    assert user is not None
+    from decimal import Decimal
+
+    await billing_service.add_transaction(user.id, Decimal("50.25"))
+    updated = await wallet_user_service.get_by_id(user.id)
+    assert float(updated.balance_usdt) == 50.25
+    items, total = await billing_service.get_history(user.id, page=1, page_size=10)
+    assert total == 1
+    assert float(items[0].usdt_amount) == 50.25
+
+
+@pytest.mark.asyncio
+async def test_add_transaction_withdraw_updates_balance(
+    billing_service, wallet_user_service
+):
+    """add_transaction с отрицательной суммой списывает баланс (при достаточном балансе)."""
+    await wallet_user_service.create_user(
+        TRON_BILLING_2, "tron", "billing_user2"
+    )
+    user = await wallet_user_service.get_by_wallet_address(TRON_BILLING_2)
+    from decimal import Decimal
+
+    await billing_service.add_transaction(user.id, Decimal("100"))
+    await billing_service.add_transaction(user.id, Decimal("-30"))
+    updated = await wallet_user_service.get_by_id(user.id)
+    assert float(updated.balance_usdt) == 70
+    items, total = await billing_service.get_history(user.id, page=1, page_size=10)
+    assert total == 2
+
+
+@pytest.mark.asyncio
+async def test_add_transaction_insufficient_balance_raises(
+    billing_service, wallet_user_service
+):
+    """add_transaction с отрицательной суммой при нулевом балансе поднимает ValueError."""
+    await wallet_user_service.create_user(
+        TRON_BILLING_1, "tron", "billing_user"
+    )
+    user = await wallet_user_service.get_by_wallet_address(TRON_BILLING_1)
+    from decimal import Decimal
+
+    with pytest.raises(ValueError, match="Insufficient balance"):
+        await billing_service.add_transaction(user.id, Decimal("-10"))
+
+
+@pytest.mark.asyncio
+async def test_add_transaction_user_not_found_raises(
+    billing_service,
+):
+    """add_transaction для несуществующего wallet_user_id поднимает ValueError."""
+    from decimal import Decimal
+
+    with pytest.raises(ValueError, match="User not found"):
+        await billing_service.add_transaction(999999, Decimal("10"))

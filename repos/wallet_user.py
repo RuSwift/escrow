@@ -4,7 +4,7 @@ from decimal import Decimal
 from typing import List, Optional
 
 from pydantic import Field
-from sqlalchemy import select, update, delete
+from sqlalchemy import func, or_, select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
 
@@ -109,6 +109,44 @@ class WalletUserRepository(BaseRepository):
             stmt = stmt.where(WalletUser.access_to_admin_panel == access_to_admin_panel)
         result = await self._session.execute(stmt)
         return [_model_to_get(m) for m in result.scalars().all()]
+
+    async def list(
+        self,
+        offset: int,
+        limit: int,
+        *,
+        search: Optional[str] = None,
+        blockchain: Optional[str] = None,
+    ) -> tuple[List[WalletUserResource.Get], int]:
+        """
+        Список с пагинацией. search — по wallet_address, nickname или id (простой LIKE/ILIKE).
+        blockchain — точное совпадение. Возвращает (список, total).
+        """
+        stmt = select(WalletUser)
+        count_stmt = select(func.count(WalletUser.id))
+        if search and search.strip():
+            term = f"%{search.strip()}%"
+            cond = or_(
+                WalletUser.wallet_address.ilike(term),
+                WalletUser.nickname.ilike(term),
+            )
+            try:
+                sid = int(search.strip())
+                cond = or_(cond, WalletUser.id == sid)
+            except ValueError:
+                pass
+            stmt = stmt.where(cond)
+            count_stmt = count_stmt.where(cond)
+        if blockchain and blockchain.strip():
+            bc = blockchain.strip().lower()
+            stmt = stmt.where(WalletUser.blockchain == bc)
+            count_stmt = count_stmt.where(WalletUser.blockchain == bc)
+        total_result = await self._session.execute(count_stmt)
+        total = total_result.scalar() or 0
+        stmt = stmt.order_by(WalletUser.created_at.desc()).offset(offset).limit(limit)
+        result = await self._session.execute(stmt)
+        rows = result.scalars().all()
+        return [_model_to_get(m) for m in rows], total
 
     async def create(self, data: WalletUserResource.Create) -> WalletUserResource.Get:
         """Create: создаёт пользователя. DID генерируется при вставке (event listener)."""

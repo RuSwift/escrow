@@ -3,7 +3,7 @@
 Ориентир: https://github.com/RuSwift/garantex/blob/main/services/wallet_user.py
 """
 import logging
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -85,6 +85,62 @@ class WalletUserService:
     async def list_managers(self) -> List[WalletUserResource.Get]:
         """Список пользователей с доступом в админку (менеджеры)."""
         return await self._repo.list_users(access_to_admin_panel=True)
+
+    async def list_users_for_admin(
+        self,
+        *,
+        search: Optional[str] = None,
+        blockchain: Optional[str] = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> Tuple[List[WalletUserResource.Get], int]:
+        """Список пользователей для админки с пагинацией и фильтрами. Возвращает (list, total)."""
+        offset = (page - 1) * page_size
+        return await self._repo.list(
+            offset=offset,
+            limit=page_size,
+            search=search if (search and search.strip()) else None,
+            blockchain=blockchain if (blockchain and blockchain.strip()) else None,
+        )
+
+    async def update_user_admin(
+        self,
+        user_id: int,
+        *,
+        nickname: Optional[str] = None,
+        is_verified: Optional[bool] = None,
+        access_to_admin_panel: Optional[bool] = None,
+    ) -> Optional[WalletUserResource.Get]:
+        """Обновить пользователя по id (админ): nickname, is_verified, access_to_admin_panel."""
+        patch_data = {}
+        if nickname is not None:
+            nickname_clean = (nickname or "").strip()
+            if not nickname_clean:
+                raise ValueError("Nickname cannot be empty")
+            if len(nickname_clean) > 100:
+                raise ValueError("Nickname cannot exceed 100 characters")
+            existing = await self._repo.get_by_nickname(nickname_clean)
+            if existing and existing.id != user_id:
+                raise ValueError(f"Nickname '{nickname_clean}' is already taken")
+            patch_data["nickname"] = nickname_clean
+        if is_verified is not None:
+            patch_data["is_verified"] = is_verified
+        if access_to_admin_panel is not None:
+            patch_data["access_to_admin_panel"] = access_to_admin_panel
+        if not patch_data:
+            return await self._repo.get(user_id)
+        updated = await self._repo.patch(user_id, WalletUserResource.Patch(**patch_data))
+        if updated:
+            await self._session.commit()
+        return updated
+
+    async def delete_user(self, user_id: int) -> bool:
+        """Удалить пользователя по id. Возвращает True, если удалён."""
+        deleted = await self._repo.delete(user_id)
+        if deleted:
+            await self._session.commit()
+            logger.info("Wallet user deleted: id=%d", user_id)
+        return deleted
 
     async def get_by_identifier(
         self, identifier: str | int
