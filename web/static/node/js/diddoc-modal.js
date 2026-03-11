@@ -1,16 +1,16 @@
 /**
- * Vue 2: модалка просмотра DID Document менеджера.
- * API: GET /v1/wallets/managers/{id}/did-document
+ * Vue 2: универсальная модалка просмотра DID Document.
+ * Пропсы: show, title, subtitle (строка под заголовком), fetchUrl (URL для GET).
+ * Ответ API ожидается в виде { did, did_document }.
  */
 (function() {
-    var API_BASE = '/v1';
-    var WALLETS_API = API_BASE + '/wallets';
-
-    Vue.component('manager-diddoc-modal', {
+    Vue.component('diddoc-modal', {
         delimiters: ['[[', ']]'],
         props: {
             show: { type: Boolean, default: false },
-            manager: { type: Object, default: null }
+            title: { type: String, default: '' },
+            subtitle: { type: String, default: '' },
+            fetchUrl: { type: String, default: '' }
         },
         data: function() {
             return {
@@ -21,17 +21,21 @@
         },
         watch: {
             show: function(visible) {
-                if (visible && this.manager && this.manager.id) this.load();
+                if (visible && this.fetchUrl) this.load();
+                else this.data = null;
+            },
+            fetchUrl: function(url) {
+                if (this.show && url) this.load();
                 else this.data = null;
             }
         },
         methods: {
             load: function() {
                 var self = this;
-                if (!this.manager || !this.manager.id) return;
+                if (!this.fetchUrl) return;
                 self.loading = true;
                 self.loadError = '';
-                fetch(WALLETS_API + '/managers/' + this.manager.id + '/did-document', { credentials: 'same-origin' })
+                fetch(this.fetchUrl, { credentials: 'same-origin' })
                     .then(function(r) {
                         if (!r.ok) return r.json().then(function(d) { throw new Error(d.detail || self.$t('node.wallets.diddoc_load_error')); });
                         return r.json();
@@ -57,9 +61,9 @@
             }
         },
         template: `
-    <modal :show="show" :title="$t('node.wallets.manager_diddoc_modal_title')" size="large" @close="close">
-      <div v-if="manager" class="space-y-4">
-        <p class="text-[13px] text-zinc-600">[[ $t('node.wallets.manager_nickname') ]]: <strong>[[ manager.nickname ]]</strong></p>
+    <modal :show="show" :title="title" size="large" @close="close">
+      <div class="space-y-4">
+        <p v-if="subtitle" class="text-[13px] text-zinc-600">[[ subtitle ]]</p>
         <p v-if="loading" class="text-zinc-500 text-[13px]">[[ $t('node.loading') ]]</p>
         <p v-else-if="loadError" class="text-red-600 text-[13px]">[[ loadError ]]</p>
         <template v-else-if="data">

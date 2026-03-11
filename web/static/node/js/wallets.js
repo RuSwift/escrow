@@ -11,6 +11,7 @@
         props: { isNodeInitialized: { type: Boolean, default: false } },
         data: function() {
             return {
+                WALLETS_API: WALLETS_API,
                 activeTab: 'wallets',
                 searchQuery: '',
                 walletList: [],
@@ -577,8 +578,8 @@
         </template>
       </modal>
 
-      <wallet-diddoc-modal :show="showDidDocModal" :wallet="didDocWallet" @close="closeDidDoc"></wallet-diddoc-modal>
-      <manager-diddoc-modal :show="showManagerDidDocModal" :manager="managerDidDocManager" @close="closeManagerDidDoc"></manager-diddoc-modal>
+      <diddoc-modal :show="showDidDocModal" :title="$t('node.wallets.diddoc_modal_title')" :subtitle="didDocWallet ? ($t('node.wallets.diddoc_modal_wallet') + ': ' + didDocWallet.name) : ''" :fetch-url="didDocWallet ? (WALLETS_API + '/' + didDocWallet.id + '/did-documents') : ''" @close="closeDidDoc"></diddoc-modal>
+      <diddoc-modal :show="showManagerDidDocModal" :title="$t('node.wallets.manager_diddoc_modal_title')" :subtitle="managerDidDocManager ? ($t('node.wallets.manager_nickname') + ': ' + managerDidDocManager.nickname) : ''" :fetch-url="managerDidDocManager ? (WALLETS_API + '/managers/' + managerDidDocManager.id + '/did-document') : ''" @close="closeManagerDidDoc"></diddoc-modal>
 
       <modal :show="showAddManagerModal" :title="$t('node.wallets.modal_add_manager_title')" @close="closeAddManagerModal">
         <div class="space-y-4">
