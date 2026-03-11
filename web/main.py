@@ -66,12 +66,22 @@ def create_app() -> FastAPI:
         )
 
     @app.get("/app", response_class=HTMLResponse)
-    async def app_view(request: Request, initial_page: str = "dashboard"):
-        valid = ("dashboard", "my-trusts", "how-it-works", "api", "settings", "support")
+    async def app_view(
+        request: Request,
+        initial_page: str = "dashboard",
+        escrow_id: str = "",
+    ):
+        valid = ("dashboard", "my-trusts", "how-it-works", "api", "settings", "support", "detail")
         page = initial_page if initial_page in valid else "dashboard"
+        if page == "detail" and not escrow_id:
+            page = "dashboard"
         return templates.TemplateResponse(
             "main/app.html",
-            {**_main_context(request, page), "initial_page": page},
+            {
+                **_main_context(request, page),
+                "initial_page": page,
+                "escrow_id": escrow_id.strip() if page == "detail" else "",
+            },
         )
 
     return app

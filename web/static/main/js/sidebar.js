@@ -71,9 +71,23 @@
             }
             this.$nextTick(showBallAfterLayout);
             window.addEventListener('popstate', function() {
-                var page = pathToPage(window.location.search) || pathToPage(window.location.pathname + window.location.search);
-                self.currentPage = page;
-                if (window.__mainApp) window.__mainApp.currentPage = page;
+                var params = new URLSearchParams(window.location.search);
+                var page = params.get('initial_page') || 'dashboard';
+                var escrowId = params.get('escrow_id') || '';
+                if (page === 'detail' && escrowId) {
+                    self.currentPage = 'dashboard';
+                    if (window.__mainApp) {
+                        window.__mainApp.currentPage = 'detail';
+                        window.__mainApp.selectedEscrowId = escrowId;
+                    }
+                } else {
+                    if (page !== 'dashboard' && !SIDEBAR_ITEMS.some(function(item) { return item.page === page; })) page = 'dashboard';
+                    self.currentPage = page;
+                    if (window.__mainApp) {
+                        window.__mainApp.currentPage = page;
+                        window.__mainApp.selectedEscrowId = null;
+                    }
+                }
                 self.$nextTick(function() { self.updateBallPosition(); });
             });
             window.addEventListener('resize', function() { self.$nextTick(function() { self.updateBallPosition(); }); });
@@ -89,7 +103,10 @@
                 this.currentPage = page;
                 var path = PAGE_TO_PATH[page] || '/app';
                 history.pushState({ page: page }, '', path);
-                if (window.__mainApp) window.__mainApp.currentPage = page;
+                if (window.__mainApp) {
+                    window.__mainApp.currentPage = page;
+                    if (page === 'dashboard') window.__mainApp.selectedEscrowId = null;
+                }
             },
             updateBallPosition: function() {
                 var link = this.$el.querySelector('[data-page="' + this.currentPage + '"]');
