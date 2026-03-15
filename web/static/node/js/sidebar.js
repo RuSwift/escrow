@@ -48,7 +48,6 @@
             currentPage: 'dashboard',
             ballTop: 0,
             ballVisible: false,
-            showSupportModal: false,
             sidebarOpen: false
         },
         mounted: function() {
@@ -104,6 +103,10 @@
                 } else {
                     this.$el.style.display = '';
                 }
+            },
+            openSupport: function() {
+                this.sidebarOpen = false;
+                window.dispatchEvent(new CustomEvent('open-support-modal'));
             },
             go: function(page) {
                 if (this.currentPage === page) return;
@@ -168,15 +171,11 @@
             '    </a>',
             '  </nav>',
             '  <div class="p-4 border-t border-zinc-900">',
-            '    <a href="#" class="sidebar-item" @click.prevent="sidebarOpen = false; showSupportModal = true">',
+            '    <a href="#" class="sidebar-item" @click.prevent="openSupport">',
             '      <svg class="w-[18px] h-[18px] mr-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>',
             '      <span class="text-[13px] font-medium tracking-tight">[[ $t(\'node.sidebar.support\') ]]</span>',
             '    </a>',
             '  </div>',
-            '  <modal :show="showSupportModal" :title="$t(\'node.sidebar.support\')" @close="showSupportModal = false">',
-            '    <p class="text-[13px] text-zinc-700 mb-3">[[ $t(\'node.support.description\') ]]</p>',
-            '    <p class="text-[13px] text-zinc-700">[[ $t(\'node.support.telegram_text\') ]] <a href="https://t.me/ruswift_support" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline font-medium">@ruswift_support</a></p>',
-            '  </modal>',
             '  </div>',
             '</div>'
         ].join('')
