@@ -1,9 +1,11 @@
 """
 Database models for storing encrypted node settings
 """
-from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime, Boolean, Index, Numeric, ForeignKey, event, UniqueConstraint
+from typing import Literal
+
+from sqlalchemy import CheckConstraint, Column, Integer, BigInteger, String, Text, DateTime, Boolean, Index, Numeric, ForeignKey, event, UniqueConstraint
 from sqlalchemy.dialects import postgresql
-from sqlalchemy.dialects.postgresql import UUID, JSONB, JSON
+from sqlalchemy.dialects.postgresql import ARRAY, UUID, JSONB, JSON
 from sqlalchemy.sql import func
 import uuid
 from db import Base
@@ -99,6 +101,10 @@ class WalletUser(Base):
         return f"<WalletUser(id={self.id}, nickname={self.nickname})>"
 
 
+# Type for WalletUserSub.roles elements
+WalletUserSubRole = Literal["owner", "operator", "reader"]
+
+
 class WalletUserSub(Base):
     """Sub-accounts for main app managers (linked to parent WalletUser)."""
 
@@ -109,10 +115,22 @@ class WalletUserSub(Base):
     wallet_address = Column(String(255), nullable=False, index=True, comment="Sub-account wallet address")
     blockchain = Column(String(20), nullable=False, index=True, comment="Blockchain: tron, ethereum, etc.")
     nickname = Column(String(100), nullable=True, index=True, comment="Display name for sub-account")
+    roles = Column(
+        ARRAY(Text),
+        nullable=False,
+        server_default="{}",
+        comment="Set of roles: owner, operator, reader",
+    )
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
-    __table_args__ = (UniqueConstraint("wallet_user_id", "wallet_address", "blockchain", name="uq_wallet_user_sub_parent_address_chain"),)
+    __table_args__ = (
+        UniqueConstraint("wallet_user_id", "wallet_address", "blockchain", name="uq_wallet_user_sub_parent_address_chain"),
+        CheckConstraint(
+            "roles <@ ARRAY['owner','operator','reader']::text[]",
+            name="ck_wallet_user_subs_roles_allowed",
+        ),
+    )
 
     def __repr__(self):
         return f"<WalletUserSub(id={self.id}, nickname={self.nickname})>"
