@@ -87,6 +87,10 @@
             var el = this.$el;
             if (el.getAttribute('data-app-name')) this.appName = el.getAttribute('data-app-name');
             this.currentSpace = (el.getAttribute('data-space') || '').trim();
+            if (!this.currentSpace && window.location.pathname) {
+                var segments = window.location.pathname.split('/').filter(Boolean);
+                if (segments.length > 0) this.currentSpace = segments[0];
+            }
             if (this.currentSpace) window.__CURRENT_SPACE__ = this.currentSpace;
             var pageFromUrl = pathToPage(window.location.pathname, window.location.search);
             var initial = (el.getAttribute('data-initial-page') || 'dashboard').trim();

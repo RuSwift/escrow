@@ -61,6 +61,7 @@
   "main.space.switch_confirm_message": "Вы переходите в другой Space. Продолжить?",
   "main.space.switch_yes": "Да",
   "main.space.switch_no": "Нет",
+  "main.space.header_tooltip": "Space — рабочая среда, в которой вам предоставлены права владельцем этого пространства.",
   "main.dashboard.title": "Мои заказы",
   "main.dashboard.subtitle": "Безопасные сделки с мультиподписью.",
   "main.dashboard.placeholder": "Список заказов будет загружаться с API.",

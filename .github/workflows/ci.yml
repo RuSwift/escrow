@@ -64,7 +64,7 @@ jobs:
         run: poetry run python run_migrations.py upgrade head
 
       - name: Run application tests
-        run: poetry run pytest tests/ -vv --tb=long --showlocals -s
+        run: poetry run pytest tests/ -vv --tb=long --showlocals -s --color=yes
 
       - name: Cleanup
         if: always()
@@ -93,4 +93,4 @@ jobs:
         run: poetry install --with dev
 
       - name: Run DIDComm tests
-        run: poetry run pytest didcomm/tests/ -vv --tb=long --showlocals -s
+        run: poetry run pytest didcomm/tests/ -vv --tb=long --showlocals -s --color=yes
