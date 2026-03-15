@@ -33,6 +33,8 @@
   "main.sidebar.support": "Поддержка",
   "main.sidebar.section_tools": "Инструменты",
   "main.sidebar.section_docs": "Документация",
+  "main.sidebar.open_menu": "Открыть меню",
+  "main.sidebar.close_menu": "Закрыть меню",
   "main.dashboard.title": "Мои заказы",
   "main.dashboard.subtitle": "Безопасные сделки с мультиподписью.",
   "main.dashboard.placeholder": "Список заказов будет загружаться с API.",
@@ -152,6 +154,8 @@
   "node.sidebar.section_tools": "Инструменты",
   "node.sidebar.section_marketplace": "Маркетплейс",
   "node.sidebar.section_admin": "Администратор",
+  "node.sidebar.open_menu": "Открыть меню",
+  "node.sidebar.close_menu": "Закрыть меню",
 
   "node.dashboard.welcome": "Добро пожаловать в админ-панель!",
   "node.dashboard.statistics": "Статистика",

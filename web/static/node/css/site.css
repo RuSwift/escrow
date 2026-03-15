@@ -51,6 +51,13 @@
   box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
 }
 
+/* Сайдбар: мобильный drawer и оверлей */
+.sidebar-root {
+  position: relative;
+}
+.sidebar-overlay {
+  cursor: pointer;
+}
 /* Сайдбар: пункты меню и анимированный индикатор-шарик */
 .sidebar-wrap {
   position: relative;

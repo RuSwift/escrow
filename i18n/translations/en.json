@@ -33,6 +33,8 @@
   "main.sidebar.support": "Support",
   "main.sidebar.section_tools": "Tools",
   "main.sidebar.section_docs": "Documentation",
+  "main.sidebar.open_menu": "Open menu",
+  "main.sidebar.close_menu": "Close menu",
   "main.dashboard.title": "My Orders",
   "main.dashboard.subtitle": "Secure your trades with multi-sig escrow.",
   "main.dashboard.placeholder": "Order list will be loaded from API.",
@@ -152,6 +154,8 @@
   "node.sidebar.section_tools": "Tools",
   "node.sidebar.section_marketplace": "Marketplace",
   "node.sidebar.section_admin": "Administrator",
+  "node.sidebar.open_menu": "Open menu",
+  "node.sidebar.close_menu": "Close menu",
 
   "node.dashboard.welcome": "Welcome to the admin panel!",
   "node.dashboard.statistics": "Statistics",

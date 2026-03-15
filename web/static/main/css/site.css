@@ -62,7 +62,13 @@
   min-height: 100%;
 }
 
-/* Сайдбар main */
+/* Сайдбар main: мобильный drawer и оверлей */
+.sidebar-root {
+  position: relative;
+}
+.sidebar-overlay {
+  cursor: pointer;
+}
 .sidebar-wrap {
   position: relative;
 }
