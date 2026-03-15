@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
 
 from core.entities import BaseResource
-from db.models import WalletUser
+from db.models import WalletUser, WalletUserSub
 from repos.base import BaseRepository
 from settings import Settings
 
@@ -48,6 +48,27 @@ class WalletUserResource(BaseResource):
         updated_at: datetime
 
 
+class WalletUserSubResource(BaseResource):
+    """Resource-схемы для субаккаунтов менеджера (WalletUserSub)."""
+
+    class Create(BaseResource.Create):
+        wallet_address: str = Field(..., max_length=255, description="Sub-account wallet address")
+        blockchain: str = Field(..., max_length=20, description="Blockchain: tron, ethereum, etc.")
+        nickname: Optional[str] = Field(default=None, max_length=100, description="Display name for sub-account")
+
+    class Patch(BaseResource.Patch):
+        nickname: Optional[str] = Field(default=None, max_length=100)
+
+    class Get(BaseResource.Get):
+        id: int
+        wallet_user_id: int
+        wallet_address: str
+        blockchain: str
+        nickname: Optional[str] = None
+        created_at: datetime
+        updated_at: datetime
+
+
 def _model_to_get(model: WalletUser) -> WalletUserResource.Get:
     """Преобразует модель WalletUser в WalletUserResource.Get."""
     return WalletUserResource.Get(
@@ -60,6 +81,19 @@ def _model_to_get(model: WalletUser) -> WalletUserResource.Get:
         access_to_admin_panel=model.access_to_admin_panel,
         is_verified=model.is_verified,
         balance_usdt=model.balance_usdt,
+        created_at=model.created_at,
+        updated_at=model.updated_at,
+    )
+
+
+def _sub_model_to_get(model: WalletUserSub) -> WalletUserSubResource.Get:
+    """Преобразует модель WalletUserSub в WalletUserSubResource.Get."""
+    return WalletUserSubResource.Get(
+        id=model.id,
+        wallet_user_id=model.wallet_user_id,
+        wallet_address=model.wallet_address,
+        blockchain=model.blockchain,
+        nickname=model.nickname,
         created_at=model.created_at,
         updated_at=model.updated_at,
     )
@@ -181,5 +215,91 @@ class WalletUserRepository(BaseRepository):
     async def delete(self, user_id: int) -> bool:
         """Delete: удаляет пользователя по id. Возвращает True, если запись была удалена."""
         stmt = delete(WalletUser).where(WalletUser.id == user_id)
+        result = await self._session.execute(stmt)
+        return result.rowcount > 0
+
+    # --- Субаккаунты (WalletUserSub) ---
+
+    async def list_subs(self, wallet_user_id: int) -> List[WalletUserSubResource.Get]:
+        """Список субаккаунтов для родителя (менеджера) wallet_user_id."""
+        stmt = (
+            select(WalletUserSub)
+            .where(WalletUserSub.wallet_user_id == wallet_user_id)
+            .order_by(WalletUserSub.created_at.desc())
+        )
+        result = await self._session.execute(stmt)
+        return [_sub_model_to_get(m) for m in result.scalars().all()]
+
+    async def get_sub(
+        self, wallet_user_id: int, sub_id: int
+    ) -> Optional[WalletUserSubResource.Get]:
+        """Субаккаунт по id, только если он принадлежит данному wallet_user_id."""
+        stmt = select(WalletUserSub).where(
+            WalletUserSub.id == sub_id,
+            WalletUserSub.wallet_user_id == wallet_user_id,
+        )
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        return _sub_model_to_get(model) if model else None
+
+    async def get_sub_by_address(
+        self, wallet_user_id: int, wallet_address: str, blockchain: str
+    ) -> Optional[WalletUserSubResource.Get]:
+        """Субаккаунт по адресу и сети в рамках одного родителя."""
+        stmt = select(WalletUserSub).where(
+            WalletUserSub.wallet_user_id == wallet_user_id,
+            WalletUserSub.wallet_address == wallet_address,
+            WalletUserSub.blockchain == blockchain,
+        )
+        result = await self._session.execute(stmt)
+        model = result.scalar_one_or_none()
+        return _sub_model_to_get(model) if model else None
+
+    async def add_sub(
+        self, wallet_user_id: int, data: WalletUserSubResource.Create
+    ) -> WalletUserSubResource.Get:
+        """Добавить субаккаунт родителю. При дубликате (wallet_address+blockchain) — исключение на уровне БД."""
+        model = WalletUserSub(
+            wallet_user_id=wallet_user_id,
+            wallet_address=data.wallet_address,
+            blockchain=data.blockchain,
+            nickname=data.nickname,
+        )
+        self._session.add(model)
+        await self._session.flush()
+        await self._session.refresh(model)
+        return _sub_model_to_get(model)
+
+    async def patch_sub(
+        self,
+        wallet_user_id: int,
+        sub_id: int,
+        data: WalletUserSubResource.Patch,
+    ) -> Optional[WalletUserSubResource.Get]:
+        """Частичное обновление субаккаунта (только nickname). Возвращает None, если суб не найден или не принадлежит родителю."""
+        payload = data.model_dump(exclude_unset=True)
+        allowed = {"nickname"}
+        values = {k: v for k, v in payload.items() if k in allowed}
+        if not values:
+            return await self.get_sub(wallet_user_id, sub_id)
+        stmt = (
+            update(WalletUserSub)
+            .where(
+                WalletUserSub.id == sub_id,
+                WalletUserSub.wallet_user_id == wallet_user_id,
+            )
+            .values(**values)
+        )
+        result = await self._session.execute(stmt)
+        if result.rowcount == 0:
+            return None
+        return await self.get_sub(wallet_user_id, sub_id)
+
+    async def delete_sub(self, wallet_user_id: int, sub_id: int) -> bool:
+        """Удалить субаккаунт. True, если запись удалена и принадлежала данному wallet_user_id."""
+        stmt = delete(WalletUserSub).where(
+            WalletUserSub.id == sub_id,
+            WalletUserSub.wallet_user_id == wallet_user_id,
+        )
         result = await self._session.execute(stmt)
         return result.rowcount > 0
