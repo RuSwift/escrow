@@ -6,14 +6,14 @@ from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
-from repos.wallet_user import WalletUserSubResource
-from services.space import (
+from core.exceptions import (
     DuplicateParticipant,
     InvalidWalletAddress,
     MissingNickname,
     SpacePermissionDenied,
-    SpaceService,
 )
+from repos.wallet_user import WalletUserSubResource
+from services.space import SpaceService
 from web.endpoints.dependencies import (
     get_required_wallet_address_for_space,
     InviteServiceDep,

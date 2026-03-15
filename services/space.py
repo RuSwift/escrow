@@ -8,6 +8,12 @@ from typing import List
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.exceptions import (
+    DuplicateParticipant,
+    InvalidWalletAddress,
+    MissingNickname,
+    SpacePermissionDenied,
+)
 from db.models import WalletUserSubRole
 from repos.wallet_user import (
     WalletUserRepository,
@@ -16,22 +22,6 @@ from repos.wallet_user import (
 from settings import Settings
 
 from services.tron_auth import TronAuth
-
-
-class SpacePermissionDenied(Exception):
-    """Выбрасывается, когда текущий пользователь не является owner спейса и запрошена операция только для owner."""
-
-
-class InvalidWalletAddress(Exception):
-    """Выбрасывается, когда blockchain + wallet_address не прошли проверку формата."""
-
-
-class MissingNickname(Exception):
-    """Участник (Sub) должен иметь непустой nickname."""
-
-
-class DuplicateParticipant(Exception):
-    """Участник с таким адресом кошелька и сетью уже есть в спейсе."""
 
 
 def validate_wallet_address(blockchain: str, wallet_address: str) -> bool:
@@ -195,9 +185,5 @@ class SpaceService:
 
 __all__ = [
     "SpaceService",
-    "SpacePermissionDenied",
-    "InvalidWalletAddress",
-    "MissingNickname",
-    "DuplicateParticipant",
     "validate_wallet_address",
 ]

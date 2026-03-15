@@ -5,19 +5,19 @@ from unittest.mock import patch
 
 import pytest
 
+from core.exceptions import (
+    DuplicateParticipant,
+    InvalidWalletAddress,
+    MissingNickname,
+    SpacePermissionDenied,
+)
 from db.models import WalletUserSubRole
 from repos.wallet_user import (
     WalletUserRepository,
     WalletUserResource,
     WalletUserSubResource,
 )
-from services.space import (
-    DuplicateParticipant,
-    InvalidWalletAddress,
-    MissingNickname,
-    SpacePermissionDenied,
-    SpaceService,
-)
+from services.space import SpaceService
 
 
 # Валидные TRON-адреса (34 символа, T + base58)

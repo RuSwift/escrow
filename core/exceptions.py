@@ -57,3 +57,19 @@ class DealAccessDeniedError(AccessDeniedError):
             owner_did=owner_did,
             attempted_by=attempted_by
         )
+
+
+class SpacePermissionDenied(Exception):
+    """Выбрасывается, когда текущий пользователь не является owner спейса и запрошена операция только для owner."""
+
+
+class InvalidWalletAddress(Exception):
+    """Выбрасывается, когда blockchain + wallet_address не прошли проверку формата."""
+
+
+class MissingNickname(Exception):
+    """Участник (Sub) должен иметь непустой nickname."""
+
+
+class DuplicateParticipant(Exception):
+    """Участник с таким адресом кошелька и сетью уже есть в спейсе."""
