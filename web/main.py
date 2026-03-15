@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, Request
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -16,6 +16,10 @@ from i18n import _
 from i18n.context import get_request_locale
 from i18n.translations import get_translations_for_locale
 from settings import Settings
+from web.endpoints.dependencies import (
+    get_required_wallet_address_for_space,
+    get_wallet_user_service,
+)
 from web.endpoints.health import router as health_router
 from web.endpoints.v1 import router as v1_router
 from web.middleware import install_locale_middleware
@@ -68,11 +72,26 @@ def create_app() -> FastAPI:
         )
 
     @app.get("/app", response_class=HTMLResponse)
-    async def app_view(
+    async def app_legacy(request: Request):
+        """Обратная совместимость: редирект на лендинг для выбора/входа в space."""
+        return RedirectResponse(url="/", status_code=302)
+
+    @app.get("/{space}", response_class=HTMLResponse)
+    async def app_space_view(
         request: Request,
+        space: str,
         initial_page: str = "dashboard",
         escrow_id: str = "",
+        wallet_address: str = Depends(get_required_wallet_address_for_space),
+        wallet_service=Depends(get_wallet_user_service),
     ):
+        """Приложение в контексте space (nickname). Доступ только если JWT и space в списке spaces пользователя."""
+        space_clean = (space or "").strip()
+        if not space_clean:
+            return RedirectResponse(url="/", status_code=302)
+        allowed = await wallet_service.get_spaces_for_address(wallet_address, "tron")
+        if space_clean not in allowed:
+            return RedirectResponse(url="/", status_code=302)
         valid = ("dashboard", "my-trusts", "how-it-works", "api", "settings", "support", "detail")
         page = initial_page if initial_page in valid else "dashboard"
         if page == "detail" and not escrow_id:
@@ -83,6 +102,7 @@ def create_app() -> FastAPI:
                 **_main_context(request, page),
                 "initial_page": page,
                 "escrow_id": escrow_id.strip() if page == "detail" else "",
+                "space": space_clean,
             },
         )
 

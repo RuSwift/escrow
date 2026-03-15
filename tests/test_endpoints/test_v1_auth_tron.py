@@ -125,6 +125,9 @@ async def test_auth_tron_verify_then_me_success(auth_app):
     data = verify_r.json()
     assert "token" in data
     assert data["wallet_address"] == tron_address
+    assert "spaces" in data
+    assert isinstance(data["spaces"], list)
+    assert data["spaces"] == []  # новый адрес — записей нет
 
     token = data["token"]
     async with AsyncClient(
@@ -136,7 +139,12 @@ async def test_auth_tron_verify_then_me_success(auth_app):
             headers={"Authorization": f"Bearer {token}"},
         )
     assert me_r.status_code == 200
-    assert me_r.json()["wallet_address"] == tron_address
+    me_data = me_r.json()
+    assert me_data["wallet_address"] == tron_address
+    assert me_data.get("standard") == "tron"
+    assert "did" in me_data
+    assert "spaces" in me_data
+    assert me_data["spaces"] == []
 
 
 @pytest.mark.asyncio
@@ -184,3 +192,234 @@ async def test_auth_tron_verify_invalid_signature_401(auth_app):
     assert r.status_code == 401
     detail = (r.json().get("detail") or "").lower()
     assert "signature" in detail or "invalid" in detail
+
+
+# --- POST /v1/auth/tron/init ---
+
+
+@pytest.mark.asyncio
+async def test_auth_tron_init_success(auth_app):
+    """После verify (spaces пусты) POST /tron/init с nickname возвращает 200 и space; затем /me возвращает spaces с nickname."""
+    priv, tron_address = _tron_key_and_address()
+    async with AsyncClient(
+        transport=ASGITransport(app=auth_app),
+        base_url="http://test",
+    ) as client:
+        nonce_r = await client.post(
+            "/v1/auth/tron/nonce",
+            json={"wallet_address": tron_address},
+        )
+        assert nonce_r.status_code == 200
+        message = nonce_r.json()["message"]
+        signature = _tron_sign_message(priv, message)
+        verify_r = await client.post(
+            "/v1/auth/tron/verify",
+            json={
+                "wallet_address": tron_address,
+                "signature": signature,
+                "message": message,
+            },
+        )
+    assert verify_r.status_code == 200
+    token = verify_r.json()["token"]
+    assert verify_r.json()["spaces"] == []
+
+    async with AsyncClient(
+        transport=ASGITransport(app=auth_app),
+        base_url="http://test",
+    ) as client:
+        init_r = await client.post(
+            "/v1/auth/tron/init",
+            json={"nickname": "test_space_user"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert init_r.status_code == 200
+    assert init_r.json().get("space") == "test_space_user"
+
+    async with AsyncClient(
+        transport=ASGITransport(app=auth_app),
+        base_url="http://test",
+    ) as client:
+        me_r = await client.get(
+            "/v1/auth/tron/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert me_r.status_code == 200
+    assert "test_space_user" in me_r.json().get("spaces", [])
+
+
+@pytest.mark.asyncio
+async def test_auth_tron_init_when_spaces_exist_400(auth_app, test_db):
+    """Если у кошелька уже есть spaces (WalletUser создан), init возвращает 400."""
+    from db.models import WalletUser
+
+    priv, tron_address = _tron_key_and_address()
+    user = WalletUser(
+        wallet_address=tron_address,
+        blockchain="tron",
+        did="did:tron:" + tron_address,
+        nickname="existing_user",
+    )
+    test_db.add(user)
+    await test_db.flush()
+    await test_db.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=auth_app),
+        base_url="http://test",
+    ) as client:
+        nonce_r = await client.post(
+            "/v1/auth/tron/nonce",
+            json={"wallet_address": tron_address},
+        )
+        assert nonce_r.status_code == 200
+        message = nonce_r.json()["message"]
+        signature = _tron_sign_message(priv, message)
+        verify_r = await client.post(
+            "/v1/auth/tron/verify",
+            json={
+                "wallet_address": tron_address,
+                "signature": signature,
+                "message": message,
+            },
+        )
+    assert verify_r.status_code == 200
+    assert "existing_user" in verify_r.json().get("spaces", [])
+    token = verify_r.json()["token"]
+
+    async with AsyncClient(
+        transport=ASGITransport(app=auth_app),
+        base_url="http://test",
+    ) as client:
+        init_r = await client.post(
+            "/v1/auth/tron/init",
+            json={"nickname": "another_nick"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert init_r.status_code == 400
+    assert "already" in (init_r.json().get("detail") or "").lower() or "spaces" in (init_r.json().get("detail") or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_auth_tron_init_nickname_taken_400(auth_app, test_db):
+    """Init с nickname, который уже занят другим WalletUser, возвращает 400."""
+    from db.models import WalletUser
+
+    priv, tron_address = _tron_key_and_address()
+    other = WalletUser(
+        wallet_address="TAnotherAddr1234567890123456789012",
+        blockchain="tron",
+        did="did:tron:TAnotherAddr1234567890123456789012",
+        nickname="taken_nick",
+    )
+    test_db.add(other)
+    await test_db.flush()
+    await test_db.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=auth_app),
+        base_url="http://test",
+    ) as client:
+        nonce_r = await client.post(
+            "/v1/auth/tron/nonce",
+            json={"wallet_address": tron_address},
+        )
+        assert nonce_r.status_code == 200
+        message = nonce_r.json()["message"]
+        signature = _tron_sign_message(priv, message)
+        verify_r = await client.post(
+            "/v1/auth/tron/verify",
+            json={
+                "wallet_address": tron_address,
+                "signature": signature,
+                "message": message,
+            },
+        )
+    assert verify_r.status_code == 200
+    token = verify_r.json()["token"]
+
+    async with AsyncClient(
+        transport=ASGITransport(app=auth_app),
+        base_url="http://test",
+    ) as client:
+        init_r = await client.post(
+            "/v1/auth/tron/init",
+            json={"nickname": "taken_nick"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert init_r.status_code == 400
+    assert "taken" in (init_r.json().get("detail") or "").lower() or "nickname" in (init_r.json().get("detail") or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_auth_tron_me_returns_standard_and_spaces(auth_app):
+    """GET /tron/me возвращает standard, wallet_address, did, spaces (список)."""
+    priv, tron_address = _tron_key_and_address()
+    async with AsyncClient(
+        transport=ASGITransport(app=auth_app),
+        base_url="http://test",
+    ) as client:
+        nonce_r = await client.post(
+            "/v1/auth/tron/nonce",
+            json={"wallet_address": tron_address},
+        )
+        message = nonce_r.json()["message"]
+        signature = _tron_sign_message(priv, message)
+        verify_r = await client.post(
+            "/v1/auth/tron/verify",
+            json={"wallet_address": tron_address, "signature": signature, "message": message},
+        )
+    token = verify_r.json()["token"]
+    async with AsyncClient(
+        transport=ASGITransport(app=auth_app),
+        base_url="http://test",
+    ) as client:
+        me_r = await client.get(
+            "/v1/auth/tron/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert me_r.status_code == 200
+    data = me_r.json()
+    assert data["standard"] == "tron"
+    assert data["wallet_address"] == tron_address
+    assert data["did"].startswith("did:")
+    assert "spaces" in data
+    assert isinstance(data["spaces"], list)
+
+
+@pytest.mark.asyncio
+async def test_auth_tron_me_x_space_header(auth_app):
+    """GET /tron/me с заголовком X-Space возвращает space_nickname при валидном space."""
+    priv, tron_address = _tron_key_and_address()
+    async with AsyncClient(
+        transport=ASGITransport(app=auth_app),
+        base_url="http://test",
+    ) as client:
+        nonce_r = await client.post(
+            "/v1/auth/tron/nonce",
+            json={"wallet_address": tron_address},
+        )
+        message = nonce_r.json()["message"]
+        signature = _tron_sign_message(priv, message)
+        verify_r = await client.post(
+            "/v1/auth/tron/verify",
+            json={"wallet_address": tron_address, "signature": signature, "message": message},
+        )
+        token = verify_r.json()["token"]
+        init_r = await client.post(
+            "/v1/auth/tron/init",
+            json={"nickname": "my_space"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert init_r.status_code == 200
+    async with AsyncClient(
+        transport=ASGITransport(app=auth_app),
+        base_url="http://test",
+    ) as client:
+        me_r = await client.get(
+            "/v1/auth/tron/me",
+            headers={"Authorization": f"Bearer {token}", "X-Space": "my_space"},
+        )
+    assert me_r.status_code == 200
+    assert me_r.json().get("space_nickname") == "my_space"
+    assert "my_space" in me_r.json().get("spaces", [])

@@ -60,10 +60,12 @@
     }
 
     /**
-     * Выход: удаляет токен из localStorage. Редирект не выполняет — вызывающий код может перенаправить на /.
+     * Выход: сбрасывает cookie на сервере и удаляет токен из localStorage. Редирект не выполняет — вызывающий код может перенаправить на /.
      */
     function logout() {
-        clearToken();
+        fetch('/v1/auth/logout', { method: 'POST', credentials: 'same-origin' }).finally(function() {
+            clearToken();
+        });
     }
 
     window.get_current_user = get_current_user;

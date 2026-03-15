@@ -72,7 +72,9 @@ Vue.component('dashboard', {
             if (sidebar && sidebar.__vue__) {
                 sidebar.__vue__.currentPage = 'dashboard';
             }
-            var url = '/app?initial_page=detail&escrow_id=' + encodeURIComponent(escrowId);
+            var space = window.__CURRENT_SPACE__ || '';
+            var base = space ? '/' + encodeURIComponent(space) : '/app';
+            var url = base + '?initial_page=detail&escrow_id=' + encodeURIComponent(escrowId);
             history.pushState({ page: 'detail', escrowId: escrowId }, '', url);
         }
     },

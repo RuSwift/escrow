@@ -3,7 +3,7 @@ FastAPI Depends: БД, Redis, Settings, NodeRepository, текущий поль�
 Использование через Annotated в сигнатурах эндпоинтов.
 """
 import jwt
-from typing import Annotated, AsyncGenerator, Literal, Optional
+from typing import Annotated, AsyncGenerator, List, Literal, Optional
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -55,14 +55,22 @@ class ResolvedSettings:
 class UserInfo(BaseModel):
     """Информация о текущем пользователе."""
 
-    space: Literal["web3", "tron"] = Field(
-        ..., description="Пространство авторизации: web3 (Ethereum) или tron"
+    standard: Literal["web3", "tron"] = Field(
+        ..., description="Стандарт/сеть авторизации: web3 (Ethereum) или tron"
     )
     wallet_address: str = Field(
         ..., description="Адрес кошелька пользователя"
     )
     did: str = Field(
         ..., description="DID в формате did:method:address"
+    )
+    space_nickname: Optional[str] = Field(
+        default=None,
+        description="Текущий space (nickname) контекста приложения",
+    )
+    spaces: Optional[List[str]] = Field(
+        default=None,
+        description="Список доступных space (nickname) для этого кошелька",
     )
 
 
@@ -286,7 +294,7 @@ async def get_current_web3_user(
             detail="Invalid token payload",
         )
     did = get_user_did(wallet_address, "web3")
-    return UserInfo(space="web3", wallet_address=wallet_address, did=did)
+    return UserInfo(standard="web3", wallet_address=wallet_address, did=did)
 
 
 async def get_current_tron_user(
@@ -313,14 +321,54 @@ async def get_current_tron_user(
             detail="Invalid token: not a TRON token",
         )
     did = get_user_did(wallet_address, "tron")
-    return UserInfo(space="tron", wallet_address=wallet_address, did=did)
+    return UserInfo(standard="tron", wallet_address=wallet_address, did=did)
 
 
 CurrentWeb3User = Annotated[UserInfo, Depends(get_current_web3_user)]
 CurrentTronUser = Annotated[UserInfo, Depends(get_current_tron_user)]
 
 
+MAIN_AUTH_TOKEN_COOKIE = "main_auth_token"
+
+
+async def get_required_wallet_address_for_space(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_bearer),
+    tron_auth: TronAuth = Depends(get_tron_auth),
+    web3_auth: Web3Auth = Depends(get_web3_auth),
+) -> str:
+    """
+    Для main app GET /{space}: возвращает wallet_address из JWT (TRON или Web3).
+    Токен берётся из Authorization: Bearer или из cookie main_auth_token.
+    Raises 401 если токен отсутствует или невалиден.
+    """
+    token = credentials.credentials if credentials else None
+    if not token:
+        token = request.cookies.get(MAIN_AUTH_TOKEN_COOKIE)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+    payload = tron_auth.verify_jwt_token(token)
+    if not payload:
+        payload = web3_auth.verify_jwt_token(token)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+        )
+    wallet_address = payload.get("wallet_address")
+    if not wallet_address:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+        )
+    return wallet_address
+
+
 __all__ = [
+    "MAIN_AUTH_TOKEN_COOKIE",
     "get_db",
     "get_redis",
     "get_settings",
@@ -356,4 +404,5 @@ __all__ = [
     "NodeKeypairRequiredDep",
     "CurrentWeb3User",
     "CurrentTronUser",
+    "get_required_wallet_address_for_space",
 ]

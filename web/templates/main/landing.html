@@ -203,14 +203,14 @@
       function closeModal() {
         if (modal) { modal.classList.add('hidden'); document.body.style.overflow = ''; }
       }
-      if (startBtn) startBtn.addEventListener('click', function() { window.dispatchEvent(new CustomEvent('open-landing-login')); });
+      if (startBtn) startBtn.addEventListener('click', function() { (window.landing_go_to_app || function() { window.dispatchEvent(new CustomEvent('open-landing-go-to-app')); })(); });
       if (openBtn) openBtn.addEventListener('click', openModal);
       if (closeBtn) closeBtn.addEventListener('click', closeModal);
       if (backdrop) backdrop.addEventListener('click', closeModal);
       if (ctaBtn) {
         ctaBtn.addEventListener('click', function() {
           closeModal();
-          window.dispatchEvent(new CustomEvent('open-landing-login'));
+          (window.landing_go_to_app || function() { window.dispatchEvent(new CustomEvent('open-landing-go-to-app')); })();
         });
       }
       document.addEventListener('keydown', function(e) {

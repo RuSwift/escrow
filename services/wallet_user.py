@@ -82,6 +82,15 @@ class WalletUserService:
         """Возвращает пользователя по id или None."""
         return await self._repo.get(user_id)
 
+    async def get_spaces_for_address(
+        self, wallet_address: str, blockchain: str = "tron"
+    ) -> List[str]:
+        """
+        Список space (nickname), в которых участвует адрес: основной WalletUser
+        и родительские WalletUser для субаккаунтов с этим адресом.
+        """
+        return await self._repo.get_spaces_for_address(wallet_address, blockchain)
+
     async def list_managers(self) -> List[WalletUserResource.Get]:
         """Список пользователей с доступом в админку (менеджеры)."""
         return await self._repo.list_users(access_to_admin_panel=True)
@@ -204,6 +213,49 @@ class WalletUserService:
             avatar=avatar,
             access_to_admin_panel=access_to_admin_panel,
             is_verified=is_verified,
+        )
+        created = await self._repo.create(data)
+        await self._session.commit()
+        return created
+
+    async def create_user_for_init(
+        self,
+        wallet_address: str,
+        blockchain: str,
+        nickname: str,
+    ) -> WalletUserResource.Get:
+        """
+        Инициация нового пользователя с DID = did:{blockchain}:{nickname}.
+        Вызывается после verify при пустом списке spaces.
+        """
+        existing = await self._repo.get_by_wallet_address(wallet_address)
+        if existing:
+            raise ValueError(
+                "User with this wallet address already exists"
+            )
+
+        nickname_clean = (nickname or "").strip()
+        if not nickname_clean:
+            raise ValueError("Nickname cannot be empty")
+        if len(nickname_clean) > 100:
+            raise ValueError("Nickname cannot exceed 100 characters")
+
+        blockchain_lower = (blockchain or "").strip().lower()
+        if not blockchain_lower or blockchain_lower not in ALLOWED_BLOCKCHAINS:
+            raise ValueError("Invalid blockchain type")
+
+        _validate_wallet_address(wallet_address, blockchain_lower)
+
+        existing_nick = await self._repo.get_by_nickname(nickname_clean)
+        if existing_nick:
+            raise ValueError(f"Nickname '{nickname_clean}' is already taken")
+
+        did = f"did:{blockchain_lower}:{nickname_clean}"
+        data = WalletUserResource.Create(
+            wallet_address=wallet_address.strip(),
+            blockchain=blockchain_lower,
+            nickname=nickname_clean,
+            did=did,
         )
         created = await self._repo.create(data)
         await self._session.commit()

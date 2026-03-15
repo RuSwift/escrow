@@ -26,6 +26,7 @@ class WalletUserResource(BaseResource):
         avatar: Optional[str] = Field(default=None, description="User avatar in base64 format")
         access_to_admin_panel: bool = Field(default=False, description="Access to admin panel")
         is_verified: bool = Field(default=False, description="Whether the user is verified")
+        did: Optional[str] = Field(default=None, description="DID (e.g. did:tron:nickname); if set, used instead of auto-generation")
 
     class Patch(BaseResource.Patch):
         nickname: Optional[str] = Field(default=None, max_length=100)
@@ -183,7 +184,7 @@ class WalletUserRepository(BaseRepository):
         return [_model_to_get(m) for m in rows], total
 
     async def create(self, data: WalletUserResource.Create) -> WalletUserResource.Get:
-        """Create: создаёт пользователя. DID генерируется при вставке (event listener)."""
+        """Create: создаёт пользователя. DID из data.did или генерируется при вставке (event listener)."""
         model = WalletUser(
             wallet_address=data.wallet_address,
             blockchain=data.blockchain,
@@ -191,6 +192,7 @@ class WalletUserRepository(BaseRepository):
             avatar=data.avatar,
             access_to_admin_panel=data.access_to_admin_panel,
             is_verified=data.is_verified,
+            did=data.did,
         )
         self._session.add(model)
         await self._session.flush()
@@ -217,6 +219,42 @@ class WalletUserRepository(BaseRepository):
         stmt = delete(WalletUser).where(WalletUser.id == user_id)
         result = await self._session.execute(stmt)
         return result.rowcount > 0
+
+    async def get_spaces_for_address(
+        self, wallet_address: str, blockchain: str = "tron"
+    ) -> List[str]:
+        """
+        Список space (nickname), в которых участвует адрес: свой WalletUser.nickname
+        и nicknames родительских WalletUser для WalletUserSub с этим адресом.
+        Порядок: сначала основной аккаунт, затем субаккаунты (родители).
+        """
+        seen: set = set()
+        result_list: List[str] = []
+        # 1) Main: WalletUser.nickname где wallet_address совпадает
+        stmt_main = select(WalletUser.nickname).where(
+            WalletUser.wallet_address == wallet_address
+        )
+        r_main = await self._session.execute(stmt_main)
+        for (nick,) in r_main.all():
+            if nick and nick not in seen:
+                seen.add(nick)
+                result_list.append(nick)
+        # 2) Subs: родительские WalletUser.nickname по WalletUserSub
+        stmt_subs = (
+            select(WalletUser.nickname)
+            .select_from(WalletUserSub)
+            .join(WalletUser, WalletUserSub.wallet_user_id == WalletUser.id)
+            .where(
+                WalletUserSub.wallet_address == wallet_address,
+                WalletUserSub.blockchain == blockchain,
+            )
+        )
+        r_subs = await self._session.execute(stmt_subs)
+        for (nick,) in r_subs.all():
+            if nick and nick not in seen:
+                seen.add(nick)
+                result_list.append(nick)
+        return result_list
 
     # --- Субаккаунты (WalletUserSub) ---
 

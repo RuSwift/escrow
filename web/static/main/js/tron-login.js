@@ -92,7 +92,13 @@
                         });
                     }).then(function(r) { return r.json(); }).then(function(data) {
                         if (data.token) {
-                            self.$emit('success', { token: data.token, wallet_address: data.wallet_address });
+                            var payload = {
+                                token: data.token,
+                                wallet_address: data.wallet_address,
+                                spaces: Array.isArray(data.spaces) ? data.spaces : []
+                            };
+                            console.log('[tron-login] verify success, emitting payload:', payload);
+                            self.$emit('success', payload);
                         } else {
                             self.error = data.detail || self.$t('main.tron.error_verify');
                         }

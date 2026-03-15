@@ -1,7 +1,7 @@
 """
 Схемы для auth API (nonce, verify, JWT ответы).
 """
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -31,7 +31,23 @@ class VerifyRequest(BaseModel):
 
 
 class AuthResponse(BaseModel):
-    """Ответ с JWT и адресом после успешной верификации."""
+    """Ответ с JWT, адресом и списком spaces (nicknames) после верификации."""
 
     token: str = Field(..., description="JWT токен для авторизации")
     wallet_address: str = Field(..., description="Адрес кошелька")
+    spaces: List[str] = Field(
+        default_factory=list,
+        description="Список space (nickname), в которых участвует адрес",
+    )
+
+
+class InitRequest(BaseModel):
+    """Запрос инициации нового пользователя (при пустых spaces)."""
+
+    nickname: str = Field(..., min_length=1, max_length=100, description="Nickname пользователя")
+
+
+class InitResponse(BaseModel):
+    """Ответ после успешной инициации: клиент сохраняет токен от verify и переходит в space."""
+
+    space: str = Field(..., description="Nickname (space), в который перейти")
