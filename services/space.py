@@ -2,6 +2,7 @@
 Сервис для логики спейсов: роли (owner/operator/reader) и управление участниками.
 Не утяжеляет WalletUserService.
 """
+import re
 from typing import List
 
 from redis.asyncio import Redis
@@ -14,9 +15,31 @@ from repos.wallet_user import (
 )
 from settings import Settings
 
+from services.tron_auth import TronAuth
+
 
 class SpacePermissionDenied(Exception):
     """Выбрасывается, когда текущий пользователь не является owner спейса и запрошена операция только для owner."""
+
+
+class InvalidWalletAddress(Exception):
+    """Выбрасывается, когда blockchain + wallet_address не прошли проверку формата."""
+
+
+def validate_wallet_address(blockchain: str, wallet_address: str) -> bool:
+    """
+    Проверяет формат адреса для заданного блокчейна.
+    tron: T + 34 base58; ethereum: 0x + 40 hex. Остальные — False.
+    """
+    if not blockchain or not wallet_address:
+        return False
+    addr = (wallet_address or "").strip()
+    chain = (blockchain or "").lower()
+    if chain == "tron":
+        return TronAuth.validate_tron_address(addr)
+    if chain == "ethereum":
+        return bool(re.match(r"^0x[0-9a-fA-F]{40}$", addr))
+    return False
 
 
 def _primary_role_from_sub_roles(roles: List[WalletUserSubRole]) -> WalletUserSubRole:
@@ -95,10 +118,14 @@ class SpaceService:
         actor_wallet_address: str,
         data: WalletUserSubResource.Create,
     ) -> WalletUserSubResource.Get:
-        """Добавить участника в спейс. Только owner. Default roles = [reader] в репозитории."""
+        """Добавить участника в спейс. Только owner. Валидирует blockchain+address."""
         wallet_user_id = await self._ensure_owner_and_owner_id(
             space, actor_wallet_address
         )
+        if not validate_wallet_address(data.blockchain, data.wallet_address):
+            raise InvalidWalletAddress(
+                f"Invalid wallet address for blockchain {data.blockchain}"
+            )
         added = await self._repo.add_sub(wallet_user_id, data)
         await self._session.commit()
         return added
@@ -135,4 +162,4 @@ class SpaceService:
         return deleted
 
 
-__all__ = ["SpaceService", "SpacePermissionDenied"]
+__all__ = ["SpaceService", "SpacePermissionDenied", "InvalidWalletAddress", "validate_wallet_address"]

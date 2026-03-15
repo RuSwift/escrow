@@ -1,6 +1,8 @@
 """
 Тесты SpaceService: get_space_role, list_subs_for_space, add_sub_for_space, patch_sub_for_space, delete_sub_for_space.
 """
+from unittest.mock import patch
+
 import pytest
 
 from db.models import WalletUserSubRole
@@ -9,7 +11,7 @@ from repos.wallet_user import (
     WalletUserResource,
     WalletUserSubResource,
 )
-from services.space import SpacePermissionDenied, SpaceService
+from services.space import InvalidWalletAddress, SpacePermissionDenied, SpaceService
 
 
 # Валидные TRON-адреса (34 символа, T + base58)
@@ -125,8 +127,9 @@ async def test_list_subs_for_space_non_owner_raises(space_with_owner_and_sub, sp
 
 
 @pytest.mark.asyncio
-async def test_add_sub_for_space_owner_success(space_with_owner_and_sub, space_service):
-    """Owner может добавить участника."""
+@patch("services.space.validate_wallet_address", return_value=True)
+async def test_add_sub_for_space_owner_success(mock_validate, space_with_owner_and_sub, space_service):
+    """Owner может добавить участника (валидация адреса замокана для тестовых адресов)."""
     added = await space_service.add_sub_for_space(
         SPACE_NAME,
         WALLET_OWNER,
@@ -139,6 +142,7 @@ async def test_add_sub_for_space_owner_success(space_with_owner_and_sub, space_s
     )
     assert added.wallet_address == WALLET_SUB2
     assert added.roles == [WalletUserSubRole.reader]
+    mock_validate.assert_called_once_with("tron", WALLET_SUB2)
     subs = await space_service.list_subs_for_space(SPACE_NAME, WALLET_OWNER)
     assert len(subs) == 2
 
@@ -154,6 +158,21 @@ async def test_add_sub_for_space_non_owner_raises(space_with_owner_and_sub, spac
                 wallet_address=WALLET_SUB2,
                 blockchain="tron",
                 nickname="sub_two",
+            ),
+        )
+
+
+@pytest.mark.asyncio
+async def test_add_sub_for_space_invalid_address_raises(space_with_owner_and_sub, space_service):
+    """При невалидном адресе выбрасывается InvalidWalletAddress."""
+    with pytest.raises(InvalidWalletAddress):
+        await space_service.add_sub_for_space(
+            SPACE_NAME,
+            WALLET_OWNER,
+            WalletUserSubResource.Create(
+                wallet_address="invalid",
+                blockchain="tron",
+                nickname="bad",
             ),
         )
 

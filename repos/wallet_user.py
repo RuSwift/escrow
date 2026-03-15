@@ -70,10 +70,12 @@ class WalletUserSubResource(BaseResource):
         blockchain: str = Field(..., max_length=20, description="Blockchain: tron, ethereum, etc.")
         nickname: Optional[str] = Field(default=None, max_length=100, description="Display name for sub-account")
         roles: Optional[List[WalletUserSubRole]] = Field(default=None, description="Roles: owner, operator, reader; default reader")
+        is_blocked: Optional[bool] = Field(default=None, description="Whether the sub-account is blocked")
 
     class Patch(BaseResource.Patch):
         nickname: Optional[str] = Field(default=None, max_length=100)
         roles: Optional[List[WalletUserSubRole]] = Field(default=None, description="Roles: owner, operator, reader")
+        is_blocked: Optional[bool] = Field(default=None, description="Whether the sub-account is blocked")
 
     class Get(BaseResource.Get):
         id: int
@@ -82,6 +84,8 @@ class WalletUserSubResource(BaseResource):
         blockchain: str
         nickname: Optional[str] = None
         roles: List[WalletUserSubRole]
+        is_verified: bool
+        is_blocked: bool
         created_at: datetime
         updated_at: datetime
 
@@ -112,6 +116,8 @@ def _sub_model_to_get(model: WalletUserSub) -> WalletUserSubResource.Get:
         blockchain=model.blockchain,
         nickname=model.nickname,
         roles=_roles_str_to_enum(model.roles),
+        is_verified=model.is_verified,
+        is_blocked=model.is_blocked,
         created_at=model.created_at,
         updated_at=model.updated_at,
     )
@@ -316,12 +322,17 @@ class WalletUserRepository(BaseRepository):
         """Добавить субаккаунт родителю. При дубликате (wallet_address+blockchain) — исключение на уровне БД. Default roles = [reader]."""
         roles_raw = data.roles or [WalletUserSubRole.reader]
         roles_db = [r.value for r in roles_raw]
+        is_blocked = getattr(data, "is_blocked", None)
+        if is_blocked is None:
+            is_blocked = False
         model = WalletUserSub(
             wallet_user_id=wallet_user_id,
             wallet_address=data.wallet_address,
             blockchain=data.blockchain,
             nickname=data.nickname,
             roles=roles_db,
+            is_verified=False,
+            is_blocked=is_blocked,
         )
         self._session.add(model)
         await self._session.flush()
@@ -334,9 +345,9 @@ class WalletUserRepository(BaseRepository):
         sub_id: int,
         data: WalletUserSubResource.Patch,
     ) -> Optional[WalletUserSubResource.Get]:
-        """Частичное обновление субаккаунта (nickname, roles). Возвращает None, если суб не найден или не принадлежит родителю."""
+        """Частичное обновление субаккаунта (nickname, roles, is_blocked). Возвращает None, если суб не найден или не принадлежит родителю."""
         payload = data.model_dump(exclude_unset=True)
-        allowed = {"nickname", "roles"}
+        allowed = {"nickname", "roles", "is_blocked"}
         values: dict = {}
         for k, v in payload.items():
             if k not in allowed:

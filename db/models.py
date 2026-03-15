@@ -125,6 +125,7 @@ class WalletUserSub(Base):
         comment="Set of roles: owner, operator, reader",
     )
     is_verified = Column(Boolean, default=False, nullable=False, comment="Whether the sub-account is verified")
+    is_blocked = Column(Boolean, default=False, nullable=False, comment="Whether the sub-account is blocked")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
