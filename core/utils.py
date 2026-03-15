@@ -24,15 +24,16 @@ def get_user_did(wallet_address: str, blockchain: str) -> str:
     blockchain_lower = blockchain.lower()
     
     if blockchain_lower in ['tron', 'ethereum', 'bitcoin']:
-        # TRON, Ethereum, Bitcoin use secp256k1
+        # TRON, Ethereum, Bitcoin use secp256k1. Только Ethereum нормализуем в lower (EIP-55).
         did_method = "ethr" if blockchain_lower == "ethereum" else blockchain_lower
-        did = f"did:{did_method}:{wallet_address.lower()}"
+        addr = wallet_address.lower() if blockchain_lower == "ethereum" else wallet_address.strip()
+        did = f"did:{did_method}:{addr}"
     elif blockchain_lower in ['polkadot', 'substrate']:
         # Polkadot uses Ed25519
-        did = f"did:polkadot:{wallet_address.lower()}"
+        did = f"did:polkadot:{wallet_address.strip()}"
     else:
         # Default to secp256k1 for unknown blockchains
-        did = f"did:ethr:{wallet_address.lower()}"
+        did = f"did:ethr:{wallet_address.strip()}"
     
     return did
 

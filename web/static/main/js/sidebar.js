@@ -40,6 +40,40 @@
         return SIDEBAR_ITEMS.some(function(item) { return item.page === page; }) ? page : 'dashboard';
     }
 
+    function truncateMiddle(str, maxLen) {
+        if (!str || str.length <= maxLen) return str || '';
+        var half = Math.floor((maxLen - 3) / 2);
+        return str.slice(0, half) + '...' + str.slice(-(maxLen - 3 - half));
+    }
+
+    function setupHeaderDid(el, did) {
+        if (!el) return;
+        if (!did) {
+            el.textContent = '';
+            el.title = '';
+            el.removeAttribute('data-did');
+            el.onclick = null;
+            return;
+        }
+        el.setAttribute('data-did', did);
+        el.title = did;
+        el.textContent = truncateMiddle(did, 36);
+        el.onclick = function() {
+            var d = el.getAttribute('data-did');
+            if (!d) return;
+            navigator.clipboard.writeText(d).then(function() {
+                var label = el.getAttribute('data-copy-label') || 'Copied!';
+                var orig = el.textContent;
+                el.textContent = label;
+                el.title = label;
+                setTimeout(function() {
+                    el.textContent = orig;
+                    el.title = d;
+                }, 2000);
+            });
+        };
+    }
+
     new Vue({
         el: '#sidebar-main',
         delimiters: ['[[', ']]'],
@@ -48,7 +82,8 @@
             currentPage: 'dashboard',
             ballTop: 0,
             ballVisible: false,
-            sidebarOpen: false
+            sidebarOpen: false,
+            currentUser: null
         },
         mounted: function() {
             var el = this.$el;
@@ -71,6 +106,11 @@
                 });
             }
             this.$nextTick(showBallAfterLayout);
+            var auth = this.get_current_user;
+            if (auth) auth().then(function(u) {
+                self.currentUser = u;
+                setupHeaderDid(document.getElementById('header-user-did'), u && u.did ? u.did : '');
+            });
             window.addEventListener('popstate', function() {
                 var params = new URLSearchParams(window.location.search);
                 var page = params.get('initial_page') || 'dashboard';

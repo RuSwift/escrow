@@ -17,6 +17,7 @@ from i18n.context import get_request_locale
 from i18n.translations import get_translations_for_locale
 from settings import Settings
 from web.endpoints.health import router as health_router
+from web.endpoints.v1 import router as v1_router
 from web.middleware import install_locale_middleware
 
 # Пути относительно корня web (как в node.py)
@@ -43,6 +44,7 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
     app.include_router(health_router, prefix="/health")
+    app.include_router(v1_router)
 
     def _main_context(request: Request, initial_page: str = "dashboard"):
         locale = get_request_locale() or Settings().default_locale
