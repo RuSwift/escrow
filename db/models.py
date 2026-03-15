@@ -124,6 +124,7 @@ class WalletUserSub(Base):
         server_default="{}",
         comment="Set of roles: owner, operator, reader",
     )
+    is_verified = Column(Boolean, default=False, nullable=False, comment="Whether the sub-account is verified")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
