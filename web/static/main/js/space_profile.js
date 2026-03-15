@@ -3,7 +3,9 @@
  * GET/PATCH /v1/spaces/{space}/profile. Поля: description, icon (base64).
  */
 (function() {
-    var PROFILE_ICON_MAX_LEN = 524288; // 512 KB
+    var PROFILE_ICON_MAX_LEN = 524288; // 512 KB (base64 length)
+    // Макс. размер файла в байтах (base64 ~4/3 от бинарного: 512KB base64 ≈ 384KB file)
+    var PROFILE_ICON_MAX_FILE_BYTES = 393216; // ~384 KB
 
     Vue.component('space-profile', {
         delimiters: ['[[', ']]'],
@@ -75,6 +77,11 @@
                 var self = this;
                 var file = ev.target && ev.target.files && ev.target.files[0];
                 if (!file) return;
+                if (file.size > PROFILE_ICON_MAX_FILE_BYTES) {
+                    self.error = self.$t('main.space_profile.error_icon_too_large');
+                    ev.target.value = '';
+                    return;
+                }
                 var reader = new FileReader();
                 reader.onload = function() {
                     var dataUrl = reader.result;
@@ -84,6 +91,9 @@
                     }
                     self.icon = dataUrl || '';
                     self.error = null;
+                };
+                reader.onerror = function() {
+                    self.error = self.$t('main.space_profile.error_icon_too_large');
                 };
                 reader.readAsDataURL(file);
                 ev.target.value = '';
