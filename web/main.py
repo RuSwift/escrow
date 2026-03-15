@@ -138,12 +138,13 @@ def create_app() -> FastAPI:
             return RedirectResponse(url="/", status_code=302)
         space_role = await space_service.get_space_role(space_clean, wallet_address, "tron")
 
-        if initial_page == "space-roles" and space_role != WalletUserSubRole.owner:
+        if initial_page in ("space-roles", "space-profile") and space_role != WalletUserSubRole.owner:
             ctx = {
                 **_main_context(request, "dashboard"),
                 "space": space_clean,
                 "space_role": space_role.value,
                 "space_subs_count": -1,
+                "space_profile_filled": True,
             }
             return templates.TemplateResponse(
                 "main/forbidden.html",
@@ -156,12 +157,15 @@ def create_app() -> FastAPI:
                 space_clean, wallet_address
             )
             space_subs_count = len(subs)
+            profile = await space_service.get_space_profile(space_clean, wallet_address)
+            space_profile_filled = space_service.get_space_profile_filled(profile)
         else:
             space_subs_count = -1
+            space_profile_filled = True
 
         valid = ("dashboard", "my-trusts", "how-it-works", "api", "settings", "support", "detail")
         if space_role == WalletUserSubRole.owner:
-            valid = valid + ("space-roles",)
+            valid = valid + ("space-roles", "space-profile")
         page = initial_page if initial_page in valid else "dashboard"
         if page == "detail" and not escrow_id:
             page = "dashboard"
@@ -174,6 +178,7 @@ def create_app() -> FastAPI:
                 "space": space_clean,
                 "space_role": space_role.value,
                 "space_subs_count": space_subs_count,
+                "space_profile_filled": space_profile_filled,
             },
         )
 

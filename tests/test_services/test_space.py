@@ -13,11 +13,12 @@ from core.exceptions import (
 )
 from db.models import WalletUserSubRole
 from repos.wallet_user import (
+    WalletUserProfileSchema,
     WalletUserRepository,
     WalletUserResource,
     WalletUserSubResource,
 )
-from services.space import SpaceService
+from services.space import PROFILE_ICON_MAX_BASE64_LEN, SpaceService
 
 
 # Валидные TRON-адреса (34 символа, T + base58)
@@ -301,3 +302,152 @@ async def test_delete_sub_for_space_non_owner_raises(space_with_owner_and_sub, s
     sub_id = subs[0].id
     with pytest.raises(SpacePermissionDenied):
         await space_service.delete_sub_for_space(SPACE_NAME, WALLET_SUB1, sub_id)
+
+
+# --- get_space_profile (only owner) ---
+
+
+@pytest.mark.asyncio
+async def test_get_space_profile_owner_returns_none_when_empty(space_with_owner_and_sub, space_service):
+    """Owner получает None когда профиль не заполнен."""
+    profile = await space_service.get_space_profile(SPACE_NAME, WALLET_OWNER)
+    assert profile is None
+
+
+@pytest.mark.asyncio
+async def test_get_space_profile_non_owner_raises(space_with_owner_and_sub, space_service):
+    """Не-owner при get_space_profile получает SpacePermissionDenied."""
+    with pytest.raises(SpacePermissionDenied):
+        await space_service.get_space_profile(SPACE_NAME, WALLET_SUB1)
+
+
+@pytest.mark.asyncio
+async def test_get_space_profile_owner_returns_saved_profile(space_with_owner_and_sub, space_service):
+    """Owner получает сохранённый профиль после update_space_profile."""
+    await space_service.update_space_profile(
+        SPACE_NAME,
+        WALLET_OWNER,
+        WalletUserProfileSchema(description="My space", icon="data:image/png;base64,iVBORw0KGgo="),
+    )
+    profile = await space_service.get_space_profile(SPACE_NAME, WALLET_OWNER)
+    assert profile is not None
+    assert profile.get("description") == "My space"
+    assert profile.get("icon") == "data:image/png;base64,iVBORw0KGgo="
+
+
+# --- update_space_profile (only owner, icon limit) ---
+
+
+@pytest.mark.asyncio
+async def test_update_space_profile_non_owner_raises(space_with_owner_and_sub, space_service):
+    """Не-owner при update_space_profile получает SpacePermissionDenied."""
+    with pytest.raises(SpacePermissionDenied):
+        await space_service.update_space_profile(
+            SPACE_NAME,
+            WALLET_SUB1,
+            WalletUserProfileSchema(description="x"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_space_profile_icon_too_large_raises(space_with_owner_and_sub, space_service):
+    """update_space_profile с иконкой больше 512 КБ выбрасывает ValueError."""
+    big_icon = "x" * (PROFILE_ICON_MAX_BASE64_LEN + 1)
+    with pytest.raises(ValueError, match="512 KB"):
+        await space_service.update_space_profile(
+            SPACE_NAME,
+            WALLET_OWNER,
+            WalletUserProfileSchema(icon=big_icon),
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_space_profile_icon_within_limit_succeeds(space_with_owner_and_sub, space_service):
+    """Иконка в лимите сохраняется успешно."""
+    small_icon = "data:image/png;base64," + "A" * 100
+    result = await space_service.update_space_profile(
+        SPACE_NAME,
+        WALLET_OWNER,
+        WalletUserProfileSchema(icon=small_icon),
+    )
+    assert result.get("icon") == small_icon
+
+
+@pytest.mark.asyncio
+async def test_space_profile_only_description(space_with_owner_and_sub, space_service):
+    """Профиль только с description корректно сохраняется и читается."""
+    await space_service.update_space_profile(
+        SPACE_NAME,
+        WALLET_OWNER,
+        WalletUserProfileSchema(description="Desc only"),
+    )
+    profile = await space_service.get_space_profile(SPACE_NAME, WALLET_OWNER)
+    assert profile == {"description": "Desc only", "icon": None}
+
+
+@pytest.mark.asyncio
+async def test_space_profile_get_space_profile_filled(space_with_owner_and_sub, space_service):
+    """get_space_profile_filled возвращает True при заполненном профиле."""
+    assert space_service.get_space_profile_filled(None) is False
+    assert space_service.get_space_profile_filled({}) is False
+    assert space_service.get_space_profile_filled({"description": "x"}) is True
+    assert space_service.get_space_profile_filled({"icon": "data:image/png;base64,x"}) is True
+    assert space_service.get_space_profile_filled({"description": "", "icon": None}) is False
+
+
+# --- Валидация description (XSS, инъекции) ---
+
+
+@pytest.mark.asyncio
+async def test_update_space_profile_rejects_script_in_description(space_with_owner_and_sub, space_service):
+    """update_space_profile отклоняет description с тегом script."""
+    with pytest.raises(ValueError, match="script|HTML"):
+        await space_service.update_space_profile(
+            SPACE_NAME,
+            WALLET_OWNER,
+            WalletUserProfileSchema(description="Hello <script>alert(1)</script>"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_space_profile_rejects_javascript_in_description(space_with_owner_and_sub, space_service):
+    """update_space_profile отклоняет description с javascript:."""
+    with pytest.raises(ValueError, match="script|event"):
+        await space_service.update_space_profile(
+            SPACE_NAME,
+            WALLET_OWNER,
+            WalletUserProfileSchema(description="Link javascript:alert(1)"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_space_profile_rejects_control_chars_in_description(space_with_owner_and_sub, space_service):
+    """update_space_profile отклоняет description с управляющими символами."""
+    with pytest.raises(ValueError, match="control"):
+        await space_service.update_space_profile(
+            SPACE_NAME,
+            WALLET_OWNER,
+            WalletUserProfileSchema(description="Text with null\x00byte"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_space_profile_rejects_html_tags_in_description(space_with_owner_and_sub, space_service):
+    """update_space_profile отклоняет description с угловыми скобками (HTML)."""
+    with pytest.raises(ValueError, match="HTML"):
+        await space_service.update_space_profile(
+            SPACE_NAME,
+            WALLET_OWNER,
+            WalletUserProfileSchema(description="Safe <b>not allowed</b>"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_space_profile_accepts_safe_description(space_with_owner_and_sub, space_service):
+    """update_space_profile принимает безопасный текст в description."""
+    result = await space_service.update_space_profile(
+        SPACE_NAME,
+        WALLET_OWNER,
+        WalletUserProfileSchema(description="Обычное описание спейса: буквы, цифры 123, пунктуация."),
+    )
+    assert result.get("description") == "Обычное описание спейса: буквы, цифры 123, пунктуация."

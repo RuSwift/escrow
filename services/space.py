@@ -3,7 +3,7 @@
 Не утяжеляет WalletUserService.
 """
 import re
-from typing import List
+from typing import Any, Dict, List, Optional, Union
 
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,12 +16,56 @@ from core.exceptions import (
 )
 from db.models import WalletUserSubRole
 from repos.wallet_user import (
+    WalletUserProfileSchema,
     WalletUserRepository,
+    WalletUserResource,
     WalletUserSubResource,
 )
 from settings import Settings
 
 from services.tron_auth import TronAuth
+
+PROFILE_ICON_MAX_BASE64_LEN = 524288  # 512 KB
+
+# Паттерны, запрещённые в description (XSS, инъекции). Проверка без учёта регистра.
+_PROFILE_DESCRIPTION_FORBIDDEN = (
+    "<script",
+    "</script",
+    "<iframe",
+    "<object",
+    "<embed",
+    "javascript:",
+    "vbscript:",
+    "data:text/html",
+    "onerror=",
+    "onload=",
+    "onclick=",
+    "onmouseover=",
+    "onfocus=",
+    "expression(",
+)
+# Управляющие символы, кроме перевода строки и табуляции
+_PROFILE_DESCRIPTION_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+
+
+def _validate_profile_description(description: Optional[str]) -> None:
+    """
+    Проверяет description на вредоносные символы и типичные эксплойты инъекций (XSS, HTML).
+    При обнаружении опасного содержимого выбрасывает ValueError.
+    """
+    if not description or not description.strip():
+        return
+    text = description
+    if _PROFILE_DESCRIPTION_CONTROL_CHARS.search(text):
+        raise ValueError("Profile description must not contain control characters")
+    if "<" in text or ">" in text:
+        raise ValueError("Profile description must not contain HTML tags")
+    lower = text.lower()
+    for forbidden in _PROFILE_DESCRIPTION_FORBIDDEN:
+        if forbidden in lower:
+            raise ValueError(
+                "Profile description must not contain script or event handler content"
+            )
 
 
 def validate_wallet_address(blockchain: str, wallet_address: str) -> bool:
@@ -181,6 +225,46 @@ class SpaceService:
         if deleted:
             await self._session.commit()
         return deleted
+
+    async def get_space_profile(
+        self, space: str, actor_wallet_address: str
+    ) -> Optional[Dict[str, Any]]:
+        """Профиль спейса (description, icon). Только owner. Возвращает dict или None."""
+        await self._ensure_owner_and_owner_id(space, actor_wallet_address)
+        owner = await self._repo.get_by_nickname(space)
+        if not owner or not owner.profile:
+            return None
+        return owner.profile.model_dump()
+
+    async def update_space_profile(
+        self,
+        space: str,
+        actor_wallet_address: str,
+        data: Union[WalletUserProfileSchema, Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Обновить профиль спейса. Только owner. Лимит иконки 512 КБ."""
+        owner_id = await self._ensure_owner_and_owner_id(space, actor_wallet_address)
+        if isinstance(data, dict):
+            profile = WalletUserProfileSchema(**data)
+        else:
+            profile = data
+        if profile.icon is not None and len(profile.icon) > PROFILE_ICON_MAX_BASE64_LEN:
+            raise ValueError("Profile icon size is too large (max 512 KB)")
+        _validate_profile_description(profile.description)
+        patch_data = WalletUserResource.Patch(profile=profile)
+        updated = await self._repo.patch(owner_id, patch_data)
+        if updated:
+            await self._session.commit()
+        out = await self.get_space_profile(space, actor_wallet_address)
+        return out if out is not None else {}
+
+    def get_space_profile_filled(
+        self, profile: Optional[Dict[str, Any]]
+    ) -> bool:
+        """True если профиль заполнен (есть description или icon)."""
+        if not profile:
+            return False
+        return bool(profile.get("description") or profile.get("icon"))
 
 
 __all__ = [

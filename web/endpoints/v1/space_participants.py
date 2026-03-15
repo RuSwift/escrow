@@ -1,8 +1,8 @@
 """
-API участников спейса: список, добавление, редактирование, удаление, invite-link.
+API участников спейса: список, добавление, редактирование, удаление, invite-link, профиль спейса.
 Только owner спейса. Валидация blockchain+address при создании.
 """
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
@@ -12,7 +12,7 @@ from core.exceptions import (
     MissingNickname,
     SpacePermissionDenied,
 )
-from repos.wallet_user import WalletUserSubResource
+from repos.wallet_user import WalletUserProfileSchema, WalletUserSubResource
 from services.space import SpaceService
 from web.endpoints.dependencies import (
     get_required_wallet_address_for_space,
@@ -22,6 +22,64 @@ from web.endpoints.dependencies import (
 from web.endpoints.v1.schemas.invite import InviteLinkResponse
 
 router = APIRouter(prefix="/spaces", tags=["space-participants"])
+
+
+@router.get(
+    "/{space}/profile",
+    response_model=Optional[WalletUserProfileSchema],
+)
+async def get_space_profile(
+    space: str,
+    space_service: SpaceServiceDep,
+    wallet_address: str = Depends(get_required_wallet_address_for_space),
+):
+    """Профиль спейса (description, icon). Только owner."""
+    try:
+        profile = await space_service.get_space_profile(space, wallet_address)
+    except SpacePermissionDenied:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only space owner can get space profile",
+        )
+    if profile is None:
+        return None
+    return WalletUserProfileSchema(**profile)
+
+
+@router.patch(
+    "/{space}/profile",
+    response_model=WalletUserProfileSchema,
+)
+async def patch_space_profile(
+    space: str,
+    data: WalletUserProfileSchema,
+    space_service: SpaceServiceDep,
+    wallet_address: str = Depends(get_required_wallet_address_for_space),
+):
+    """Обновить профиль спейса. Только owner. Лимит иконки 512 КБ."""
+    try:
+        result = await space_service.update_space_profile(
+            space, wallet_address, data.model_dump(exclude_unset=True)
+        )
+    except SpacePermissionDenied:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only space owner can update space profile",
+        )
+    except ValueError as e:
+        msg = str(e)
+        if "512 KB" in msg:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Profile icon size is too large (max 512 KB)",
+            )
+        if "Profile description" in msg or "description" in msg.lower():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=msg,
+            )
+        raise
+    return WalletUserProfileSchema(**result)
 
 
 @router.get(

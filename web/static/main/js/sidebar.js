@@ -19,6 +19,7 @@
         { page: 'dashboard', labelKey: 'main.sidebar.dashboard', section: 'tools' },
         { page: 'my-trusts', labelKey: 'main.sidebar.my_trusts', section: 'tools' },
         { page: 'space-roles', labelKey: 'main.sidebar.roles', section: 'tools', ownerOnly: true },
+        { page: 'space-profile', labelKey: 'main.sidebar.profile', section: 'tools', ownerOnly: true },
         { page: 'how-it-works', labelKey: 'main.sidebar.how_it_works', section: 'docs' },
         { page: 'api', labelKey: 'main.sidebar.api', section: 'docs' },
         { page: 'settings', labelKey: 'main.sidebar.settings', section: 'bottom' },
@@ -32,6 +33,7 @@
         var page = match ? match.split('&')[0].split('#')[0] : 'dashboard';
         if (!SIDEBAR_ITEMS.some(function(item) { return item.page === page; })) return 'dashboard';
         if (page === 'space-roles' && spaceRole !== 'owner') return 'dashboard';
+        if (page === 'space-profile' && spaceRole !== 'owner') return 'dashboard';
         return page;
     }
 
@@ -104,6 +106,7 @@
             var pageFromUrl = pathToPage(window.location.pathname, window.location.search, this.spaceRole);
             var initial = this._initialPage || 'dashboard';
             if (initial === 'space-roles' && this.spaceRole !== 'owner') initial = 'dashboard';
+            if (initial === 'space-profile' && this.spaceRole !== 'owner') initial = 'dashboard';
             if (SIDEBAR_ITEMS.some(function(item) { return item.page === pageFromUrl; })) {
                 this.currentPage = pageFromUrl;
             } else if (SIDEBAR_ITEMS.some(function(item) { return item.page === initial; })) {
@@ -138,6 +141,7 @@
                 } else {
                     if (page !== 'dashboard' && !SIDEBAR_ITEMS.some(function(item) { return item.page === page; })) page = 'dashboard';
                     if (page === 'space-roles' && self.spaceRole !== 'owner') page = 'dashboard';
+                    if (page === 'space-profile' && self.spaceRole !== 'owner') page = 'dashboard';
                     self.currentPage = page;
                     if (window.__mainApp) {
                         window.__mainApp.currentPage = page;
@@ -224,6 +228,10 @@
             '    <a v-if="spaceRole === \'owner\'" :href="pageHref(\'space-roles\')" data-page="space-roles" @click.prevent="go(\'space-roles\')" :class="currentPage === \'space-roles\' ? \'sidebar-item main-sidebar-item active\' : \'sidebar-item main-sidebar-item\'">',
             '      <svg class="w-[18px] h-[18px] mr-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>',
             '      <span class="text-[13px] font-medium tracking-tight">[[ $t(\'main.sidebar.roles\') ]]</span>',
+            '    </a>',
+            '    <a v-if="spaceRole === \'owner\'" :href="pageHref(\'space-profile\')" data-page="space-profile" @click.prevent="go(\'space-profile\')" :class="currentPage === \'space-profile\' ? \'sidebar-item main-sidebar-item active\' : \'sidebar-item main-sidebar-item\'">',
+            '      <svg class="w-[18px] h-[18px] mr-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>',
+            '      <span class="text-[13px] font-medium tracking-tight">[[ $t(\'main.sidebar.profile\') ]]</span>',
             '    </a>',
             '    <div class="px-3 mb-4 mt-6 text-[10px] font-bold text-white/30 uppercase tracking-widest">[[ $t(\'main.sidebar.section_docs\') ]]</div>',
             '    <a :href="pageHref(\'how-it-works\')" data-page="how-it-works" @click.prevent="go(\'how-it-works\')" :class="currentPage === \'how-it-works\' ? \'sidebar-item main-sidebar-item active\' : \'sidebar-item main-sidebar-item\'">',

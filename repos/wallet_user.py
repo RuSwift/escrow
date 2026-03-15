@@ -3,7 +3,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import List, Optional
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 from sqlalchemy import func, or_, select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
@@ -14,6 +14,12 @@ from repos.base import BaseRepository
 from settings import Settings
 
 logger = logging.getLogger(__name__)
+
+
+class WalletUserProfileSchema(BaseModel):
+    """Space profile: description and icon (base64). Stored in WalletUser.profile as JSON."""
+    description: Optional[str] = None
+    icon: Optional[str] = None
 
 
 class WalletUserResource(BaseResource):
@@ -31,6 +37,7 @@ class WalletUserResource(BaseResource):
     class Patch(BaseResource.Patch):
         nickname: Optional[str] = Field(default=None, max_length=100)
         avatar: Optional[str] = Field(default=None)
+        profile: Optional[WalletUserProfileSchema] = None
         access_to_admin_panel: Optional[bool] = None
         is_verified: Optional[bool] = None
         balance_usdt: Optional[Decimal] = None
@@ -42,6 +49,7 @@ class WalletUserResource(BaseResource):
         did: str
         nickname: str
         avatar: Optional[str] = None
+        profile: Optional[WalletUserProfileSchema] = None
         access_to_admin_panel: bool
         is_verified: bool
         balance_usdt: Decimal
@@ -90,6 +98,13 @@ class WalletUserSubResource(BaseResource):
         updated_at: datetime
 
 
+def _profile_from_model(profile_raw) -> Optional[WalletUserProfileSchema]:
+    """Build WalletUserProfileSchema from DB profile (dict or None)."""
+    if not profile_raw or not isinstance(profile_raw, dict):
+        return None
+    return WalletUserProfileSchema(**profile_raw)
+
+
 def _model_to_get(model: WalletUser) -> WalletUserResource.Get:
     """Преобразует модель WalletUser в WalletUserResource.Get."""
     return WalletUserResource.Get(
@@ -99,6 +114,7 @@ def _model_to_get(model: WalletUser) -> WalletUserResource.Get:
         did=model.did,
         nickname=model.nickname,
         avatar=model.avatar,
+        profile=_profile_from_model(model.profile),
         access_to_admin_panel=model.access_to_admin_panel,
         is_verified=model.is_verified,
         balance_usdt=model.balance_usdt,
@@ -227,7 +243,7 @@ class WalletUserRepository(BaseRepository):
     ) -> Optional[WalletUserResource.Get]:
         """Update: частичное обновление по id (только переданные поля)."""
         payload = data.model_dump(exclude_unset=True)
-        allowed = {"nickname", "avatar", "access_to_admin_panel", "is_verified", "balance_usdt"}
+        allowed = {"nickname", "avatar", "profile", "access_to_admin_panel", "is_verified", "balance_usdt"}
         values = {k: v for k, v in payload.items() if k in allowed}
         if not values:
             return await self.get(user_id)
