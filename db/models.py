@@ -99,6 +99,25 @@ class WalletUser(Base):
         return f"<WalletUser(id={self.id}, nickname={self.nickname})>"
 
 
+class WalletUserSub(Base):
+    """Sub-accounts for main app managers (linked to parent WalletUser)."""
+
+    __tablename__ = "wallet_user_subs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    wallet_user_id = Column(Integer, ForeignKey("wallet_users.id", ondelete="CASCADE"), nullable=False, index=True, comment="Parent WalletUser (manager)")
+    wallet_address = Column(String(255), nullable=False, index=True, comment="Sub-account wallet address")
+    blockchain = Column(String(20), nullable=False, index=True, comment="Blockchain: tron, ethereum, etc.")
+    nickname = Column(String(100), nullable=True, index=True, comment="Display name for sub-account")
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (UniqueConstraint("wallet_user_id", "wallet_address", "blockchain", name="uq_wallet_user_sub_parent_address_chain"),)
+
+    def __repr__(self):
+        return f"<WalletUserSub(id={self.id}, nickname={self.nickname})>"
+
+
 # Event listener для автоматической генерации DID при создании WalletUser
 @event.listens_for(WalletUser, 'before_insert')
 def generate_did_before_insert(mapper, connection, target):
