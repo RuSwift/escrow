@@ -4,7 +4,9 @@
 <div id="app-main"
      data-initial-page="{{ initial_page | default('dashboard') }}"
      data-escrow-id="{{ escrow_id | default('') }}"
-     data-space="{{ space | default('') }}">
+     data-space="{{ space | default('') }}"
+     data-space-role="{{ space_role | default('') }}"
+     data-space-subs-count="{{ space_subs_count | default(-1) }}">
   <div class="p-8 bg-[#f8fafd] flex-1 overflow-y-auto flex items-center justify-center">
     <p class="text-[#58667e] text-sm">{{ _('main.loading') }}</p>
   </div>
@@ -16,6 +18,7 @@
 <script src="/static/main/js/dialog.js"></script>
 <script src="/static/main/js/sidebar.js"></script>
 <script src="/static/main/js/dashboard.js"></script>
+<script src="/static/main/js/space_roles.js"></script>
 <script src="/static/main/js/how-it-works.js"></script>
 <script src="/static/main/js/api-docs.js"></script>
 <script src="/static/main/js/my-trusts.js"></script>

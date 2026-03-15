@@ -260,6 +260,7 @@
             }
         },
         template:
+            '<div style="position:fixed;left:0;top:0;width:0;height:0;overflow:visible;z-index:60;pointer-events:none">' +
             '<div v-if="showSpacePickerOnly" :style="overlayStyle()" @click.self="closeSpacePickerOnly" role="dialog" aria-modal="true">' +
             '  <div class="rounded-2xl bg-[#0a0a0a] border border-white/10 shadow-2xl p-6 overflow-x-hidden box-border" :style="cardStyle()" @click.stop>' +
             '    <div class="flex justify-end mb-2">' +
@@ -296,6 +297,7 @@
             '    </template>' +
             '    <tron-login v-else @success="onTronSuccess"></tron-login>' +
             '  </div>' +
+            '</div>' +
             '</div>'
     });
 })();

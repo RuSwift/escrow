@@ -76,10 +76,24 @@ Vue.component('dashboard', {
             var base = space ? '/' + encodeURIComponent(space) : '/app';
             var url = base + '?initial_page=detail&escrow_id=' + encodeURIComponent(escrowId);
             history.pushState({ page: 'detail', escrowId: escrowId }, '', url);
+        },
+        rolesPageHref: function() {
+            var space = window.__CURRENT_SPACE__ || '';
+            var base = space ? '/' + encodeURIComponent(space) : '/app';
+            return base + '?initial_page=space-roles';
+        },
+        goToRoles: function() {
+            var sidebar = document.querySelector('#sidebar-main');
+            if (sidebar && sidebar.__vue__) sidebar.__vue__.go('space-roles');
+            if (window.__mainApp) window.__mainApp.currentPage = 'space-roles';
         }
     },
     template: `
     <div class="max-w-7xl mx-auto px-4 py-8">
+      <div v-if="typeof window !== \'undefined\' && window.__SPACE_ROLE__ === \'owner\' && window.__SPACE_SUBS_COUNT__ === 0" class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-6 text-amber-800 text-sm font-medium flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span>[[ $t(\'main.dashboard.no_roles_warning\') ]]</span>
+        <a :href="rolesPageHref()" @click.prevent="goToRoles()" class="font-semibold text-main-blue hover:underline">[[ $t(\'main.dashboard.go_to_roles\') ]]</a>
+      </div>
       <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
         <div v-for="(stat, i) in stats" :key="i" class="cmc-card p-4 flex flex-col">
           <span class="text-xs text-cmc-muted font-medium mb-1">[[ $t(stat.labelKey) ]]</span>

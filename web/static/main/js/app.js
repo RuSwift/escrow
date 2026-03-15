@@ -30,8 +30,15 @@
         window.__CURRENT_SPACE__ = spaceFromPath;
     }
 
+    var spaceRole = (el.getAttribute('data-space-role') || '').trim();
+    var spaceSubsCount = parseInt(el.getAttribute('data-space-subs-count'), 10);
+    if (isNaN(spaceSubsCount)) spaceSubsCount = -1;
+    window.__SPACE_ROLE__ = spaceRole;
+    window.__SPACE_SUBS_COUNT__ = spaceSubsCount;
+
     var initialPage = (el.getAttribute('data-initial-page') || 'dashboard').trim();
     var validPages = ['dashboard', 'my-trusts', 'how-it-works', 'api', 'settings', 'support', 'detail'];
+    if (spaceRole === 'owner') validPages.push('space-roles');
     if (validPages.indexOf(initialPage) === -1) {
         initialPage = 'dashboard';
     }

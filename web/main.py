@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from db import init_db
+from db.models import WalletUserSubRole
 from i18n import _
 from i18n.context import get_request_locale
 from i18n.translations import get_translations_for_locale
@@ -95,7 +96,31 @@ def create_app() -> FastAPI:
         if space_clean not in allowed:
             return RedirectResponse(url="/", status_code=302)
         space_role = await space_service.get_space_role(space_clean, wallet_address, "tron")
+
+        if initial_page == "space-roles" and space_role != WalletUserSubRole.owner:
+            ctx = {
+                **_main_context(request, "dashboard"),
+                "space": space_clean,
+                "space_role": space_role.value,
+                "space_subs_count": -1,
+            }
+            return templates.TemplateResponse(
+                "main/forbidden.html",
+                ctx,
+                status_code=403,
+            )
+
+        if space_role == WalletUserSubRole.owner:
+            subs = await space_service.list_subs_for_space(
+                space_clean, wallet_address
+            )
+            space_subs_count = len(subs)
+        else:
+            space_subs_count = -1
+
         valid = ("dashboard", "my-trusts", "how-it-works", "api", "settings", "support", "detail")
+        if space_role == WalletUserSubRole.owner:
+            valid = valid + ("space-roles",)
         page = initial_page if initial_page in valid else "dashboard"
         if page == "detail" and not escrow_id:
             page = "dashboard"
@@ -107,6 +132,7 @@ def create_app() -> FastAPI:
                 "escrow_id": escrow_id.strip() if page == "detail" else "",
                 "space": space_clean,
                 "space_role": space_role.value,
+                "space_subs_count": space_subs_count,
             },
         )
 

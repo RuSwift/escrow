@@ -18,18 +18,21 @@
     var SIDEBAR_ITEMS = [
         { page: 'dashboard', labelKey: 'main.sidebar.dashboard', section: 'tools' },
         { page: 'my-trusts', labelKey: 'main.sidebar.my_trusts', section: 'tools' },
+        { page: 'space-roles', labelKey: 'main.sidebar.roles', section: 'tools', ownerOnly: true },
         { page: 'how-it-works', labelKey: 'main.sidebar.how_it_works', section: 'docs' },
         { page: 'api', labelKey: 'main.sidebar.api', section: 'docs' },
         { page: 'settings', labelKey: 'main.sidebar.settings', section: 'bottom' },
         { page: 'support', labelKey: 'main.sidebar.support', section: 'bottom' }
     ];
 
-    function pathToPage(path, search) {
+    function pathToPage(path, search, spaceRole) {
         if (!path) return 'dashboard';
         var searchStr = search || (typeof window !== 'undefined' ? window.location.search : '');
         var match = searchStr.indexOf('initial_page=') !== -1 && searchStr.split('initial_page=')[1];
         var page = match ? match.split('&')[0].split('#')[0] : 'dashboard';
-        return SIDEBAR_ITEMS.some(function(item) { return item.page === page; }) ? page : 'dashboard';
+        if (!SIDEBAR_ITEMS.some(function(item) { return item.page === page; })) return 'dashboard';
+        if (page === 'space-roles' && spaceRole !== 'owner') return 'dashboard';
+        return page;
     }
 
     function getPathForPage(space, page) {
@@ -78,22 +81,29 @@
             appName: 'Escrow',
             currentPage: 'dashboard',
             currentSpace: '',
+            spaceRole: '',
             ballTop: 0,
             ballVisible: false,
             sidebarOpen: false,
             currentUser: null
         },
-        mounted: function() {
+        beforeMount: function() {
             var el = this.$el;
             if (el.getAttribute('data-app-name')) this.appName = el.getAttribute('data-app-name');
             this.currentSpace = (el.getAttribute('data-space') || '').trim();
+            this.spaceRole = (el.getAttribute('data-space-role') || '').trim();
+            this._initialPage = (el.getAttribute('data-initial-page') || 'dashboard').trim();
+        },
+        mounted: function() {
+            var el = this.$el;
             if (!this.currentSpace && window.location.pathname) {
                 var segments = window.location.pathname.split('/').filter(Boolean);
                 if (segments.length > 0) this.currentSpace = segments[0];
             }
             if (this.currentSpace) window.__CURRENT_SPACE__ = this.currentSpace;
-            var pageFromUrl = pathToPage(window.location.pathname, window.location.search);
-            var initial = (el.getAttribute('data-initial-page') || 'dashboard').trim();
+            var pageFromUrl = pathToPage(window.location.pathname, window.location.search, this.spaceRole);
+            var initial = this._initialPage || 'dashboard';
+            if (initial === 'space-roles' && this.spaceRole !== 'owner') initial = 'dashboard';
             if (SIDEBAR_ITEMS.some(function(item) { return item.page === pageFromUrl; })) {
                 this.currentPage = pageFromUrl;
             } else if (SIDEBAR_ITEMS.some(function(item) { return item.page === initial; })) {
@@ -127,6 +137,7 @@
                     }
                 } else {
                     if (page !== 'dashboard' && !SIDEBAR_ITEMS.some(function(item) { return item.page === page; })) page = 'dashboard';
+                    if (page === 'space-roles' && self.spaceRole !== 'owner') page = 'dashboard';
                     self.currentPage = page;
                     if (window.__mainApp) {
                         window.__mainApp.currentPage = page;
@@ -185,7 +196,7 @@
             }
         },
         template: [
-            '<div class="sidebar-root">',
+            '<div id="sidebar-main" class="sidebar-root">',
             '  <div v-show="sidebarOpen" class="sidebar-overlay fixed inset-0 bg-black/50 z-30 md:hidden transition-opacity" @click="sidebarOpen = false" aria-hidden="true"></div>',
             '  <div class="sidebar-wrap w-64 bg-[#0a0b0d] text-white flex flex-col border-r border-white/5 shrink-0 relative h-screen overflow-y-auto fixed md:relative inset-y-0 left-0 z-40 -translate-x-full md:translate-x-0 transition-transform duration-200 ease-out" :class="{ \'translate-x-0\': sidebarOpen }">',
             '  <div :style="{ top: ballVisible ? (ballTop + \'px\') : \'-999px\' }" class="sidebar-ball main-sidebar-ball"></div>',
@@ -209,6 +220,10 @@
             '    <a :href="pageHref(\'my-trusts\')" data-page="my-trusts" @click.prevent="go(\'my-trusts\')" :class="currentPage === \'my-trusts\' ? \'sidebar-item main-sidebar-item active\' : \'sidebar-item main-sidebar-item\'">',
             '      <svg class="w-[18px] h-[18px] mr-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>',
             '      <span class="text-[13px] font-medium tracking-tight">[[ $t(\'main.sidebar.my_trusts\') ]]</span>',
+            '    </a>',
+            '    <a v-if="spaceRole === \'owner\'" :href="pageHref(\'space-roles\')" data-page="space-roles" @click.prevent="go(\'space-roles\')" :class="currentPage === \'space-roles\' ? \'sidebar-item main-sidebar-item active\' : \'sidebar-item main-sidebar-item\'">',
+            '      <svg class="w-[18px] h-[18px] mr-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>',
+            '      <span class="text-[13px] font-medium tracking-tight">[[ $t(\'main.sidebar.roles\') ]]</span>',
             '    </a>',
             '    <div class="px-3 mb-4 mt-6 text-[10px] font-bold text-white/30 uppercase tracking-widest">[[ $t(\'main.sidebar.section_docs\') ]]</div>',
             '    <a :href="pageHref(\'how-it-works\')" data-page="how-it-works" @click.prevent="go(\'how-it-works\')" :class="currentPage === \'how-it-works\' ? \'sidebar-item main-sidebar-item active\' : \'sidebar-item main-sidebar-item\'">',
