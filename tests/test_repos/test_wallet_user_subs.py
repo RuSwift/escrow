@@ -1,8 +1,9 @@
 """
-Санный тест репозитория: субаккаунты (WalletUserSub) — add_sub, list_subs, get_sub, patch_sub, delete_sub.
+Санный тест репозитория: субаккаунты (WalletUserSub) — add_sub, list_subs, get_sub, patch_sub, delete_sub; roles.
 """
 import pytest
 
+from db.models import WalletUserSubRole
 from repos.wallet_user import (
     WalletUserRepository,
     WalletUserResource,
@@ -48,6 +49,7 @@ async def test_subs_crud_sane(wallet_user_repo):
     assert added.wallet_address == "TSub123456789012345678901234567890AB"
     assert added.blockchain == "tron"
     assert added.nickname == "sub_alice"
+    assert added.roles == [WalletUserSubRole.reader]
 
     subs = await wallet_user_repo.list_subs(parent.id)
     assert len(subs) == 1
@@ -69,3 +71,33 @@ async def test_subs_crud_sane(wallet_user_repo):
 
     subs_after = await wallet_user_repo.list_subs(parent.id)
     assert subs_after == []
+
+
+@pytest.mark.asyncio
+async def test_subs_roles_create_and_patch(wallet_user_repo):
+    """Создание с явными roles, patch roles."""
+    parent = await wallet_user_repo.create(
+        WalletUserResource.Create(
+            wallet_address="TOwner123456789012345678901234567890",
+            blockchain="tron",
+            nickname="owner_roles",
+        )
+    )
+    added = await wallet_user_repo.add_sub(
+        parent.id,
+        WalletUserSubResource.Create(
+            wallet_address="TSub2123456789012345678901234567890AB",
+            blockchain="tron",
+            nickname="sub_op",
+            roles=[WalletUserSubRole.operator],
+        ),
+    )
+    assert added.roles == [WalletUserSubRole.operator]
+
+    patched = await wallet_user_repo.patch_sub(
+        parent.id,
+        added.id,
+        WalletUserSubResource.Patch(roles=[WalletUserSubRole.reader, WalletUserSubRole.operator]),
+    )
+    assert patched is not None
+    assert set(patched.roles) == {WalletUserSubRole.reader, WalletUserSubRole.operator}

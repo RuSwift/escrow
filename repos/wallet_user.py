@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
 
 from core.entities import BaseResource
-from db.models import WalletUser, WalletUserSub
+from db.models import WalletUser, WalletUserSub, WalletUserSubRole
 from repos.base import BaseRepository
 from settings import Settings
 
@@ -49,6 +49,19 @@ class WalletUserResource(BaseResource):
         updated_at: datetime
 
 
+def _roles_str_to_enum(roles_raw: Optional[List[str]]) -> List[WalletUserSubRole]:
+    """Map DB role strings to enum list; skip invalid values."""
+    if not roles_raw:
+        return []
+    result: List[WalletUserSubRole] = []
+    for r in roles_raw:
+        try:
+            result.append(WalletUserSubRole(r))
+        except ValueError:
+            continue
+    return result
+
+
 class WalletUserSubResource(BaseResource):
     """Resource-схемы для субаккаунтов менеджера (WalletUserSub)."""
 
@@ -56,9 +69,11 @@ class WalletUserSubResource(BaseResource):
         wallet_address: str = Field(..., max_length=255, description="Sub-account wallet address")
         blockchain: str = Field(..., max_length=20, description="Blockchain: tron, ethereum, etc.")
         nickname: Optional[str] = Field(default=None, max_length=100, description="Display name for sub-account")
+        roles: Optional[List[WalletUserSubRole]] = Field(default=None, description="Roles: owner, operator, reader; default reader")
 
     class Patch(BaseResource.Patch):
         nickname: Optional[str] = Field(default=None, max_length=100)
+        roles: Optional[List[WalletUserSubRole]] = Field(default=None, description="Roles: owner, operator, reader")
 
     class Get(BaseResource.Get):
         id: int
@@ -66,6 +81,7 @@ class WalletUserSubResource(BaseResource):
         wallet_address: str
         blockchain: str
         nickname: Optional[str] = None
+        roles: List[WalletUserSubRole]
         created_at: datetime
         updated_at: datetime
 
@@ -95,6 +111,7 @@ def _sub_model_to_get(model: WalletUserSub) -> WalletUserSubResource.Get:
         wallet_address=model.wallet_address,
         blockchain=model.blockchain,
         nickname=model.nickname,
+        roles=_roles_str_to_enum(model.roles),
         created_at=model.created_at,
         updated_at=model.updated_at,
     )
@@ -296,12 +313,15 @@ class WalletUserRepository(BaseRepository):
     async def add_sub(
         self, wallet_user_id: int, data: WalletUserSubResource.Create
     ) -> WalletUserSubResource.Get:
-        """Добавить субаккаунт родителю. При дубликате (wallet_address+blockchain) — исключение на уровне БД."""
+        """Добавить субаккаунт родителю. При дубликате (wallet_address+blockchain) — исключение на уровне БД. Default roles = [reader]."""
+        roles_raw = data.roles or [WalletUserSubRole.reader]
+        roles_db = [r.value for r in roles_raw]
         model = WalletUserSub(
             wallet_user_id=wallet_user_id,
             wallet_address=data.wallet_address,
             blockchain=data.blockchain,
             nickname=data.nickname,
+            roles=roles_db,
         )
         self._session.add(model)
         await self._session.flush()
@@ -314,10 +334,25 @@ class WalletUserRepository(BaseRepository):
         sub_id: int,
         data: WalletUserSubResource.Patch,
     ) -> Optional[WalletUserSubResource.Get]:
-        """Частичное обновление субаккаунта (только nickname). Возвращает None, если суб не найден или не принадлежит родителю."""
+        """Частичное обновление субаккаунта (nickname, roles). Возвращает None, если суб не найден или не принадлежит родителю."""
         payload = data.model_dump(exclude_unset=True)
-        allowed = {"nickname"}
-        values = {k: v for k, v in payload.items() if k in allowed}
+        allowed = {"nickname", "roles"}
+        values: dict = {}
+        for k, v in payload.items():
+            if k not in allowed:
+                continue
+            if k == "roles" and v is not None:
+                # Normalize: unique enum values as strings
+                seen: set = set()
+                roles_db = []
+                for r in v:
+                    val = r.value if isinstance(r, WalletUserSubRole) else r
+                    if val in ("owner", "operator", "reader") and val not in seen:
+                        seen.add(val)
+                        roles_db.append(val)
+                values["roles"] = roles_db
+            else:
+                values[k] = v
         if not values:
             return await self.get_sub(wallet_user_id, sub_id)
         stmt = (

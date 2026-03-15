@@ -1,7 +1,7 @@
 """
 Database models for storing encrypted node settings
 """
-from typing import Literal
+from enum import Enum
 
 from sqlalchemy import CheckConstraint, Column, Integer, BigInteger, String, Text, DateTime, Boolean, Index, Numeric, ForeignKey, event, UniqueConstraint
 from sqlalchemy.dialects import postgresql
@@ -101,8 +101,11 @@ class WalletUser(Base):
         return f"<WalletUser(id={self.id}, nickname={self.nickname})>"
 
 
-# Type for WalletUserSub.roles elements
-WalletUserSubRole = Literal["owner", "operator", "reader"]
+# Enum for WalletUserSub.roles elements (stored as strings in DB)
+class WalletUserSubRole(str, Enum):
+    owner = "owner"
+    operator = "operator"
+    reader = "reader"
 
 
 class WalletUserSub(Base):

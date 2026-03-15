@@ -43,7 +43,10 @@
               space [{{ space }}]
             </button>
             <div id="header-space-tooltip" class="hidden absolute left-0 top-full mt-1.5 z-50 w-64 max-w-[calc(100vw-2rem)] rounded-lg bg-[#0a0b0d] text-white text-xs leading-relaxed p-3 shadow-xl border border-white/10" role="tooltip">
-              {{ _('main.space.header_tooltip') }}
+              <p class="mb-2">{{ _('main.space.header_tooltip') }}</p>
+              {% if space_role is defined and space_role %}
+              <p class="mt-2 pt-2 border-t border-white/20">{{ _('main.space.your_role', role=_('main.space.role_' ~ space_role)) }}</p>
+              {% endif %}
             </div>
           </div>
           {% endif %}

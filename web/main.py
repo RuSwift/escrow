@@ -18,6 +18,7 @@ from i18n.translations import get_translations_for_locale
 from settings import Settings
 from web.endpoints.dependencies import (
     get_required_wallet_address_for_space,
+    get_space_service,
     get_wallet_user_service,
 )
 from web.endpoints.health import router as health_router
@@ -84,6 +85,7 @@ def create_app() -> FastAPI:
         escrow_id: str = "",
         wallet_address: str = Depends(get_required_wallet_address_for_space),
         wallet_service=Depends(get_wallet_user_service),
+        space_service=Depends(get_space_service),
     ):
         """Приложение в контексте space (nickname). Доступ только если JWT и space в списке spaces пользователя."""
         space_clean = (space or "").strip()
@@ -92,6 +94,7 @@ def create_app() -> FastAPI:
         allowed = await wallet_service.get_spaces_for_address(wallet_address, "tron")
         if space_clean not in allowed:
             return RedirectResponse(url="/", status_code=302)
+        space_role = await space_service.get_space_role(space_clean, wallet_address, "tron")
         valid = ("dashboard", "my-trusts", "how-it-works", "api", "settings", "support", "detail")
         page = initial_page if initial_page in valid else "dashboard"
         if page == "detail" and not escrow_id:
@@ -103,6 +106,7 @@ def create_app() -> FastAPI:
                 "initial_page": page,
                 "escrow_id": escrow_id.strip() if page == "detail" else "",
                 "space": space_clean,
+                "space_role": space_role.value,
             },
         )
 
