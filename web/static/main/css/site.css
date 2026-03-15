@@ -1,5 +1,18 @@
 /* Main app: стили для сплэш, сайдбара и страниц */
 
+/* Лендинг: окно на всю ширину, без белых полей */
+html.overflow-x-hidden,
+html.overflow-x-hidden body {
+  width: 100%;
+  max-width: 100vw;
+  box-sizing: border-box;
+}
+html.overflow-x-hidden *,
+html.overflow-x-hidden *::before,
+html.overflow-x-hidden *::after {
+  box-sizing: inherit;
+}
+
 /* Карточки и таблицы */
 .cmc-card {
   background: #fff;

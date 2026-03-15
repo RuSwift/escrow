@@ -114,9 +114,9 @@
             '  <p>[[ error ]]</p>' +
             '  <button type="button" @click="error = \'\'" class="mt-2 text-xs underline text-red-600 hover:text-red-800">[[ $t(\'main.tron.try_again\') ]]</button>' +
             '</div>' +
-            '<button type="button" :disabled="loading" @click="connect" class="w-full px-4 py-2.5 bg-amber-500 text-white rounded-lg text-[13px] font-semibold hover:bg-amber-600 disabled:opacity-50 flex items-center justify-center gap-2">' +
-            '  <span v-if="loading">[[ $t(\'main.tron.connecting\') ]]</span>' +
-            '  <span v-else>[[ $t(\'main.tron.connect_tron\') ]]</span>' +
+            '<button type="button" :disabled="loading" @click="connect" class="w-full min-w-0 px-4 py-2.5 bg-amber-500 text-white rounded-lg text-[13px] font-semibold hover:bg-amber-600 disabled:opacity-50 flex items-center justify-center gap-2">' +
+            '  <span v-if="loading" class="truncate">[[ $t(\'main.tron.connecting\') ]]</span>' +
+            '  <span v-else class="truncate">[[ $t(\'main.tron.connect_tron\') ]]</span>' +
             '</button>' +
             '</div>'
     });

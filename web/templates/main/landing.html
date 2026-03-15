@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="{{ locale | default('ru') }}">
+<html lang="{{ locale | default('ru') }}" class="w-full min-w-0 min-h-full bg-[#050505] overflow-x-hidden">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -20,7 +20,7 @@
   </script>
   <link rel="stylesheet" href="/static/main/css/site.css" />
 </head>
-<body class="min-h-screen bg-[#050505] text-white flex flex-col overflow-hidden font-sans antialiased">
+<body class="w-full min-w-0 min-h-screen bg-[#050505] text-white flex flex-col overflow-hidden font-sans antialiased">
   <script>
     window.__LOCALE__ = "{{ locale | default('ru') }}";
     window.__TRANSLATIONS__ = {{ translations_json | default('{}') | safe }};
@@ -52,12 +52,12 @@
         {{ _('main.landing.subtitle') }}
       </p>
       <div class="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
-        <a href="/app" class="px-8 py-4 bg-main-blue text-white rounded-2xl font-bold hover:scale-105 transition-transform shadow-xl shadow-main-blue/30 text-center">
+        <button type="button" id="landing-cta-start" class="px-8 py-4 bg-main-blue text-white rounded-2xl font-bold hover:scale-105 transition-transform shadow-xl shadow-main-blue/30 text-center">
           {{ _('main.landing.cta_primary') }}
-        </a>
-        <a href="/app?initial_page=how-it-works" class="px-8 py-4 bg-white/5 border border-white/10 rounded-2xl font-bold hover:bg-white/10 transition-colors text-center">
+        </button>
+        <button type="button" id="landing-cta-docs" class="px-8 py-4 bg-white/5 border border-white/10 rounded-2xl font-bold hover:bg-white/10 transition-colors text-center">
           {{ _('main.landing.cta_docs') }}
-        </a>
+        </button>
       </div>
     </div>
 
@@ -97,6 +97,75 @@
     </div>
   </main>
 
+  <!-- Модалка документации (полный экран), без перехода на защищённую страницу -->
+  <div id="landing-docs-modal" class="fixed inset-0 z-50 hidden overflow-y-auto" aria-hidden="true" role="dialog" aria-label="{{ _('main.landing.cta_docs') }}">
+    <div class="fixed inset-0 bg-black/80 backdrop-blur-sm" id="landing-docs-modal-backdrop"></div>
+    <div class="relative min-h-screen flex flex-col items-center py-8 px-4 sm:px-6">
+      <div class="w-full max-w-4xl flex flex-col flex-1">
+        <div class="flex justify-end mb-4">
+          <button type="button" id="landing-docs-modal-close" class="p-2 rounded-xl text-white/70 hover:text-white hover:bg-white/10 transition-colors" aria-label="{{ _('main.landing.docs_close') }}">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="bg-[#0a0a0a] border border-white/10 rounded-3xl p-8 sm:p-12 shadow-2xl flex-1 overflow-y-auto">
+          <div class="text-center mb-12">
+            <h2 class="text-3xl sm:text-4xl font-bold mb-4 tracking-tight text-white">{{ _('main.how_it_works.title') }}</h2>
+            <p class="text-lg text-white/60 max-w-2xl mx-auto">{{ _('main.how_it_works.subtitle') }}</p>
+          </div>
+          <div class="space-y-10">
+            <div class="flex flex-col sm:flex-row gap-6 items-center">
+              <div class="w-16 h-16 rounded-2xl flex items-center justify-center shrink-0 bg-main-blue/10 text-main-blue shadow-lg">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>
+              </div>
+              <div class="flex-1 text-center sm:text-left">
+                <div class="text-xs font-bold uppercase tracking-widest text-main-blue mb-2">{{ _('main.how_it_works.step') }} 01</div>
+                <h3 class="text-xl font-bold mb-2 text-white">{{ _('main.how_it_works.step1_title') }}</h3>
+                <p class="text-white/60 leading-relaxed">{{ _('main.how_it_works.step1_desc') }}</p>
+              </div>
+            </div>
+            <div class="flex flex-col sm:flex-row gap-6 items-center">
+              <div class="w-16 h-16 rounded-2xl flex items-center justify-center shrink-0 bg-purple-500/10 text-purple-400 shadow-lg">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+              </div>
+              <div class="flex-1 text-center sm:text-left">
+                <div class="text-xs font-bold uppercase tracking-widest text-main-blue mb-2">{{ _('main.how_it_works.step') }} 02</div>
+                <h3 class="text-xl font-bold mb-2 text-white">{{ _('main.how_it_works.step2_title') }}</h3>
+                <p class="text-white/60 leading-relaxed">{{ _('main.how_it_works.step2_desc') }}</p>
+              </div>
+            </div>
+            <div class="flex flex-col sm:flex-row gap-6 items-center">
+              <div class="w-16 h-16 rounded-2xl flex items-center justify-center shrink-0 bg-amber-500/10 text-amber-400 shadow-lg">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
+              </div>
+              <div class="flex-1 text-center sm:text-left">
+                <div class="text-xs font-bold uppercase tracking-widest text-main-blue mb-2">{{ _('main.how_it_works.step') }} 03</div>
+                <h3 class="text-xl font-bold mb-2 text-white">{{ _('main.how_it_works.step3_title') }}</h3>
+                <p class="text-white/60 leading-relaxed">{{ _('main.how_it_works.step3_desc') }}</p>
+              </div>
+            </div>
+            <div class="flex flex-col sm:flex-row gap-6 items-center">
+              <div class="w-16 h-16 rounded-2xl flex items-center justify-center shrink-0 bg-emerald-500/10 text-emerald-400 shadow-lg">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+              </div>
+              <div class="flex-1 text-center sm:text-left">
+                <div class="text-xs font-bold uppercase tracking-widest text-main-blue mb-2">{{ _('main.how_it_works.step') }} 04</div>
+                <h3 class="text-xl font-bold mb-2 text-white">{{ _('main.how_it_works.step4_title') }}</h3>
+                <p class="text-white/60 leading-relaxed">{{ _('main.how_it_works.step4_desc') }}</p>
+              </div>
+            </div>
+          </div>
+          <div class="mt-12 p-8 bg-white/5 rounded-2xl border border-white/10 text-center">
+            <h3 class="text-xl font-bold mb-3 text-white">{{ _('main.how_it_works.cta_title') }}</h3>
+            <p class="text-white/60 mb-6">{{ _('main.how_it_works.cta_subtitle') }}</p>
+            <button type="button" id="landing-docs-modal-cta" class="px-8 py-3 bg-main-blue text-white rounded-2xl font-bold hover:scale-105 transition-transform shadow-xl shadow-main-blue/30">
+              {{ _('main.login') }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="p-10 grid grid-cols-2 md:grid-cols-4 gap-8 border-t border-white/5 bg-black/40 backdrop-blur-md z-10">
     <div class="text-center">
       <div class="text-2xl font-black text-white">{{ _('main.landing.stat_volume') }}</div>
@@ -115,9 +184,39 @@
       <div class="text-[10px] uppercase font-bold tracking-widest text-white/30">{{ _('main.landing.stat_nodes_label') }}</div>
     </div>
   </div>
+  <div id="landing-login-modal" style="position:fixed;left:0;top:0;width:0;height:0;overflow:visible;z-index:60;pointer-events:none"></div>
   <script src="https://cdn.jsdelivr.net/npm/vue@2.7.16/dist/vue.min.js"></script>
   <script src="/static/main/js/auth.js"></script>
   <script src="/static/main/js/tron-login.js"></script>
   <script src="/static/main/js/landing-auth.js"></script>
+  <script>
+    (function() {
+      var modal = document.getElementById('landing-docs-modal');
+      var openBtn = document.getElementById('landing-cta-docs');
+      var startBtn = document.getElementById('landing-cta-start');
+      var closeBtn = document.getElementById('landing-docs-modal-close');
+      var backdrop = document.getElementById('landing-docs-modal-backdrop');
+      var ctaBtn = document.getElementById('landing-docs-modal-cta');
+      function openModal() {
+        if (modal) { modal.classList.remove('hidden'); document.body.style.overflow = 'hidden'; }
+      }
+      function closeModal() {
+        if (modal) { modal.classList.add('hidden'); document.body.style.overflow = ''; }
+      }
+      if (startBtn) startBtn.addEventListener('click', function() { window.dispatchEvent(new CustomEvent('open-landing-login')); });
+      if (openBtn) openBtn.addEventListener('click', openModal);
+      if (closeBtn) closeBtn.addEventListener('click', closeModal);
+      if (backdrop) backdrop.addEventListener('click', closeModal);
+      if (ctaBtn) {
+        ctaBtn.addEventListener('click', function() {
+          closeModal();
+          window.dispatchEvent(new CustomEvent('open-landing-login'));
+        });
+      }
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && modal && !modal.classList.contains('hidden')) closeModal();
+      });
+    })();
+  </script>
 </body>
 </html>
