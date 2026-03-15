@@ -11,7 +11,13 @@ from repos.wallet_user import (
     WalletUserResource,
     WalletUserSubResource,
 )
-from services.space import InvalidWalletAddress, SpacePermissionDenied, SpaceService
+from services.space import (
+    DuplicateParticipant,
+    InvalidWalletAddress,
+    MissingNickname,
+    SpacePermissionDenied,
+    SpaceService,
+)
 
 
 # Валидные TRON-адреса (34 символа, T + base58)
@@ -177,6 +183,49 @@ async def test_add_sub_for_space_invalid_address_raises(space_with_owner_and_sub
         )
 
 
+@pytest.mark.asyncio
+@patch("services.space.validate_wallet_address", return_value=True)
+async def test_add_sub_for_space_missing_nickname_raises(mock_validate, space_with_owner_and_sub, space_service):
+    """Добавление участника без nickname выбрасывает MissingNickname."""
+    with pytest.raises(MissingNickname):
+        await space_service.add_sub_for_space(
+            SPACE_NAME,
+            WALLET_OWNER,
+            WalletUserSubResource.Create(
+                wallet_address=WALLET_SUB2,
+                blockchain="tron",
+                nickname=None,
+            ),
+        )
+    with pytest.raises(MissingNickname):
+        await space_service.add_sub_for_space(
+            SPACE_NAME,
+            WALLET_OWNER,
+            WalletUserSubResource.Create(
+                wallet_address=WALLET_SUB2,
+                blockchain="tron",
+                nickname="   ",
+            ),
+        )
+
+
+@pytest.mark.asyncio
+@patch("services.space.validate_wallet_address", return_value=True)
+async def test_add_sub_for_space_duplicate_address_blockchain_raises(mock_validate, space_with_owner_and_sub, space_service):
+    """Добавление участника с тем же адресом и сетью выбрасывает DuplicateParticipant."""
+    with pytest.raises(DuplicateParticipant):
+        await space_service.add_sub_for_space(
+            SPACE_NAME,
+            WALLET_OWNER,
+            WalletUserSubResource.Create(
+                wallet_address=WALLET_SUB1,
+                blockchain="tron",
+                nickname="another_nick",
+                roles=[WalletUserSubRole.reader],
+            ),
+        )
+
+
 # --- patch_sub_for_space (only owner) ---
 
 
@@ -207,6 +256,27 @@ async def test_patch_sub_for_space_non_owner_raises(space_with_owner_and_sub, sp
             WALLET_SUB1,
             sub_id,
             WalletUserSubResource.Patch(nickname="hacked"),
+        )
+
+
+@pytest.mark.asyncio
+async def test_patch_sub_for_space_empty_nickname_raises(space_with_owner_and_sub, space_service):
+    """Обновление nickname на пустую строку выбрасывает MissingNickname."""
+    subs = await space_service.list_subs_for_space(SPACE_NAME, WALLET_OWNER)
+    sub_id = subs[0].id
+    with pytest.raises(MissingNickname):
+        await space_service.patch_sub_for_space(
+            SPACE_NAME,
+            WALLET_OWNER,
+            sub_id,
+            WalletUserSubResource.Patch(nickname=""),
+        )
+    with pytest.raises(MissingNickname):
+        await space_service.patch_sub_for_space(
+            SPACE_NAME,
+            WALLET_OWNER,
+            sub_id,
+            WalletUserSubResource.Patch(nickname="   "),
         )
 
 

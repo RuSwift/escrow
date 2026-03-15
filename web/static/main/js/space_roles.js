@@ -49,6 +49,22 @@ Vue.component('space-roles', {
             if (token) h['Authorization'] = 'Bearer ' + token;
             return h;
         },
+        /** Сообщение об ошибке из ответа API: по коду (мультияз) или detail. */
+        participantErrorMessage: function(status, data) {
+            var self = this;
+            if (status === 403) return self.$t('main.space_roles.error_403');
+            if (status === 400 && data && data.detail) {
+                var d = data.detail;
+                if (typeof d === 'object' && d.code) {
+                    var key = 'main.space_roles.error_' + d.code;
+                    return self.$t(key) !== key ? self.$t(key) : (d.message || self.$t('main.space_roles.error_invalid_address'));
+                }
+                if (typeof d === 'object' && d.message) return d.message;
+                if (typeof d === 'string') return d;
+            }
+            if (status === 400) return self.$t('main.space_roles.error_invalid_address');
+            return self.$t('main.space_roles.error_network');
+        },
         fetchParticipants: function() {
             var self = this;
             var base = this.apiBase();
@@ -113,11 +129,12 @@ Vue.component('space-roles', {
             };
             fetch(base, { method: 'POST', headers: this.authHeaders(), credentials: 'include', body: JSON.stringify(body) })
                 .then(function(r) {
-                    if (!r.ok) {
-                        var msg = r.status === 400 ? self.$t('main.space_roles.error_invalid_address') : (r.status === 403 ? self.$t('main.space_roles.error_403') : self.$t('main.space_roles.error_network'));
-                        throw new Error(msg);
-                    }
-                    return r.json();
+                    return r.json().catch(function() { return {}; }).then(function(data) {
+                        if (!r.ok) {
+                            throw new Error(self.participantErrorMessage(r.status, data));
+                        }
+                        return data;
+                    });
                 })
                 .then(function() {
                     self.closeModal();
@@ -145,8 +162,10 @@ Vue.component('space-roles', {
             };
             fetch(url, { method: 'PATCH', headers: this.authHeaders(), credentials: 'include', body: JSON.stringify(body) })
                 .then(function(r) {
-                    if (!r.ok) throw new Error(r.status === 403 ? self.$t('main.space_roles.error_403') : self.$t('main.space_roles.error_network'));
-                    return r.json();
+                    return r.json().catch(function() { return {}; }).then(function(data) {
+                        if (!r.ok) throw new Error(self.participantErrorMessage(r.status, data));
+                        return data;
+                    });
                 })
                 .then(function() {
                     self.closeModal();
@@ -162,7 +181,28 @@ Vue.component('space-roles', {
         deleteParticipant: function(p) {
             var self = this;
             if (!p || p.id == null) return;
-            if (typeof window !== 'undefined' && !window.confirm(self.$t('main.space_roles.delete') + '?')) return;
+            var base = this.apiBase();
+            if (!base) return;
+            if (typeof window.showConfirm !== 'function') {
+                self.doDeleteParticipant(p);
+                return;
+            }
+            var nickname = (p.nickname && p.nickname.trim()) ? p.nickname.trim() : (p.wallet_address || '—');
+            var walletMask = (p.wallet_address && p.wallet_address.length > 8)
+                ? (p.wallet_address.slice(0, 6) + '…' + p.wallet_address.slice(-4))
+                : (p.wallet_address || '—');
+            window.showConfirm({
+                title: self.$t('main.space_roles.delete_confirm_title'),
+                message: self.$t('main.space_roles.delete_confirm_message', { nickname: nickname, wallet_mask: walletMask }),
+                danger: true,
+                onConfirm: function() {
+                    self.doDeleteParticipant(p);
+                }
+            });
+        },
+        doDeleteParticipant: function(p) {
+            var self = this;
+            if (!p || p.id == null) return;
             var base = this.apiBase();
             if (!base) return;
             var url = base + '/' + encodeURIComponent(p.id);
@@ -270,7 +310,10 @@ Vue.component('space-roles', {
         </button>
       </div>
       <div class="cmc-card overflow-hidden">
-        <div v-if="loading" class="p-8 text-center text-cmc-muted">[[ $t('main.loading') ]]</div>
+        <div v-if="loading" class="p-8 flex items-center justify-center gap-2 text-cmc-muted">
+          [[ $t('main.loading') ]]
+          <span class="inline-block w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" aria-hidden="true"></span>
+        </div>
         <div v-else class="overflow-x-auto">
           <table class="w-full text-left border-collapse">
             <thead>

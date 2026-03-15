@@ -23,12 +23,17 @@
     function showConfirm(options) {
         var title = (options && options.title) || '';
         var message = (options && options.message) || '';
+        var danger = !!(options && options.danger);
         callbacks.onConfirm = options && options.onConfirm;
         callbacks.onCancel = options && options.onCancel;
 
         if (container && container.parentNode) {
             container.parentNode.removeChild(container);
         }
+
+        var confirmBtnClass = danger
+            ? 'px-4 py-2 text-[13px] font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors'
+            : 'px-4 py-2 text-[13px] font-semibold text-white bg-main-blue hover:bg-main-blue/90 rounded-lg transition-colors';
 
         container = document.createElement('div');
         container.setAttribute('role', 'dialog');
@@ -41,7 +46,7 @@
             '  <p class="text-sm text-[#58667e] mb-6">' + (message.replace(/</g, '&lt;')) + '</p>' +
             '  <div class="flex justify-end gap-3">' +
             '    <button type="button" data-dialog-action="cancel" class="px-4 py-2 text-[13px] font-medium text-[#58667e] hover:bg-[#f8fafd] rounded-lg transition-colors">' + (t('main.space.switch_no').replace(/</g, '&lt;')) + '</button>' +
-            '    <button type="button" data-dialog-action="confirm" class="px-4 py-2 text-[13px] font-semibold text-white bg-main-blue hover:bg-main-blue/90 rounded-lg transition-colors">' + (t('main.space.switch_yes').replace(/</g, '&lt;')) + '</button>' +
+            '    <button type="button" data-dialog-action="confirm" class="' + confirmBtnClass + '">' + (t('main.space.switch_yes').replace(/</g, '&lt;')) + '</button>' +
             '  </div>' +
             '</div>';
 

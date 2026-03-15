@@ -7,7 +7,13 @@ from typing import List
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from repos.wallet_user import WalletUserSubResource
-from services.space import InvalidWalletAddress, SpacePermissionDenied, SpaceService
+from services.space import (
+    DuplicateParticipant,
+    InvalidWalletAddress,
+    MissingNickname,
+    SpacePermissionDenied,
+    SpaceService,
+)
 from web.endpoints.dependencies import (
     get_required_wallet_address_for_space,
     InviteServiceDep,
@@ -59,7 +65,17 @@ async def add_participant(
     except InvalidWalletAddress as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e),
+            detail={"code": "invalid_wallet_address", "message": str(e)},
+        )
+    except MissingNickname as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "missing_nickname", "message": str(e)},
+        )
+    except DuplicateParticipant as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "duplicate_participant", "message": str(e)},
         )
 
 
@@ -83,6 +99,11 @@ async def patch_participant(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only space owner can update participants",
+        )
+    except MissingNickname as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "missing_nickname", "message": str(e)},
         )
     if not updated:
         raise HTTPException(

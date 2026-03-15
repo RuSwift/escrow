@@ -26,6 +26,14 @@ class InvalidWalletAddress(Exception):
     """Выбрасывается, когда blockchain + wallet_address не прошли проверку формата."""
 
 
+class MissingNickname(Exception):
+    """Участник (Sub) должен иметь непустой nickname."""
+
+
+class DuplicateParticipant(Exception):
+    """Участник с таким адресом кошелька и сетью уже есть в спейсе."""
+
+
 def validate_wallet_address(blockchain: str, wallet_address: str) -> bool:
     """
     Проверяет формат адреса для заданного блокчейна.
@@ -118,15 +126,34 @@ class SpaceService:
         actor_wallet_address: str,
         data: WalletUserSubResource.Create,
     ) -> WalletUserSubResource.Get:
-        """Добавить участника в спейс. Только owner. Валидирует blockchain+address."""
+        """Добавить участника в спейс. Только owner. Валидирует nickname, blockchain+address, запрет дублей адрес+сеть."""
         wallet_user_id = await self._ensure_owner_and_owner_id(
             space, actor_wallet_address
         )
-        if not validate_wallet_address(data.blockchain, data.wallet_address):
+        nickname = (data.nickname or "").strip()
+        if not nickname:
+            raise MissingNickname("Participant nickname is required")
+        wallet_address = (data.wallet_address or "").strip()
+        blockchain = (data.blockchain or "").strip()
+        if not validate_wallet_address(blockchain, wallet_address):
             raise InvalidWalletAddress(
                 f"Invalid wallet address for blockchain {data.blockchain}"
             )
-        added = await self._repo.add_sub(wallet_user_id, data)
+        existing = await self._repo.get_sub_by_address(
+            wallet_user_id, wallet_address, blockchain
+        )
+        if existing:
+            raise DuplicateParticipant(
+                "A participant with this wallet address and network already exists in the space"
+            )
+        create_data = WalletUserSubResource.Create(
+            wallet_address=wallet_address,
+            blockchain=blockchain,
+            nickname=nickname,
+            roles=data.roles,
+            is_blocked=data.is_blocked,
+        )
+        added = await self._repo.add_sub(wallet_user_id, create_data)
         await self._session.commit()
         return added
 
@@ -137,10 +164,14 @@ class SpaceService:
         sub_id: int,
         data: WalletUserSubResource.Patch,
     ) -> WalletUserSubResource.Get | None:
-        """Обновить участника (nickname, roles). Только owner."""
+        """Обновить участника (nickname, roles). Только owner. Nickname при обновлении не может быть пустым."""
         wallet_user_id = await self._ensure_owner_and_owner_id(
             space, actor_wallet_address
         )
+        payload = data.model_dump(exclude_unset=True)
+        if "nickname" in payload:
+            if payload["nickname"] is None or not str(payload["nickname"]).strip():
+                raise MissingNickname("Participant nickname cannot be empty")
         updated = await self._repo.patch_sub(wallet_user_id, sub_id, data)
         if updated:
             await self._session.commit()
@@ -162,4 +193,11 @@ class SpaceService:
         return deleted
 
 
-__all__ = ["SpaceService", "SpacePermissionDenied", "InvalidWalletAddress", "validate_wallet_address"]
+__all__ = [
+    "SpaceService",
+    "SpacePermissionDenied",
+    "InvalidWalletAddress",
+    "MissingNickname",
+    "DuplicateParticipant",
+    "validate_wallet_address",
+]
