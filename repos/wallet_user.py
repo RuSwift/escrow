@@ -303,6 +303,22 @@ class WalletUserRepository(BaseRepository):
         model = result.scalar_one_or_none()
         return _sub_model_to_get(model) if model else None
 
+    async def get_sub_by_id(self, sub_id: int) -> Optional[WalletUserSub]:
+        """Субаккаунт по id (модель), без проверки владельца. Для резолва invite token."""
+        stmt = select(WalletUserSub).where(WalletUserSub.id == sub_id)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def set_sub_verified(self, sub_id: int, value: bool) -> bool:
+        """Обновить is_verified у субаккаунта по sub_id. True, если запись обновлена."""
+        stmt = (
+            update(WalletUserSub)
+            .where(WalletUserSub.id == sub_id)
+            .values(is_verified=value)
+        )
+        result = await self._session.execute(stmt)
+        return result.rowcount > 0
+
     async def get_sub_by_address(
         self, wallet_user_id: int, wallet_address: str, blockchain: str
     ) -> Optional[WalletUserSubResource.Get]:

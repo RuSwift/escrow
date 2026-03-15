@@ -1,17 +1,19 @@
 """
-API участников спейса: список, добавление, редактирование, удаление.
+API участников спейса: список, добавление, редактирование, удаление, invite-link.
 Только owner спейса. Валидация blockchain+address при создании.
 """
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from repos.wallet_user import WalletUserSubResource
 from services.space import InvalidWalletAddress, SpacePermissionDenied, SpaceService
 from web.endpoints.dependencies import (
     get_required_wallet_address_for_space,
+    InviteServiceDep,
     SpaceServiceDep,
 )
+from web.endpoints.v1.schemas.invite import InviteLinkResponse
 
 router = APIRouter(prefix="/spaces", tags=["space-participants"])
 
@@ -115,3 +117,45 @@ async def delete_participant(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Participant not found",
         )
+
+
+@router.post(
+    "/{space}/participants/{participant_id}/invite-link",
+    response_model=InviteLinkResponse,
+)
+async def create_invite_link(
+    request: Request,
+    space: str,
+    participant_id: int,
+    space_service: SpaceServiceDep,
+    invite_service: InviteServiceDep,
+    wallet_address: str = Depends(get_required_wallet_address_for_space),
+):
+    """Создать одноразовую ссылку приглашения для участника. Только owner. Участник должен быть не верифицирован."""
+    try:
+        subs = await space_service.list_subs_for_space(space, wallet_address)
+    except SpacePermissionDenied:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only space owner can create invite links",
+        )
+    sub = next((s for s in subs if s.id == participant_id), None)
+    if not sub:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Participant not found",
+        )
+    if sub.is_verified:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Participant is already verified",
+        )
+    if sub.is_blocked:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot create invite link for blocked participant",
+        )
+    token, expires_at = await invite_service.create_token(sub.id, space)
+    base = str(request.base_url).rstrip("/")
+    invite_link = f"{base}/v/{token}"
+    return InviteLinkResponse(invite_link=invite_link, expires_at=expires_at)

@@ -18,6 +18,7 @@ from i18n.context import get_request_locale
 from i18n.translations import get_translations_for_locale
 from settings import Settings
 from web.endpoints.dependencies import (
+    get_invite_service,
     get_required_wallet_address_for_space,
     get_space_service,
     get_wallet_user_service,
@@ -77,6 +78,46 @@ def create_app() -> FastAPI:
     async def app_legacy(request: Request):
         """Обратная совместимость: редирект на лендинг для выбора/входа в space."""
         return RedirectResponse(url="/", status_code=302)
+
+    @app.get("/v/{token}", response_class=HTMLResponse)
+    async def invite_verify_page(
+        request: Request,
+        token: str,
+        invite_service=Depends(get_invite_service),
+    ):
+        """Страница верификации приглашения по ссылке. Без авторизации. При невалидном/истёкшем токене — сообщение «приглашение истекло или не найдено»."""
+        invite = await invite_service.get_invite_by_token(token)
+        if not invite:
+            return templates.TemplateResponse(
+                "main/invite_verify.html",
+                {
+                    **_main_context(request, "dashboard"),
+                    "invite_invalid": True,
+                    "invite": None,
+                    "invite_token": token,
+                },
+            )
+        roles_str = [r.value for r in invite.roles]
+        invite_payload = {
+            "space_name": invite.space_name,
+            "inviter_nickname": invite.inviter_nickname,
+            "roles": roles_str,
+            "roles_display": ", ".join(_(f"main.space.role_{r}") for r in roles_str) if roles_str else "—",
+            "wallet_address": invite.wallet_address,
+            "wallet_address_mask": f"{invite.wallet_address[:2]}…{invite.wallet_address[-4:]}" if invite.wallet_address and len(invite.wallet_address) >= 6 else (invite.wallet_address or "—"),
+            "blockchain": invite.blockchain or "tron",
+            "participant_nickname": invite.participant_nickname,
+        }
+        return templates.TemplateResponse(
+            "main/invite_verify.html",
+            {
+                **_main_context(request, "dashboard"),
+                "invite_invalid": False,
+                "invite": invite_payload,
+                "invite_json": json.dumps(invite_payload, ensure_ascii=False),
+                "invite_token": token,
+            },
+        )
 
     @app.get("/{space}", response_class=HTMLResponse)
     async def app_space_view(

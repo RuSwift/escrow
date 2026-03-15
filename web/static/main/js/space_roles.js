@@ -23,7 +23,11 @@ Vue.component('space-roles', {
                 { value: 'owner', labelKey: 'main.space.role_owner', hintKey: 'main.space_roles.role_owner_hint' },
                 { value: 'operator', labelKey: 'main.space.role_operator', hintKey: 'main.space_roles.role_operator_hint' },
                 { value: 'reader', labelKey: 'main.space.role_reader', hintKey: 'main.space_roles.role_reader_hint' }
-            ]
+            ],
+            inviteLinkModal: false,
+            inviteLinkUrl: '',
+            inviteLinkCopied: false,
+            inviteLinkLoading: false
         };
     },
     mounted: function() {
@@ -195,6 +199,61 @@ Vue.component('space-roles', {
         },
         blockedDotClass: function(isBlocked) {
             return isBlocked ? 'bg-rose-500' : 'bg-emerald-500';
+        },
+        openInviteLink: function(p) {
+            var self = this;
+            if (!p || p.id == null) return;
+            var base = this.apiBase();
+            if (!base) return;
+            var url = base + '/' + encodeURIComponent(p.id) + '/invite-link';
+            this.inviteLinkLoading = true;
+            this.inviteLinkUrl = '';
+            this.inviteLinkCopied = false;
+            fetch(url, { method: 'POST', headers: this.authHeaders(), credentials: 'include' })
+                .then(function(r) {
+                    return r.json().then(function(data) {
+                        if (!r.ok) throw new Error((data && data.detail) ? data.detail : self.$t('main.space_roles.error_network'));
+                        return data;
+                    });
+                })
+                .then(function(data) {
+                    self.inviteLinkUrl = (data && data.invite_link) ? data.invite_link : '';
+                    self.inviteLinkModal = true;
+                })
+                .catch(function(e) {
+                    self.error = e.message || self.$t('main.space_roles.error_network');
+                })
+                .finally(function() {
+                    self.inviteLinkLoading = false;
+                });
+        },
+        closeInviteLinkModal: function() {
+            this.inviteLinkModal = false;
+            this.inviteLinkUrl = '';
+            this.inviteLinkCopied = false;
+        },
+        copyInviteLink: function() {
+            var self = this;
+            if (!this.inviteLinkUrl) return;
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(this.inviteLinkUrl).then(function() {
+                    self.inviteLinkCopied = true;
+                }).catch(function() {
+                    self.selectAndCopyInviteLink();
+                });
+            } else {
+                self.selectAndCopyInviteLink();
+            }
+        },
+        selectAndCopyInviteLink: function() {
+            var el = document.getElementById('invite-link-input');
+            if (el) {
+                el.select();
+                try {
+                    document.execCommand('copy');
+                    this.inviteLinkCopied = true;
+                } catch (e) {}
+            }
         }
     },
     template: `
@@ -247,6 +306,9 @@ Vue.component('space-roles', {
                   </div>
                 </td>
                 <td class="cmc-table-cell text-right">
+                  <template v-if="!p.is_verified && !p.is_blocked">
+                    <button type="button" class="text-main-blue hover:underline text-sm font-medium mr-2" @click="openInviteLink(p)" :disabled="inviteLinkLoading">[[ $t('main.space_roles.invite_link') ]]</button>
+                  </template>
                   <button type="button" class="text-main-blue hover:underline text-sm font-medium mr-2" @click="openEdit(p)">[[ $t('main.space_roles.edit') ]]</button>
                   <button type="button" class="text-red-600 hover:underline text-sm font-medium" @click="deleteParticipant(p)">[[ $t('main.space_roles.delete') ]]</button>
                 </td>
@@ -318,6 +380,20 @@ Vue.component('space-roles', {
               <button type="button" class="px-4 py-2 text-red-600 border border-red-200 rounded-lg text-sm font-medium hover:bg-red-50" :disabled="submitLoading" @click="deleteParticipant(editingParticipant)">[[ $t('main.space_roles.delete') ]]</button>
               <button type="button" class="cmc-btn-primary px-4 py-2" :disabled="submitLoading" @click="submitEdit">[[ submitLoading ? $t('main.loading') : $t('main.space_roles.save') ]]</button>
             </template>
+          </div>
+        </div>
+      </div>
+
+      <div v-if="inviteLinkModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" @click.self="closeInviteLinkModal">
+        <div class="bg-white rounded-xl shadow-xl max-w-lg w-full p-6" @click.stop>
+          <h3 class="text-lg font-bold mb-4">[[ $t('main.space_roles.invite_link_modal_title') ]]</h3>
+          <p class="text-sm text-cmc-muted mb-3">[[ $t('main.space_roles.invite_link_expires') ]]</p>
+          <div class="flex gap-2 mb-4">
+            <input id="invite-link-input" type="text" :value="inviteLinkUrl" readonly class="flex-1 border border-[#eff2f5] rounded-lg px-3 py-2 text-sm font-mono bg-gray-50" />
+            <button type="button" class="cmc-btn-primary px-4 py-2 whitespace-nowrap" @click="copyInviteLink">[[ inviteLinkCopied ? $t('main.space_roles.invite_link_copied') : $t('main.space_roles.invite_copy_btn') ]]</button>
+          </div>
+          <div class="flex justify-end">
+            <button type="button" class="px-4 py-2 border border-[#eff2f5] rounded-lg text-sm font-medium hover:bg-gray-50" @click="closeInviteLinkModal">[[ $t('main.space_roles.cancel') ]]</button>
           </div>
         </div>
       </div>

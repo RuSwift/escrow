@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="{{ locale | default('ru') }}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}{{ app_name }}{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'sans-serif'] },
+          colors: { 'main-blue': '#3861fb', 'main-green': '#16c784', 'main-red': '#ea3943' }
+        }
+      }
+    };
+  </script>
+  <link rel="stylesheet" href="/static/main/css/site.css" />
+</head>
+<body class="min-h-screen bg-[#f8fafd] font-sans antialiased text-[#191d23]">
+  <script>
+    window.__LOCALE__ = "{{ locale | default('ru') }}";
+    window.__TRANSLATIONS__ = {{ translations_json | default('{}') | safe }};
+  </script>
+  <header class="border-b border-[#eff2f5] bg-white px-4 py-3">
+    <div class="max-w-2xl mx-auto flex items-center gap-2">
+      <div class="w-9 h-9 rounded-lg bg-main-blue flex items-center justify-center text-white">
+        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
+      </div>
+      <span class="font-semibold text-[#191d23]">{{ app_name }}</span>
+    </div>
+  </header>
+  <main class="max-w-2xl mx-auto px-4 py-8">
+    {% block content %}{% endblock %}
+  </main>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

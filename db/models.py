@@ -82,14 +82,15 @@ class AdminTronAddress(Base):
 
 class WalletUser(Base):
     """Model for storing wallet user profiles (non-admin users)"""
-    
+
     __tablename__ = "wallet_users"
-    
+    __table_args__ = (UniqueConstraint("nickname", name="uq_wallet_users_nickname"),)
+
     id = Column(Integer, primary_key=True, index=True)
     wallet_address = Column(String(255), unique=True, nullable=False, index=True, comment="Wallet address (TRON: 34 chars, ETH: 42 chars)")
     blockchain = Column(String(20), nullable=False, index=True, comment="Blockchain type: tron, ethereum, bitcoin, etc.")
     did = Column(String(300), unique=True, nullable=False, index=True, comment="Decentralized Identifier (DID)")
-    nickname = Column(String(100), nullable=False, unique=True, index=True, comment="User display name (unique)")
+    nickname = Column(String(100), nullable=False, comment="User display name (unique)")
     avatar = Column(Text, nullable=True, comment="User avatar in base64 format (data:image/...)")
     access_to_admin_panel = Column(Boolean, default=False, nullable=False, comment="Access to admin panel")
     is_verified = Column(Boolean, default=False, nullable=False, comment="Whether the user is verified (document verification)")

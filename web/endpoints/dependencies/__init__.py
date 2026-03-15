@@ -21,6 +21,7 @@ from services.billing import BillingService
 from services.node import NodeService
 from services.tron_auth import TronAuth
 from services.wallet import WalletService
+from services.invite import InviteService
 from services.space import SpaceService
 from services.wallet_user import WalletUserService
 from services.web3_auth import Web3Auth
@@ -146,6 +147,15 @@ def get_space_service(
     return SpaceService(session=db, redis=redis, settings=settings)
 
 
+def get_invite_service(
+    db: DbSession,
+    redis: RedisClient,
+    settings: AppSettings,
+) -> InviteService:
+    """InviteService для создания и резолва invite-токенов."""
+    return InviteService(session=db, redis=redis, settings=settings)
+
+
 def get_web3_auth(redis: RedisClient, settings: AppSettings) -> Web3Auth:
     """Web3Auth для Ethereum-авторизации."""
     return Web3Auth(redis=redis, settings=settings)
@@ -249,6 +259,7 @@ async def get_require_admin(
 
 WalletUserServiceDep = Annotated[WalletUserService, Depends(get_wallet_user_service)]
 SpaceServiceDep = Annotated[SpaceService, Depends(get_space_service)]
+InviteServiceDep = Annotated[InviteService, Depends(get_invite_service)]
 WalletServiceDep = Annotated[WalletService, Depends(get_wallet_service)]
 ArbiterServiceDep = Annotated[ArbiterService, Depends(get_arbiter_service)]
 BillingServiceDep = Annotated[BillingService, Depends(get_billing_service)]
@@ -385,6 +396,7 @@ __all__ = [
     "get_settings",
     "get_wallet_user_service",
     "get_space_service",
+    "get_invite_service",
     "get_billing_service",
     "get_node_service",
     "get_admin_service",
@@ -400,6 +412,7 @@ __all__ = [
     "AppSettings",
     "WalletUserServiceDep",
     "SpaceServiceDep",
+    "InviteServiceDep",
     "ArbiterServiceDep",
     "BillingServiceDep",
     "NodeServiceDep",

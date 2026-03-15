@@ -6,6 +6,7 @@ from web.endpoints.v1 import (
     arbiter,
     auth,
     dashboard,
+    invite,
     node,
     profile,
     space_participants,
@@ -18,6 +19,7 @@ router.include_router(auth.router)
 router.include_router(admin.router)
 router.include_router(arbiter.router)
 router.include_router(dashboard.router)
+router.include_router(invite.router)
 router.include_router(node.router)
 router.include_router(profile.router)
 router.include_router(space_participants.router)
