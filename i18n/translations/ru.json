@@ -207,6 +207,7 @@
   "main.space_profile.form_description": "Описание",
   "main.space_profile.form_description_placeholder": "Краткое описание спейса",
   "main.space_profile.form_icon": "Иконка",
+  "main.space_profile.upload": "Загрузить",
   "main.space_profile.generate_avatar": "Сгенерировать",
   "main.space_profile.save": "Сохранить",
   "main.space_profile.success": "Профиль успешно сохранён",

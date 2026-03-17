@@ -207,6 +207,7 @@
   "main.space_profile.form_description": "Description",
   "main.space_profile.form_description_placeholder": "Short description of the space",
   "main.space_profile.form_icon": "Icon",
+  "main.space_profile.upload": "Upload",
   "main.space_profile.generate_avatar": "Generate",
   "main.space_profile.save": "Save",
   "main.space_profile.success": "Profile saved successfully",
