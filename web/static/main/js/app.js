@@ -39,7 +39,7 @@
     window.__SPACE_PROFILE_FILLED__ = spaceProfileFilled;
 
     var initialPage = (el.getAttribute('data-initial-page') || 'dashboard').trim();
-    var validPages = ['dashboard', 'my-trusts', 'how-it-works', 'api', 'settings', 'support', 'detail'];
+    var validPages = ['dashboard', 'my-trusts', 'my-business', 'how-it-works', 'api', 'settings', 'support', 'detail'];
     if (spaceRole === 'owner') validPages.push('space-roles', 'space-profile');
     if (validPages.indexOf(initialPage) === -1) {
         initialPage = 'dashboard';
