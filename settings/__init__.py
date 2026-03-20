@@ -8,6 +8,10 @@ from typing import Optional
 from pathlib import Path
 
 
+# Корень репозитория (settings/__init__.py → parent = settings, parent.parent = repo)
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
 class DatabaseSettings(BaseSettings):
     """Настройки подключения к PostgreSQL"""
     
@@ -249,6 +253,88 @@ class MarketplaceSettings(BaseSettings):
     arbiter_mnemonic: ArbiterMnemonicSettings = Field(default_factory=ArbiterMnemonicSettings)
 
 
+# --- Движки котировок (forex, cbr, rapira, bestchange) ---
+
+
+class ForexEngineSettings(BaseSettings):
+    """Настройки движка Forex (публичный API, без секретов)."""
+    model_config = SettingsConfigDict(
+        env_prefix="RATIOS_FOREX_",
+        case_sensitive=False,
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
+    ttl: int = Field(default=3600, description="TTL кэша в секундах")
+
+
+class CbrEngineSettings(BaseSettings):
+    """Настройки движка ЦБ РФ (публичный XML, без секретов)."""
+    model_config = SettingsConfigDict(
+        env_prefix="RATIOS_CBR_",
+        case_sensitive=False,
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
+    ttl: int = Field(default=3600, description="TTL кэша в секундах")
+
+
+class RapiraEngineSettings(BaseSettings):
+    """Настройки движка Rapira (JWT: private_key, uid)."""
+    model_config = SettingsConfigDict(
+        env_prefix="RATIOS_RAPIRA_",
+        case_sensitive=False,
+        # Абсолютные пути: при pytest cwd может быть не корень репозитория.
+        # .env.local переопределяет значения из .env (локальные секреты).
+        env_file=(_REPO_ROOT / ".env", _REPO_ROOT / ".env.local"),
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
+    private_key: Optional[SecretStr] = Field(default=None, description="Приватный ключ API")
+    uid: Optional[str] = Field(default=None, description="UID API ключа")
+    host: str = Field(default="api.rapira.net", description="Хост API")
+    ttl: int = Field(default=60, description="JWT TTL в секундах")
+
+
+class BestChangeSettings(BaseSettings):
+    """Настройки движка BestChange (ZIP по URL, без секретов)."""
+    model_config = SettingsConfigDict(
+        env_prefix="RATIOS_BESTCHANGE_",
+        case_sensitive=False,
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
+    url: str = Field(default="http://api.bestchange.ru/info.zip", description="URL архива")
+    enc: str = Field(default="windows-1251", description="Кодировка файлов в архиве")
+    file_currencies: str = Field(default="bm_cy.dat", description="Файл валют в архиве")
+    file_exchangers: str = Field(default="bm_exch.dat", description="Файл обменников")
+    file_rates: str = Field(default="bm_rates.dat", description="Файл курсов")
+    file_cities: str = Field(default="bm_cities.dat", description="Файл городов")
+    file_top: str = Field(default="bm_top.dat", description="Файл топа")
+    file_payment_codes: str = Field(default="bm_cycodes.dat", description="Файл кодов оплаты")
+    file_cur_codes: str = Field(default="bm_bcodes.dat", description="Файл кодов валют")
+    zip_path: str = Field(default="/tmp/bestchange.zip", description="Путь для сохранения ZIP")
+    split_reviews: bool = Field(default=False, description="Разбивать отзывы")
+
+
+class RatiosSettings(BaseSettings):
+    """Настройки движков котировок (forex, cbr, rapira, bestchange)."""
+    model_config = SettingsConfigDict(
+        env_prefix="RATIOS_",
+        env_nested_delimiter="__",
+        case_sensitive=False,
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore"
+    )
+    forex: Optional[ForexEngineSettings] = Field(default_factory=ForexEngineSettings)
+    cbr: Optional[CbrEngineSettings] = Field(default_factory=CbrEngineSettings)
+    rapira: Optional[RapiraEngineSettings] = Field(default_factory=RapiraEngineSettings)
+    bestchange: Optional[BestChangeSettings] = Field(default_factory=BestChangeSettings)
+
+
 class Settings(BaseSettings):
     """Основные настройки приложения"""
     
@@ -299,6 +385,12 @@ class Settings(BaseSettings):
     # Настройки маркетплейса
     marketplace: MarketplaceSettings = Field(default_factory=MarketplaceSettings)
     
+    # Движки котировок (forex, cbr, rapira, bestchange)
+    ratios: RatiosSettings = Field(
+        default_factory=RatiosSettings,
+        description="Настройки движков котировок (активность по is_enabled каждого движка)",
+    )
+    
     # Настройки PEM ключа
     pem: Optional[str] = Field(
         default=None,
@@ -335,4 +427,9 @@ __all__ = [
     "TronSettings",
     "MarketplaceSettings",
     "ArbiterMnemonicSettings",
+    "RatiosSettings",
+    "ForexEngineSettings",
+    "CbrEngineSettings",
+    "RapiraEngineSettings",
+    "BestChangeSettings",
 ]

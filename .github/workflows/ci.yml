@@ -64,6 +64,10 @@ jobs:
         run: poetry run python run_migrations.py upgrade head
 
       - name: Run application tests
+        env:
+          # Rapira (интеграционный тест test_rapira_load_markets_and_market_real)
+          RATIOS_RAPIRA_PRIVATE_KEY: ${{ secrets.RATIOS_RAPIRA_PRIVATE_KEY }}
+          RATIOS_RAPIRA_UID: ${{ secrets.RATIOS_RAPIRA_UID }}
         run: poetry run pytest tests/ -vv --tb=long --showlocals -s --color=yes
 
       - name: Cleanup

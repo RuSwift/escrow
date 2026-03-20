@@ -2,12 +2,24 @@
 Utility functions for working with DIDs and other ledger-related identifiers
 """
 import hashlib
+import time
+from datetime import datetime
 from typing import Optional, Tuple
 import uuid
 import base58
 import base64
 from io import BytesIO
 from PIL import Image
+
+
+def utc_now_float() -> float:
+    """Текущее время UTC в виде float (Unix timestamp)."""
+    return time.time()
+
+
+def datetime_to_float(dt: datetime) -> float:
+    """Преобразование datetime в Unix timestamp (float)."""
+    return dt.timestamp()
 
 
 def get_user_did(wallet_address: str, blockchain: str) -> str:

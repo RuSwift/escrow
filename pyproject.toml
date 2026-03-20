@@ -41,6 +41,9 @@ pytest-asyncio = "^0.24"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+    "network: тесты с реальными HTTP-запросами (pytest -m network)",
+]
 
 [build-system]
 requires = ["poetry-core"]
