@@ -2,16 +2,103 @@
 Скрипт для запуска миграций Alembic
 Использование: python run_migrations.py [команда] [аргументы]
 """
+import hashlib
+import json
 import sys
-import asyncio
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Добавляем корень проекта в путь
-sys.path.insert(0, str(Path(__file__).parent))
+_REPO_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(_REPO_ROOT))
 
+import yaml
 from alembic.config import Config
 from alembic import command
+from sqlalchemy import create_engine, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from db.models import BestchangeYamlSnapshot
 from settings import DatabaseSettings
+
+
+def _parse_meta_exported_at(value) -> datetime:
+    if value is None:
+        raise ValueError("meta.exported_at отсутствует в bc.yaml")
+    if isinstance(value, datetime):
+        dt = value
+        if dt.tzinfo is None:
+            return dt.replace(tzinfo=timezone.utc)
+        return dt
+    s = str(value).strip().strip("'\"")
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    return datetime.fromisoformat(s)
+
+
+def _payload_json_safe(data: dict) -> dict:
+    """Приводит дерево YAML к JSON-совместимому виду для JSONB."""
+    return json.loads(json.dumps(data, default=str))
+
+
+def seed_bestchange_yaml_snapshot(repo_root: Path) -> None:
+    """После upgrade: при отсутствии хеша в БД добавить строку из bc.yaml."""
+    path = repo_root / "bc.yaml"
+    if not path.is_file():
+        print("ℹ bc.yaml не найден — пропуск обновления bestchange_yaml_snapshots.")
+        return
+
+    raw = path.read_bytes()
+    file_hash = hashlib.sha256(raw).hexdigest()
+
+    try:
+        tree = yaml.safe_load(raw.decode("utf-8"))
+    except Exception as e:
+        print(f"✗ Не удалось разобрать bc.yaml: {e}")
+        return
+
+    if not isinstance(tree, dict):
+        print("✗ bc.yaml: ожидается корневой объект YAML.")
+        return
+
+    meta = tree.get("meta") or {}
+    try:
+        exported_at = _parse_meta_exported_at(meta.get("exported_at"))
+    except ValueError as e:
+        print(f"✗ {e}")
+        return
+
+    payload = _payload_json_safe(tree)
+
+    db_settings = DatabaseSettings()
+    engine = create_engine(db_settings.url)
+    try:
+        with Session(engine) as session:
+            stmt = (
+                select(BestchangeYamlSnapshot.id)
+                .where(BestchangeYamlSnapshot.file_hash == file_hash)
+                .limit(1)
+            )
+            if session.execute(stmt).scalar_one_or_none() is not None:
+                print("ℹ bestchange_yaml_snapshots: хеш bc.yaml уже есть — запись не добавлена.")
+                return
+
+            row = BestchangeYamlSnapshot(
+                file_hash=file_hash,
+                exported_at=exported_at,
+                payload=payload,
+            )
+            session.add(row)
+            try:
+                session.commit()
+            except IntegrityError:
+                session.rollback()
+                print("ℹ bestchange_yaml_snapshots: хеш уже есть (гонка) — пропуск.")
+                return
+        print("✓ bestchange_yaml_snapshots: добавлена запись из bc.yaml.")
+    finally:
+        engine.dispose()
 
 
 def run_migrations(target="head"):
@@ -29,7 +116,8 @@ def run_migrations(target="head"):
         print(f"Применение миграций до версии: {target}")
         command.upgrade(alembic_cfg, target)
         print("✓ Миграции успешно применены!")
-        
+        seed_bestchange_yaml_snapshot(_REPO_ROOT)
+
     except Exception as e:
         print(f"✗ Ошибка при применении миграций: {e}")
         sys.exit(1)
