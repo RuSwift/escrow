@@ -3,7 +3,7 @@
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr
 from typing import Optional
 from pathlib import Path
 
@@ -335,6 +335,52 @@ class RatiosSettings(BaseSettings):
     bestchange: Optional[BestChangeSettings] = Field(default_factory=BestChangeSettings)
 
 
+class CollateralStablecoinToken(BaseModel):
+    """Одна строка каталога залоговых стейблкоинов."""
+
+    model_config = {"extra": "ignore"}
+
+    symbol: str = Field(description="Символ токена (тикер)")
+    network: str = Field(description="Имя сети блокчейна")
+    contract_address: str = Field(description="Адрес контракта токена")
+    base_currency: str = Field(description="Базовая валюта привязки (например USD, RUB)")
+
+
+def _default_collateral_stablecoin_tokens() -> list[CollateralStablecoinToken]:
+    """USDT (TRC-20) и A5A7 — рублёвый стейблкоин A7A5 на TRON (TRC-20)."""
+    return [
+        CollateralStablecoinToken(
+            symbol="USDT",
+            network="TRON",
+            contract_address="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+            base_currency="USD",
+        ),
+        CollateralStablecoinToken(
+            symbol="A5A7",
+            network="TRON",
+            contract_address="TLeVfrdym8RoJreJ23dAGyfJDygRtiWKBZ",
+            base_currency="RUB",
+        ),
+    ]
+
+
+class CollateralStablecoinSettings(BaseSettings):
+    """Каталог токенов для залогового стейблкоина (переопределение через JSON в env)."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="COLLATERAL_STABLECOIN_",
+        case_sensitive=False,
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    tokens: list[CollateralStablecoinToken] = Field(
+        default_factory=_default_collateral_stablecoin_tokens,
+        description="Список токенов: символ, сеть, контракт, базовая валюта",
+    )
+
+
 class Settings(BaseSettings):
     """Основные настройки приложения"""
     
@@ -390,6 +436,12 @@ class Settings(BaseSettings):
         default_factory=RatiosSettings,
         description="Настройки движков котировок (активность по is_enabled каждого движка)",
     )
+
+    # Залоговые стейблкоины (символ, сеть, контракт, базовая валюта)
+    collateral_stablecoin: CollateralStablecoinSettings = Field(
+        default_factory=CollateralStablecoinSettings,
+        description="Каталог токенов залогового стейблкоина",
+    )
     
     # Настройки PEM ключа
     pem: Optional[str] = Field(
@@ -432,4 +484,6 @@ __all__ = [
     "CbrEngineSettings",
     "RapiraEngineSettings",
     "BestChangeSettings",
+    "CollateralStablecoinToken",
+    "CollateralStablecoinSettings",
 ]
