@@ -1,0 +1,2846 @@
+meta:
+  source_url: http://api.bestchange.ru/info.zip
+  zip_path: /tmp/bestchange.zip
+  encoding: windows-1251
+  exported_at: '2026-03-21T15:25:58.674782+00:00'
+  translation:
+    sources:
+    - manual
+    - google
+    - mymemory
+    - libre
+payment_methods:
+- payment_code: AAVE
+  cur: AAVE
+  payment_name: Aave (AAVE)
+  payment_name_en: Aave (AAVE)
+- payment_code: ADA
+  cur: ADA
+  payment_name: Cardano (ADA)
+  payment_name_en: Cardano (ADA)
+- payment_code: CARDAED
+  cur: AED
+  payment_name: Банковская карта AED
+  payment_name_en: AED bank card
+- payment_code: CASHAED
+  cur: AED
+  payment_name: Наличные AED
+  payment_name_en: Cash AED
+- payment_code: WIREAED
+  cur: AED
+  payment_name: Банковский счет AED
+  payment_name_en: AED Bank Account
+- payment_code: ALGO
+  cur: ALGO
+  payment_name: Algorand (ALGO)
+  payment_name_en: Algorand (SOMETHING)
+- payment_code: CARDAMD
+  cur: AMD
+  payment_name: Банковская карта AMD
+  payment_name_en: AMD bank card
+- payment_code: CASHAMD
+  cur: AMD
+  payment_name: Наличные AMD
+  payment_name_en: Cash AMD
+- payment_code: IDAMD
+  cur: AMD
+  payment_name: Idram AMD
+  payment_name_en: Idram AMD
+- payment_code: APT
+  cur: APT
+  payment_name: Aptos (APT)
+  payment_name_en: Aptos (APT)
+- payment_code: ARB
+  cur: ARB
+  payment_name: Arbitrum (ARB)
+  payment_name_en: Arbitrage (ARB)
+- payment_code: CARDARS
+  cur: ARS
+  payment_name: Банковская карта ARS
+  payment_name_en: ARS bank card
+- payment_code: CASHARS
+  cur: ARS
+  payment_name: Наличные ARS
+  payment_name_en: Cash ARS
+- payment_code: MPARS
+  cur: ARS
+  payment_name: Mercado Pago ARS
+  payment_name_en: ARS Payment Market
+- payment_code: WIREARS
+  cur: ARS
+  payment_name: Банковский счет ARS
+  payment_name_en: ARS Bank Account
+- payment_code: ATOM
+  cur: ATOM
+  payment_name: Cosmos (ATOM)
+  payment_name_en: Cosmos (ATOM)
+- payment_code: CASHAUD
+  cur: AUD
+  payment_name: Наличные AUD
+  payment_name_en: Cash AUD
+- payment_code: PPAUD
+  cur: AUD
+  payment_name: PayPal AUD
+  payment_name_en: PayPal AUD
+- payment_code: WIREAUD
+  cur: AUD
+  payment_name: Банковский счет AUD
+  payment_name_en: Bank account AUD
+- payment_code: AVAX
+  cur: AVAX
+  payment_name: Avalanche (AVAX)
+  payment_name_en: Avalanche (AVAX)
+- payment_code: CARDAZN
+  cur: AZN
+  payment_name: Банковская карта AZN
+  payment_name_en: Bank card AZN
+- payment_code: CASHAZN
+  cur: AZN
+  payment_name: Наличные AZN
+  payment_name_en: Cash AZN
+- payment_code: M10AZN
+  cur: AZN
+  payment_name: M10 AZN
+  payment_name_en: M10 AZN
+- payment_code: BAT
+  cur: BAT
+  payment_name: BAT (BAT)
+  payment_name_en: ONE (ONE)
+- payment_code: BCH
+  cur: BCH
+  payment_name: Bitcoin Cash (BCH)
+  payment_name_en: Bitcoin Cash (BCH)
+- payment_code: BKASHBDT
+  cur: BDT
+  payment_name: bKash BDT
+  payment_name_en: bKash BDT
+- payment_code: NGDBDT
+  cur: BDT
+  payment_name: Nagad BDT
+  payment_name_en: Nagad BDT
+- payment_code: WIREBDT
+  cur: BDT
+  payment_name: Банковский счет BDT
+  payment_name_en: BDT Bank Account
+- payment_code: CARDBGN
+  cur: BGN
+  payment_name: Банковская карта BGN
+  payment_name_en: BGN bank card
+- payment_code: CASHBGN
+  cur: BGN
+  payment_name: Наличные BGN
+  payment_name_en: Cash BGN
+- payment_code: WIREBGN
+  cur: BGN
+  payment_name: Банковский счет BGN
+  payment_name_en: BGN bank account
+- payment_code: BNBBEP2
+  cur: BNB
+  payment_name: BNB BEP2 (BNB)
+  payment_name_en: BNB BEP2 (BNB)
+- payment_code: BNBBEP20
+  cur: BNB
+  payment_name: BNB BEP20 (BNB)
+  payment_name_en: BNB BEP20 (BNB)
+- payment_code: ATMQRBRL
+  cur: BRL
+  payment_name: ATM QR-код BRL
+  payment_name_en: ATM QR Code BRL
+- payment_code: CARDBRL
+  cur: BRL
+  payment_name: Банковская карта BRL
+  payment_name_en: BRL bank card
+- payment_code: CASHBRL
+  cur: BRL
+  payment_name: Наличные BRL
+  payment_name_en: Cash BRL
+- payment_code: PIXBRBRL
+  cur: BRL
+  payment_name: Pix BRL
+  payment_name_en: Pix BRL
+- payment_code: BSV
+  cur: BSV
+  payment_name: Bitcoin SV (BSV)
+  payment_name_en: Bitcoin SV (BSV)
+- payment_code: BTC
+  cur: BTC
+  payment_name: Bitcoin (BTC)
+  payment_name_en: Bitcoin (BTC)
+- payment_code: BTCBEP20
+  cur: BTC
+  payment_name: Bitcoin BEP20 (BTCB)
+  payment_name_en: Bitcoin BEP20 (BTCB)
+- payment_code: BTCLN
+  cur: BTC
+  payment_name: Bitcoin LN (BTC)
+  payment_name_en: Bitcoin LN (BTC)
+- payment_code: WBTC
+  cur: BTC
+  payment_name: Wrapped BTC (WBTC)
+  payment_name_en: Wrapped BTC (WBTC)
+- payment_code: BTT
+  cur: BTT
+  payment_name: BitTorrent (BTT)
+  payment_name_en: BitTorrent (BTT)
+- payment_code: BLRBBYN
+  cur: BYN
+  payment_name: Беларусбанк BYN
+  payment_name_en: Belarusbank BYN
+- payment_code: CARDBYN
+  cur: BYN
+  payment_name: Банковская карта BYN
+  payment_name_en: Bank card BYN
+- payment_code: CASHBYN
+  cur: BYN
+  payment_name: Наличные BYN
+  payment_name_en: Cash BYN
+- payment_code: ERIPBYN
+  cur: BYN
+  payment_name: ЕРИП Расчет BYN
+  payment_name_en: ERIP Calculation BYN
+- payment_code: MWBYN
+  cur: BYN
+  payment_name: Счет телефона BYN
+  payment_name_en: Phone account BYN
+- payment_code: WIREBYN
+  cur: BYN
+  payment_name: Банковский счет BYN
+  payment_name_en: Bank account BYN
+- payment_code: CARDCAD
+  cur: CAD
+  payment_name: Банковская карта CAD
+  payment_name_en: Bank card CAD
+- payment_code: CASHCAD
+  cur: CAD
+  payment_name: Наличные CAD
+  payment_name_en: Cash CAD
+- payment_code: PPCAD
+  cur: CAD
+  payment_name: PayPal CAD
+  payment_name_en: PayPal CAD
+- payment_code: WIRECAD
+  cur: CAD
+  payment_name: Банковский счет CAD
+  payment_name_en: Bank account CAD
+- payment_code: CAKE
+  cur: CAKE
+  payment_name: PancakeSwap (CAKE)
+  payment_name_en: PancakeSwap (CAKE)
+- payment_code: CASHCHF
+  cur: CHF
+  payment_name: Наличные CHF
+  payment_name_en: Cash CHF
+- payment_code: ALPCNY
+  cur: CNY
+  payment_name: Alipay CNY
+  payment_name_en: Alipay CNY
+- payment_code: CARDCNY
+  cur: CNY
+  payment_name: Банковская карта CNY
+  payment_name_en: Bank card CNY
+- payment_code: CASHCNY
+  cur: CNY
+  payment_name: Наличные CNY
+  payment_name_en: Cash CNY
+- payment_code: CORPCNY
+  cur: CNY
+  payment_name: Счет компании CNY
+  payment_name_en: Company account CNY
+- payment_code: UPCNY
+  cur: CNY
+  payment_name: Карта UnionPay CNY
+  payment_name_en: UnionPay CNY card
+- payment_code: WCTCNY
+  cur: CNY
+  payment_name: WeChat CNY
+  payment_name_en: WeChat CNY
+- payment_code: WIRECNY
+  cur: CNY
+  payment_name: Банковский счет CNY
+  payment_name_en: Bank account CNY
+- payment_code: CASHCOP
+  cur: COP
+  payment_name: Наличные COP
+  payment_name_en: Cash COP
+- payment_code: CRO
+  cur: CRO
+  payment_name: Cronos (CRO)
+  payment_name_en: Cronos (CRO)
+- payment_code: CARDCZK
+  cur: CZK
+  payment_name: Банковская карта CZK
+  payment_name_en: CZK bank card
+- payment_code: CASHCZK
+  cur: CZK
+  payment_name: Наличные CZK
+  payment_name_en: Cash CZK
+- payment_code: WIRECZK
+  cur: CZK
+  payment_name: Банковский счет CZK
+  payment_name_en: Bank account CZK
+- payment_code: DASH
+  cur: DASH
+  payment_name: Dash (DASH)
+  payment_name_en: Dash (DASH)
+- payment_code: DOGE
+  cur: DOGE
+  payment_name: Dogecoin (DOGE)
+  payment_name_en: Dogecoin (DOGE)
+- payment_code: DOT
+  cur: DOT
+  payment_name: Polkadot (DOT)
+  payment_name_en: Polkadot (DOT)
+- payment_code: CASHEGP
+  cur: EGP
+  payment_name: Наличные EGP
+  payment_name_en: Cash EGP
+- payment_code: EOS
+  cur: EOS
+  payment_name: EOS (EOS)
+  payment_name_en: EOS (EOS)
+- payment_code: ETC
+  cur: ETC
+  payment_name: Ethereum Classic (ETC)
+  payment_name_en: Ethereum Classic (ETC)
+- payment_code: ETH
+  cur: ETH
+  payment_name: Ethereum (ETH)
+  payment_name_en: Ethereum (ETH)
+- payment_code: ETHARBTM
+  cur: ETH
+  payment_name: Ethereum ARBITRUM (ETH)
+  payment_name_en: Ethereum Arbitrage (ETH)
+- payment_code: ETHBEP20
+  cur: ETH
+  payment_name: Ethereum BEP20 (ETH)
+  payment_name_en: Ethereum BEP20 (ETH)
+- payment_code: ETHOPTM
+  cur: ETH
+  payment_name: Ethereum OPTIMISM (ETH)
+  payment_name_en: Ethereum OPTIMISM (ETH)
+- payment_code: WETH
+  cur: ETH
+  payment_name: Wrapped ETH (WETH)
+  payment_name_en: Wrapped ETH (WETH)
+- payment_code: ADVCEUR
+  cur: EUR
+  payment_name: Volet EUR
+  payment_name_en: EUR section
+- payment_code: CARDEUR
+  cur: EUR
+  payment_name: Банковская карта EUR
+  payment_name_en: Bank card EUR
+- payment_code: CASHEUR
+  cur: EUR
+  payment_name: Наличные EUR
+  payment_name_en: Cash EUR
+- payment_code: CORPEUR
+  cur: EUR
+  payment_name: Счет компании EUR
+  payment_name_en: Company account EUR
+- payment_code: CPTSEUR
+  cur: EUR
+  payment_name: Capitalist EUR
+  payment_name_en: Capitalist EUR
+- payment_code: MGEUR
+  cur: EUR
+  payment_name: MoneyGram EUR
+  payment_name_en: MoneyGram EUR
+- payment_code: MONOBEUR
+  cur: EUR
+  payment_name: Монобанк EUR
+  payment_name_en: Monobank EUR
+- payment_code: NTLREUR
+  cur: EUR
+  payment_name: Neteller EUR
+  payment_name_en: Neteller EUR
+- payment_code: P24EUR
+  cur: EUR
+  payment_name: Приват 24 EUR
+  payment_name_en: Private 24 EUR
+- payment_code: PNREUR
+  cur: EUR
+  payment_name: Payoneer EUR
+  payment_name_en: Payoneer EUR
+- payment_code: PPEUR
+  cur: EUR
+  payment_name: PayPal EUR
+  payment_name_en: PayPal EUR
+- payment_code: PSREUR
+  cur: EUR
+  payment_name: PaySera EUR
+  payment_name_en: PaySera EUR
+- payment_code: REVBEUR
+  cur: EUR
+  payment_name: Revolut EUR
+  payment_name_en: Revolut EUR
+- payment_code: RMTFEUR
+  cur: EUR
+  payment_name: Ria EUR
+  payment_name_en: Ria EUR
+- payment_code: SEPAEUR
+  cur: EUR
+  payment_name: SEPA EUR
+  payment_name_en: SEPA EUR
+- payment_code: SKLEUR
+  cur: EUR
+  payment_name: Skrill EUR
+  payment_name_en: Skrill EUR
+- payment_code: TRDEUR
+  cur: EUR
+  payment_name: Криптобиржи EUR
+  payment_name_en: Crypto exchanges EUR
+- payment_code: WIREEUR
+  cur: EUR
+  payment_name: Банковский счет EUR
+  payment_name_en: Bank account EUR
+- payment_code: WISEEUR
+  cur: EUR
+  payment_name: Wise EUR
+  payment_name_en: Wise EUR
+- payment_code: WME
+  cur: EUR
+  payment_name: WebMoney WME
+  payment_name_en: WebMoney WME
+- payment_code: WUEUR
+  cur: EUR
+  payment_name: WU EUR
+  payment_name_en: WU EUR
+- payment_code: ZENEUR
+  cur: EUR
+  payment_name: ZEN EUR
+  payment_name_en: ZEN EUR
+- payment_code: FIL
+  cur: FIL
+  payment_name: Filecoin (FIL)
+  payment_name_en: Filecoin (FIL)
+- payment_code: CARDGBP
+  cur: GBP
+  payment_name: Банковская карта GBP
+  payment_name_en: GBP Bank Card
+- payment_code: CASHGBP
+  cur: GBP
+  payment_name: Наличные GBP
+  payment_name_en: Cash GBP
+- payment_code: PPGBP
+  cur: GBP
+  payment_name: PayPal GBP
+  payment_name_en: PayPal GBP
+- payment_code: REVBGBP
+  cur: GBP
+  payment_name: Revolut GBP
+  payment_name_en: Revolut GBP
+- payment_code: WIREGBP
+  cur: GBP
+  payment_name: Банковский счет GBP
+  payment_name_en: GBP Bank Account
+- payment_code: WISEGBP
+  cur: GBP
+  payment_name: Wise GBP
+  payment_name_en: Wise GBP
+- payment_code: CARDGEL
+  cur: GEL
+  payment_name: Банковская карта GEL
+  payment_name_en: GEL bank card
+- payment_code: CASHGEL
+  cur: GEL
+  payment_name: Наличные GEL
+  payment_name_en: Cash GEL
+- payment_code: WIREGEL
+  cur: GEL
+  payment_name: Банковский счет GEL
+  payment_name_en: GEL bank account
+- payment_code: WIREHKD
+  cur: HKD
+  payment_name: Банковский счет HKD
+  payment_name_en: HKD bank account
+- payment_code: CARDHUF
+  cur: HUF
+  payment_name: Банковская карта HUF
+  payment_name_en: HUF bank card
+- payment_code: ICX
+  cur: ICX
+  payment_name: ICON (ICX)
+  payment_name_en: ICON (ICX)
+- payment_code: CARDIDR
+  cur: IDR
+  payment_name: Банковская карта IDR
+  payment_name_en: Bank card IDR
+- payment_code: CASHIDR
+  cur: IDR
+  payment_name: Наличные IDR
+  payment_name_en: Cash IDR
+- payment_code: WIREIDR
+  cur: IDR
+  payment_name: Банковский счет IDR
+  payment_name_en: Bank account IDR
+- payment_code: CASHILS
+  cur: ILS
+  payment_name: Наличные ILS
+  payment_name_en: Cash ILS
+- payment_code: WIREILS
+  cur: ILS
+  payment_name: Банковский счет ILS
+  payment_name_en: ILS Bank Account
+- payment_code: CARDINR
+  cur: INR
+  payment_name: Банковская карта INR
+  payment_name_en: Bank card INR
+- payment_code: CASHINR
+  cur: INR
+  payment_name: Наличные INR
+  payment_name_en: Cash INR
+- payment_code: PAYTMINR
+  cur: INR
+  payment_name: Paytm INR
+  payment_name_en: Paytm INR
+- payment_code: UPIINR
+  cur: INR
+  payment_name: UPI INR
+  payment_name_en: UPI INR
+- payment_code: WIREINR
+  cur: INR
+  payment_name: Банковский счет INR
+  payment_name_en: Bank account INR
+- payment_code: IOTA
+  cur: IOTA
+  payment_name: IOTA (IOTA)
+  payment_name_en: IOTA (IOTA)
+- payment_code: CASHJPY
+  cur: JPY
+  payment_name: Наличные JPY
+  payment_name_en: Cash JPY
+- payment_code: WIREJPY
+  cur: JPY
+  payment_name: Банковский счет JPY
+  payment_name_en: Bank account JPY
+- payment_code: KAS
+  cur: KAS
+  payment_name: Kaspa (KAS)
+  payment_name_en: Kaspa (KAS)
+- payment_code: CARDKGS
+  cur: KGS
+  payment_name: Банковская карта KGS
+  payment_name_en: KGS bank card
+- payment_code: CASHKGS
+  cur: KGS
+  payment_name: Наличные KGS
+  payment_name_en: Cash KGS
+- payment_code: ELKGS
+  cur: KGS
+  payment_name: Карта Элкарт KGS
+  payment_name_en: Map Elkhart KGS
+- payment_code: CASHKRW
+  cur: KRW
+  payment_name: Наличные KRW
+  payment_name_en: Cash KRW
+- payment_code: WIREKRW
+  cur: KRW
+  payment_name: Банковский счет KRW
+  payment_name_en: KRW bank account
+- payment_code: ADVCKZT
+  cur: KZT
+  payment_name: Volet KZT
+  payment_name_en: Volume KZT
+- payment_code: BRBKZT
+  cur: KZT
+  payment_name: Bereke Bank KZT
+  payment_name_en: Bereke Bank KZT
+- payment_code: CARDKZT
+  cur: KZT
+  payment_name: Банковская карта KZT
+  payment_name_en: Bank card KZT
+- payment_code: CASHKZT
+  cur: KZT
+  payment_name: Наличные KZT
+  payment_name_en: Cash KZT
+- payment_code: CCBKZT
+  cur: KZT
+  payment_name: ЦентрКредит KZT
+  payment_name_en: CenterCredit KZT
+- payment_code: ERSNBKZT
+  cur: KZT
+  payment_name: Евразийский банк KZT
+  payment_name_en: Eurasian Bank KZT
+- payment_code: FFBKZT
+  cur: KZT
+  payment_name: Фридом Банк KZT
+  payment_name_en: Freedom Bank KZT
+- payment_code: FRTBKZT
+  cur: KZT
+  payment_name: ForteBank KZT
+  payment_name_en: ForteBank KZT
+- payment_code: HLKBKZT
+  cur: KZT
+  payment_name: HalykBank KZT
+  payment_name_en: HalykBank KZT
+- payment_code: JSNBKZT
+  cur: KZT
+  payment_name: Alatau City Bank KZT
+  payment_name_en: Alatau City Bank KZT
+- payment_code: KSPBKZT
+  cur: KZT
+  payment_name: Kaspi Bank KZT
+  payment_name_en: Kaspi Bank KZT
+- payment_code: QWKZT
+  cur: KZT
+  payment_name: QIWI KZT
+  payment_name_en: QIWI KZT
+- payment_code: WIREKZT
+  cur: KZT
+  payment_name: Банковский счет KZT
+  payment_name_en: Bank account KZT
+- payment_code: LINK
+  cur: LINK
+  payment_name: Chainlink (LINK)
+  payment_name_en: Chainlink (LINK)
+- payment_code: LTC
+  cur: LTC
+  payment_name: Litecoin (LTC)
+  payment_name_en: Litecoin (LTC)
+- payment_code: LUNA
+  cur: LUNA
+  payment_name: Terra (LUNA)
+  payment_name_en: Earth (MOON)
+- payment_code: MANA
+  cur: MANA
+  payment_name: Decentraland (MANA)
+  payment_name_en: Decentraland (MANA)
+- payment_code: CARDMDL
+  cur: MDL
+  payment_name: Банковская карта MDL
+  payment_name_en: MDL bank card
+- payment_code: CASHMDL
+  cur: MDL
+  payment_name: Наличные MDL
+  payment_name_en: Cash MDL
+- payment_code: CASHMXN
+  cur: MXN
+  payment_name: Наличные MXN
+  payment_name_en: Cash MXN
+- payment_code: WIREMXN
+  cur: MXN
+  payment_name: Банковский счет MXN
+  payment_name_en: MXN Bank Account
+- payment_code: WIREMYR
+  cur: MYR
+  payment_name: Банковский счет MYR
+  payment_name_en: MYR Bank Account
+- payment_code: NEAR
+  cur: NEAR
+  payment_name: NEAR Protocol (NEAR)
+  payment_name_en: NEAR Protocol (NEAR)
+- payment_code: NEO
+  cur: NEO
+  payment_name: NEO (NEO)
+  payment_name_en: NEO (NEO)
+- payment_code: CARDNGN
+  cur: NGN
+  payment_name: Банковская карта NGN
+  payment_name_en: NGN bank card
+- payment_code: CASHNGN
+  cur: NGN
+  payment_name: Наличные NGN
+  payment_name_en: Cash NGN
+- payment_code: WIRENGN
+  cur: NGN
+  payment_name: Банковский счет NGN
+  payment_name_en: NGN Bank Account
+- payment_code: CARDNOK
+  cur: NOK
+  payment_name: Банковская карта NOK
+  payment_name_en: NOK bank card
+- payment_code: NOT
+  cur: NOT
+  payment_name: Notcoin (NOT)
+  payment_name_en: Notcoin (NOT)
+- payment_code: WIRENZD
+  cur: NZD
+  payment_name: Банковский счет NZD
+  payment_name_en: NZD Bank Account
+- payment_code: OMG
+  cur: OMG
+  payment_name: OMG Network (OMG)
+  payment_name_en: OMG Network (OMG)
+- payment_code: ONT
+  cur: ONT
+  payment_name: Ontology (ONT)
+  payment_name_en: Ontology (ONT)
+- payment_code: OP
+  cur: OP
+  payment_name: Optimism (OP)
+  payment_name_en: Optimism (OP)
+- payment_code: PEPE
+  cur: PEPE
+  payment_name: Pepe (PEPE)
+  payment_name_en: Pepper (PEPPER)
+- payment_code: WIREPHP
+  cur: PHP
+  payment_name: Банковский счет PHP
+  payment_name_en: PHP Bank Account
+- payment_code: EPPKR
+  cur: PKR
+  payment_name: EasyPaisa PKR
+  payment_name_en: EasyPaisa PKR
+- payment_code: JCPKR
+  cur: PKR
+  payment_name: JazzCash PKR
+  payment_name_en: JazzCash PKR
+- payment_code: WIREPKR
+  cur: PKR
+  payment_name: Банковский счет PKR
+  payment_name_en: PKR bank account
+- payment_code: BLIKPLN
+  cur: PLN
+  payment_name: BLIK PLN
+  payment_name_en: BLIK PLN
+- payment_code: CARDPLN
+  cur: PLN
+  payment_name: Банковская карта PLN
+  payment_name_en: Bank card PLN
+- payment_code: CASHPLN
+  cur: PLN
+  payment_name: Наличные PLN
+  payment_name_en: Cash PLN
+- payment_code: WIREPLN
+  cur: PLN
+  payment_name: Банковский счет PLN
+  payment_name_en: Bank account PLN
+- payment_code: POL
+  cur: POL
+  payment_name: Polygon (POL)
+  payment_name_en: Polygon (POL)
+- payment_code: QTUM
+  cur: QTUM
+  payment_name: Qtum (QTUM)
+  payment_name_en: Qty (QTUM)
+- payment_code: CARDRON
+  cur: RON
+  payment_name: Банковская карта RON
+  payment_name_en: Bank card RON
+- payment_code: CASHRON
+  cur: RON
+  payment_name: Наличные RON
+  payment_name_en: Cash RON
+- payment_code: WIRERON
+  cur: RON
+  payment_name: Банковский счет RON
+  payment_name_en: Bank account RON
+- payment_code: ACCRUB
+  cur: RUB
+  payment_name: Альфа cash-in RUB
+  payment_name_en: Alpha cash-in RUB
+- payment_code: ACRUB
+  cur: RUB
+  payment_name: Альфа-Банк RUB
+  payment_name_en: Alfa-Bank RUB
+- payment_code: ADVCRUB
+  cur: RUB
+  payment_name: Volet RUB
+  payment_name_en: RUB section
+- payment_code: AVBRUB
+  cur: RUB
+  payment_name: Авангард RUB
+  payment_name_en: Vanguard RUB
+- payment_code: CARDRUB
+  cur: RUB
+  payment_name: Банковская карта RUB
+  payment_name_en: Bank card RUB
+- payment_code: CASHRUB
+  cur: RUB
+  payment_name: Наличные RUB
+  payment_name_en: Cash RUB
+- payment_code: CORPRUB
+  cur: RUB
+  payment_name: Счет компании RUB
+  payment_name_en: Company account RUB
+- payment_code: CPTSRUB
+  cur: RUB
+  payment_name: Capitalist RUB
+  payment_name_en: Capitalist RUB
+- payment_code: GCMTRUB
+  cur: RUB
+  payment_name: ЗК RUB
+  payment_name_en: ZK RUB
+- payment_code: GPBRUB
+  cur: RUB
+  payment_name: Газпромбанк RUB
+  payment_name_en: Gazprombank RUB
+- payment_code: HCBRUB
+  cur: RUB
+  payment_name: Хоум Кредит RUB
+  payment_name_en: Home Credit RUB
+- payment_code: MIRCRUB
+  cur: RUB
+  payment_name: Карта Мир RUB
+  payment_name_en: Map World RUB
+- payment_code: MTSBRUB
+  cur: RUB
+  payment_name: МТС Банк RUB
+  payment_name_en: MTS Bank RUB
+- payment_code: MWRUB
+  cur: RUB
+  payment_name: Счет телефона RUB
+  payment_name_en: Phone account RUB
+- payment_code: NFCRUB
+  cur: RUB
+  payment_name: ATM NFC RUB
+  payment_name_en: ATM NFC RUB
+- payment_code: OPNBRUB
+  cur: RUB
+  payment_name: Открытие RUB
+  payment_name_en: Opening RUB
+- payment_code: OZONBRUB
+  cur: RUB
+  payment_name: Ozon Банк RUB
+  payment_name_en: Ozon Bank RUB
+- payment_code: POSTBRUB
+  cur: RUB
+  payment_name: Почта Банк RUB
+  payment_name_en: Post Bank RUB
+- payment_code: PSBRUB
+  cur: RUB
+  payment_name: ПСБ RUB
+  payment_name_en: PSB RUB
+- payment_code: PSTRXRUB
+  cur: RUB
+  payment_name: Piastrix RUB
+  payment_name_en: Piastrix RUB
+- payment_code: RFBRUB
+  cur: RUB
+  payment_name: Райффайзен RUB
+  payment_name_en: Raiffeisen RUB
+- payment_code: RNKBRUB
+  cur: RUB
+  payment_name: РНКБ RUB
+  payment_name_en: RNKB RUB
+- payment_code: ROSBRUB
+  cur: RUB
+  payment_name: Росбанк RUB
+  payment_name_en: Rosbank RUB
+- payment_code: RSHBRUB
+  cur: RUB
+  payment_name: Россельхозбанк RUB
+  payment_name_en: Rosselkhozbank RUB
+- payment_code: RUSSTRUB
+  cur: RUB
+  payment_name: Русский Стандарт RUB
+  payment_name_en: Russian Standard RUB
+- payment_code: SBERQRUB
+  cur: RUB
+  payment_name: Сбербанк QR RUB
+  payment_name_en: Sberbank QR RUB
+- payment_code: SBERRUB
+  cur: RUB
+  payment_name: Сбербанк RUB
+  payment_name_en: Sberbank RUB
+- payment_code: SBPRUB
+  cur: RUB
+  payment_name: СБП RUB
+  payment_name_en: SBP RUB
+- payment_code: TBRUB
+  cur: RUB
+  payment_name: ВТБ RUB
+  payment_name_en: VTB RUB
+- payment_code: TCSBCRUB
+  cur: RUB
+  payment_name: Т-Банк cash-in RUB
+  payment_name_en: T-Bank cash-in RUB
+- payment_code: TCSBQRUB
+  cur: RUB
+  payment_name: Т-Банк QR RUB
+  payment_name_en: T-Bank QR RUB
+- payment_code: TCSBRUB
+  cur: RUB
+  payment_name: Т-Банк RUB
+  payment_name_en: T-Bank RUB
+- payment_code: USTMRUB
+  cur: RUB
+  payment_name: UNI RUB
+  payment_name_en: UNI RUB
+- payment_code: WIRERUB
+  cur: RUB
+  payment_name: Банковский счет RUB
+  payment_name_en: Bank account RUB
+- payment_code: YAMRUB
+  cur: RUB
+  payment_name: ЮMoney RUB
+  payment_name_en: ЮMoney RUB
+- payment_code: RVN
+  cur: RVN
+  payment_name: Ravencoin (RVN)
+  payment_name_en: Ravencoin (RVN)
+- payment_code: CASHSAR
+  cur: SAR
+  payment_name: Наличные SAR
+  payment_name_en: Cash SAR
+- payment_code: CARDSEK
+  cur: SEK
+  payment_name: Банковская карта SEK
+  payment_name_en: SEK bank card
+- payment_code: WIRESEK
+  cur: SEK
+  payment_name: Банковский счет SEK
+  payment_name_en: SEK bank account
+- payment_code: CASHSGD
+  cur: SGD
+  payment_name: Наличные SGD
+  payment_name_en: Cash SGD
+- payment_code: SHIBBEP20
+  cur: SHIB
+  payment_name: Shiba BEP20 (SHIB)
+  payment_name_en: Shiba BEP20 (SHIB)
+- payment_code: SHIBERC20
+  cur: SHIB
+  payment_name: Shiba ERC20 (SHIB)
+  payment_name_en: Shiba ERC20 (SHIB)
+- payment_code: SOL
+  cur: SOL
+  payment_name: Solana (SOL)
+  payment_name_en: Solana (SUN)
+- payment_code: SUI
+  cur: SUI
+  payment_name: Sui (SUI)
+  payment_name_en: Sui (SUI)
+- payment_code: ATMQRTHB
+  cur: THB
+  payment_name: ATM QR-код THB
+  payment_name_en: ATM QR-код THB
+- payment_code: CARDTHB
+  cur: THB
+  payment_name: Банковская карта THB
+  payment_name_en: THB bank card
+- payment_code: CASHTHB
+  cur: THB
+  payment_name: Наличные THB
+  payment_name_en: Cash THB
+- payment_code: WIRETHB
+  cur: THB
+  payment_name: Банковский счет THB
+  payment_name_en: THB bank account
+- payment_code: CARDTJS
+  cur: TJS
+  payment_name: Банковская карта TJS
+  payment_name_en: TJS bank card
+- payment_code: TON
+  cur: TON
+  payment_name: Toncoin (TON)
+  payment_name_en: Toncoin (TON)
+- payment_code: TRUMP
+  cur: TRUMP
+  payment_name: Official Trump (TRUMP)
+  payment_name_en: Official Trump (TRUMP)
+- payment_code: TRX
+  cur: TRX
+  payment_name: TRON (TRX)
+  payment_name_en: TRON (TRX)
+- payment_code: ADVCTRY
+  cur: TRY
+  payment_name: Volet TRY
+  payment_name_en: Volet TRY
+- payment_code: CARDTRY
+  cur: TRY
+  payment_name: Банковская карта TRY
+  payment_name_en: TRY bank card
+- payment_code: CASHTRY
+  cur: TRY
+  payment_name: Наличные TRY
+  payment_name_en: Cash TRY
+- payment_code: WIRETRY
+  cur: TRY
+  payment_name: Банковский счет TRY
+  payment_name_en: TRY bank account
+- payment_code: ABUAH
+  cur: UAH
+  payment_name: А-Банк UAH
+  payment_name_en: A-Bank UAH
+- payment_code: ADVCUAH
+  cur: UAH
+  payment_name: Volet UAH
+  payment_name_en: UAH component
+- payment_code: CARDUAH
+  cur: UAH
+  payment_name: Банковская карта UAH
+  payment_name_en: Bank card UAH
+- payment_code: CASHUAH
+  cur: UAH
+  payment_name: Наличные UAH
+  payment_name_en: Cash UAH
+- payment_code: CORPUAH
+  cur: UAH
+  payment_name: Счет компании UAH
+  payment_name_en: Company account UAH
+- payment_code: GMUAH
+  cur: UAH
+  payment_name: Global24 UAH
+  payment_name_en: Global24 UAH
+- payment_code: IZIBUAH
+  cur: UAH
+  payment_name: Izibank UAH
+  payment_name_en: Banks UAH
+- payment_code: MONOBUAH
+  cur: UAH
+  payment_name: Монобанк UAH
+  payment_name_en: Monobank UAH
+- payment_code: MWUAH
+  cur: UAH
+  payment_name: Счет телефона UAH
+  payment_name_en: Phone account UAH
+- payment_code: OSDBUAH
+  cur: UAH
+  payment_name: Ощадбанк UAH
+  payment_name_en: Oschadbank UAH
+- payment_code: OTPBUAH
+  cur: UAH
+  payment_name: OTP Bank UAH
+  payment_name_en: OTP Bank UAH
+- payment_code: P24UAH
+  cur: UAH
+  payment_name: Приват 24 UAH
+  payment_name_en: Privat 24 UAH
+- payment_code: PMBBUAH
+  cur: UAH
+  payment_name: ПУМБ UAH
+  payment_name_en: PUMB UAH
+- payment_code: RFBUAH
+  cur: UAH
+  payment_name: Райффайзен UAH
+  payment_name_en: Raiffeisen UAH
+- payment_code: SNBUAH
+  cur: UAH
+  payment_name: Sense Bank UAH
+  payment_name_en: Sense Bank UAH
+- payment_code: USBUAH
+  cur: UAH
+  payment_name: УкрСиббанк UAH
+  payment_name_en: UkrSybbank UAH
+- payment_code: WIREUAH
+  cur: UAH
+  payment_name: Банковский счет UAH
+  payment_name_en: Bank account UAH
+- payment_code: UNI
+  cur: UNI
+  payment_name: Uniswap (UNI)
+  payment_name_en: Uniswap (UNI)
+- payment_code: ADVCUSD
+  cur: USD
+  payment_name: Volet USD
+  payment_name_en: Volet USD
+- payment_code: BPAYUSD
+  cur: USD
+  payment_name: BPay USD
+  payment_name_en: BPay USD
+- payment_code: BUSD
+  cur: USD
+  payment_name: Binance USD (BUSD)
+  payment_name_en: Binance USD (BUSD)
+- payment_code: CARDUSD
+  cur: USD
+  payment_name: Банковская карта USD
+  payment_name_en: Bank card USD
+- payment_code: CASHUSD
+  cur: USD
+  payment_name: Наличные USD
+  payment_name_en: Cash USD
+- payment_code: CORPUSD
+  cur: USD
+  payment_name: Счет компании USD
+  payment_name_en: Company account USD
+- payment_code: CPTSUSD
+  cur: USD
+  payment_name: Capitalist USD
+  payment_name_en: Capitalist USD
+- payment_code: DAI
+  cur: USD
+  payment_name: Dai (DAI)
+  payment_name_en: Dai (DAI)
+- payment_code: EPAYUSD
+  cur: USD
+  payment_name: Epay USD
+  payment_name_en: Epay USD
+- payment_code: EXMUSDT
+  cur: USD
+  payment_name: Exmo USDT
+  payment_name_en: Exmo USDT
+- payment_code: FPUSD
+  cur: USD
+  payment_name: FasaPay USD
+  payment_name_en: FasaPay USD
+- payment_code: GCMTUSD
+  cur: USD
+  payment_name: ЗК USD
+  payment_name_en: ZK USD
+- payment_code: MGUSD
+  cur: USD
+  payment_name: MoneyGram USD
+  payment_name_en: MoneyGram USD
+- payment_code: MNGUSD
+  cur: USD
+  payment_name: MoneyGo USD
+  payment_name_en: MoneyGo USD
+- payment_code: MONOBUSD
+  cur: USD
+  payment_name: Монобанк USD
+  payment_name_en: Monobank USD
+- payment_code: NIXUSD
+  cur: USD
+  payment_name: NixMoney USD
+  payment_name_en: NixMoney USD
+- payment_code: NTLRUSD
+  cur: USD
+  payment_name: Neteller USD
+  payment_name_en: Neteller USD
+- payment_code: P24USD
+  cur: USD
+  payment_name: Приват 24 USD
+  payment_name_en: Private 24 USD
+- payment_code: PNRUSD
+  cur: USD
+  payment_name: Payoneer USD
+  payment_name_en: Payoneer USD
+- payment_code: PPUSD
+  cur: USD
+  payment_name: PayPal USD
+  payment_name_en: PayPal USD
+- payment_code: PSRUSD
+  cur: USD
+  payment_name: PaySera USD
+  payment_name_en: PaySera USD
+- payment_code: PSTRXUSD
+  cur: USD
+  payment_name: Piastrix USD
+  payment_name_en: Piastrix USD
+- payment_code: REVBUSD
+  cur: USD
+  payment_name: Revolut USD
+  payment_name_en: Revolut USD
+- payment_code: RMTFUSD
+  cur: USD
+  payment_name: Ria USD
+  payment_name_en: Ria USD
+- payment_code: SKLUSD
+  cur: USD
+  payment_name: Skrill USD
+  payment_name_en: Skrill USD
+- payment_code: TRDUSD
+  cur: USD
+  payment_name: Криптобиржи USD
+  payment_name_en: Crypto exchanges USD
+- payment_code: TUSDERC20
+  cur: USD
+  payment_name: TrueUSD ERC20 (TUSD)
+  payment_name_en: TrueUSD ERC20 (TUSD)
+- payment_code: TUSDTRC20
+  cur: USD
+  payment_name: TrueUSD TRC20 (TUSD)
+  payment_name_en: TrueUSD TRC20 (TUSD)
+- payment_code: USDCARBTM
+  cur: USD
+  payment_name: USDC ARBITRUM (USDC)
+  payment_name_en: USDC ARBITRATION (USDC)
+- payment_code: USDCBEP20
+  cur: USD
+  payment_name: USDC BEP20 (USDC)
+  payment_name_en: USDC BEP20 (USDC)
+- payment_code: USDCERC20
+  cur: USD
+  payment_name: USDC ERC20 (USDC)
+  payment_name_en: USDC ERC20 (USDC)
+- payment_code: USDCNEAR
+  cur: USD
+  payment_name: USDC NEAR (USDC)
+  payment_name_en: USDC NEAR (USDC)
+- payment_code: USDCOPTM
+  cur: USD
+  payment_name: USDC OPTIMISM (USDC)
+  payment_name_en: USDC OPTIMISM (USDC)
+- payment_code: USDCPOLYGON
+  cur: USD
+  payment_name: USDC POLYGON (USDC)
+  payment_name_en: USDC POLYGON (USDC)
+- payment_code: USDCSOL
+  cur: USD
+  payment_name: USDC SOL (USDC)
+  payment_name_en: USDC SOL (USDC)
+- payment_code: USDCTRC20
+  cur: USD
+  payment_name: USDC TRC20 (USDC)
+  payment_name_en: USDC TRC20 (USDC)
+- payment_code: USDP
+  cur: USD
+  payment_name: Pax Dollar (USDP)
+  payment_name_en: Pax Dollar (USDP)
+- payment_code: USDQERC20
+  cur: USD
+  payment_name: Quantoz ERC20 (USDQ)
+  payment_name_en: Quantoz ERC20 (USDQ)
+- payment_code: USDRERC20
+  cur: USD
+  payment_name: StablR USD ERC20 (USDR)
+  payment_name_en: StablR USD ERC20 (USDR)
+- payment_code: USDTARBTM
+  cur: USD
+  payment_name: Tether ARBITRUM (USDT)
+  payment_name_en: Tether Arbitrage (USDT)
+- payment_code: USDTAVAXC
+  cur: USD
+  payment_name: Tether AVALANCHE (USDT)
+  payment_name_en: Tether AVALANCHE (USDT)
+- payment_code: USDTBEP20
+  cur: USD
+  payment_name: Tether BEP20 (USDT)
+  payment_name_en: Tether BEP20 (USDT)
+- payment_code: USDTERC20
+  cur: USD
+  payment_name: Tether ERC20 (USDT)
+  payment_name_en: Tether ERC20 (USDT)
+- payment_code: USDTNEAR
+  cur: USD
+  payment_name: Tether NEAR (USDT)
+  payment_name_en: Tether NEAR (USDT)
+- payment_code: USDTOMNI
+  cur: USD
+  payment_name: Tether OMNI (USDT)
+  payment_name_en: Tether OMNI (USDT)
+- payment_code: USDTOPTM
+  cur: USD
+  payment_name: Tether OPTIMISM (USDT)
+  payment_name_en: Tether OPTIMISM (USDT)
+- payment_code: USDTPOLYGON
+  cur: USD
+  payment_name: Tether POLYGON (USDT)
+  payment_name_en: Tether POLYGON (USDT)
+- payment_code: USDTSOL
+  cur: USD
+  payment_name: Tether SOL (USDT)
+  payment_name_en: Tether SOL (USDT)
+- payment_code: USDTTON
+  cur: USD
+  payment_name: Tether TON (USDT)
+  payment_name_en: Tether TON (USDT)
+- payment_code: USDTTRC20
+  cur: USD
+  payment_name: Tether TRC20 (USDT)
+  payment_name_en: Tether TRC20 (USDT)
+- payment_code: USTMUSD
+  cur: USD
+  payment_name: UNI USD
+  payment_name_en: UNI USD
+- payment_code: UUSD
+  cur: USD
+  payment_name: Utopia USD (UUSD)
+  payment_name_en: Utopia USD (UUSD)
+- payment_code: WIREUSD
+  cur: USD
+  payment_name: Банковский счет USD
+  payment_name_en: Bank account USD
+- payment_code: WISEUSD
+  cur: USD
+  payment_name: Wise USD
+  payment_name_en: Wise USD
+- payment_code: WMZ
+  cur: USD
+  payment_name: WebMoney WMZ
+  payment_name_en: WebMoney WMZ
+- payment_code: WUUSD
+  cur: USD
+  payment_name: WU USD
+  payment_name_en: WU USD
+- payment_code: ZELLEUSD
+  cur: USD
+  payment_name: Zelle USD
+  payment_name_en: Cell USD
+- payment_code: WIREUYU
+  cur: UYU
+  payment_name: Банковский счет UYU
+  payment_name_en: Bank account UYU
+- payment_code: CARDUZS
+  cur: UZS
+  payment_name: Банковская карта UZS
+  payment_name_en: UZS bank card
+- payment_code: HUMOUZS
+  cur: UZS
+  payment_name: Карта HUMO UZS
+  payment_name_en: HUMO UZS card
+- payment_code: UZCUZS
+  cur: UZS
+  payment_name: Карта UZCARD UZS
+  payment_name_en: Card UZCARD UZS
+- payment_code: VET
+  cur: VET
+  payment_name: VeChain (VET)
+  payment_name_en: VeChain (VET)
+- payment_code: ATMQRVND
+  cur: VND
+  payment_name: ATM QR-код VND
+  payment_name_en: ATM QR code VND
+- payment_code: CARDVND
+  cur: VND
+  payment_name: Банковская карта VND
+  payment_name_en: VND bank card
+- payment_code: CASHVND
+  cur: VND
+  payment_name: Наличные VND
+  payment_name_en: Cash VND
+- payment_code: WIREVND
+  cur: VND
+  payment_name: Банковский счет VND
+  payment_name_en: VND Bank Account
+- payment_code: WAVES
+  cur: WAVES
+  payment_name: Waves (WAVES)
+  payment_name_en: Waves (WAVES)
+- payment_code: XAUTERC20
+  cur: XAU
+  payment_name: Tether Gold ERC20 (XAUT)
+  payment_name_en: Tether Gold ERC20 (XAUT)
+- payment_code: XEM
+  cur: XEM
+  payment_name: NEM (XEM)
+  payment_name_en: NEM (SEE)
+- payment_code: XLM
+  cur: XLM
+  payment_name: Stellar (XLM)
+  payment_name_en: Stellar (XLM)
+- payment_code: XMR
+  cur: XMR
+  payment_name: Monero (XMR)
+  payment_name_en: Monero (XMR)
+- payment_code: XRP
+  cur: XRP
+  payment_name: XRP (XRP)
+  payment_name_en: XRP (XRP)
+- payment_code: XTZ
+  cur: XTZ
+  payment_name: Tezos (XTZ)
+  payment_name_en: Tezos (XTZ)
+- payment_code: XVG
+  cur: XVG
+  payment_name: Verge (XVG)
+  payment_name_en: Verge (XVG)
+- payment_code: YFI
+  cur: YFI
+  payment_name: Yearn Finance (YFI)
+  payment_name_en: Yearn Finance (YFI)
+- payment_code: ZEC
+  cur: ZEC
+  payment_name: Zcash (ZEC)
+  payment_name_en: Zcash (ZEC)
+- payment_code: ZRX
+  cur: ZRX
+  payment_name: 0x (ZRX)
+  payment_name_en: 0x (ZRX)
+cities:
+- id: 0
+- id: 1
+  name: Москва
+  name_en: Moscow
+- id: 2
+  name: Санкт-Петербург
+  name_en: Saint Petersburg
+- id: 3
+  name: Киев
+  name_en: Kyiv
+- id: 4
+  name: Минск
+  name_en: Minsk
+- id: 5
+  name: Костанай
+  name_en: Kostanay
+- id: 6
+  name: Самара
+  name_en: Samara
+- id: 7
+  name: Ставрополь
+  name_en: Stavropol
+- id: 8
+  name: Екатеринбург
+  name_en: Yekaterinburg
+- id: 9
+  name: Ереван
+  name_en: Yerevan
+- id: 10
+  name: Чебоксары
+  name_en: Cheboksary
+- id: 12
+  name: Казань
+  name_en: Kazan
+- id: 13
+  name: Курск
+  name_en: Kursk
+- id: 14
+  name: Нижний Новгород
+  name_en: Nizhny Novgorod
+- id: 15
+  name: Сочи
+  name_en: Sochi
+- id: 16
+  name: Омск
+  name_en: Omsk
+- id: 17
+  name: Новосибирск
+  name_en: Novosibirsk
+- id: 18
+  name: Челябинск
+  name_en: Chelyabinsk
+- id: 19
+  name: Астана
+  name_en: Astana
+- id: 20
+  name: Таганрог
+  name_en: Taganrog
+- id: 21
+  name: Харьков
+  name_en: Kharkov
+- id: 22
+  name: Кемерово
+  name_en: Kemerovo
+- id: 23
+  name: Красноярск
+  name_en: Krasnoyarsk
+- id: 24
+  name: Волгоград
+  name_en: Volgograd
+- id: 25
+  name: Симферополь
+  name_en: Simferopol
+- id: 26
+  name: Львов
+  name_en: Lviv
+- id: 27
+  name: Хмельницкий
+  name_en: Khmelnitsky
+- id: 28
+  name: Кривой Рог
+  name_en: Krivoy Rog
+- id: 29
+  name: Ростов-на-Дону
+  name_en: Rostov-on-Don
+- id: 30
+  name: Брянск
+  name_en: Bryansk
+- id: 31
+  name: Иркутск
+  name_en: Irkutsk
+- id: 32
+  name: Мариуполь
+  name_en: Mariupol
+- id: 33
+  name: Днепр
+  name_en: Dnieper
+- id: 34
+  name: Пермь
+  name_en: Perm
+- id: 35
+  name: Донецк
+  name_en: Donetsk
+- id: 38
+  name: Одесса
+  name_en: Odessa
+- id: 39
+  name: Запорожье
+  name_en: Zaporozhye
+- id: 40
+  name: Николаев
+  name_en: Nikolaev
+- id: 41
+  name: Экибастуз
+  name_en: Stand by
+- id: 42
+  name: Пятигорск
+  name_en: Pyatigorsk
+- id: 44
+  name: Набережные Челны
+  name_en: Naberezhnye Chelny
+- id: 45
+  name: Ижевск
+  name_en: Izhevsk
+- id: 46
+  name: Тула
+  name_en: Brick
+- id: 47
+  name: Кременчуг
+  name_en: Kremenchuk
+- id: 48
+  name: Рига
+  name_en: Riga
+- id: 49
+  name: Полтава
+  name_en: Poltava
+- id: 50
+  name: Черновцы
+  name_en: Chernivtsi
+- id: 51
+  name: Кишинев
+  name_en: Kishinev
+- id: 52
+  name: Тбилиси
+  name_en: Tbilisi
+- id: 53
+  name: Краснодар
+  name_en: Krasnodar
+- id: 54
+  name: Стамбул
+  name_en: Istanbul
+- id: 55
+  name: Манама
+  name_en: Manama
+- id: 56
+  name: Дубай
+  name_en: Dubai
+- id: 58
+  name: Пекин
+  name_en: Beijing
+- id: 59
+  name: Гуанчжоу
+  name_en: Guangzhou
+- id: 60
+  name: Винница
+  name_en: Vinnitsa
+- id: 61
+  name: Житомир
+  name_en: Zhytomyr
+- id: 62
+  name: Ивано-Франковск
+  name_en: Ivano-Frankivsk
+- id: 63
+  name: Кропивницкий
+  name_en: Kropyvnytskyi
+- id: 64
+  name: Краматорск
+  name_en: Kramatorsk
+- id: 65
+  name: Луцк
+  name_en: Lutsk
+- id: 67
+  name: Ровно
+  name_en: Smooth
+- id: 68
+  name: Сумы
+  name_en: Amounts
+- id: 69
+  name: Тернополь
+  name_en: Ternopil
+- id: 70
+  name: Ужгород
+  name_en: Uzhhorod
+- id: 71
+  name: Херсон
+  name_en: Kherson
+- id: 72
+  name: Черкассы
+  name_en: Cherkasy
+- id: 73
+  name: Новокузнецк
+  name_en: Novokuznetsk
+- id: 74
+  name: Гомель
+  name_en: Gomel
+- id: 75
+  name: Лондон
+  name_en: London
+- id: 76
+  name: Лос-Анджелес
+  name_en: Los Angeles
+- id: 77
+  name: Баку
+  name_en: Baku
+- id: 78
+  name: Гонконг
+  name_en: Hong Kong
+- id: 79
+  name: Таллин
+  name_en: Tallinn
+- id: 80
+  name: Степанакерт
+  name_en: Stepanakert
+- id: 81
+  name: Нью-Йорк
+  name_en: New York
+- id: 82
+  name: Ташкент
+  name_en: Tashkent
+- id: 83
+  name: Прага
+  name_en: Prague
+- id: 84
+  name: Дрезден
+  name_en: Dresden
+- id: 85
+  name: Мюнхен
+  name_en: Munich
+- id: 86
+  name: Берлин
+  name_en: Berlin
+- id: 87
+  name: Франкфурт-на-Майне
+  name_en: Frankfurt am Main
+- id: 88
+  name: Милан
+  name_en: Milan
+- id: 89
+  name: Амстердам
+  name_en: Amsterdam
+- id: 90
+  name: Париж
+  name_en: Paris
+- id: 91
+  name: Барселона
+  name_en: Barcelona
+- id: 92
+  name: Стокгольм
+  name_en: Stockholm
+- id: 93
+  name: Осло
+  name_en: Oslo
+- id: 94
+  name: Брюссель
+  name_en: Brussels
+- id: 95
+  name: Варшава
+  name_en: Warsaw
+- id: 96
+  name: Вильнюс
+  name_en: Vilnius
+- id: 98
+  name: Новороссийск
+  name_en: Novorossiysk
+- id: 99
+  name: Анапа
+  name_en: Anapa
+- id: 100
+  name: Архангельск
+  name_en: Arkhangelsk
+- id: 101
+  name: Астрахань
+  name_en: Astrakhan
+- id: 102
+  name: Воронеж
+  name_en: Voronezh
+- id: 103
+  name: Йошкар-Ола
+  name_en: Yoshkar-Ola
+- id: 104
+  name: Калининград
+  name_en: Kaliningrad
+- id: 105
+  name: Калуга
+  name_en: Kaluga
+- id: 106
+  name: Киров
+  name_en: Kirov
+- id: 107
+  name: Кострома
+  name_en: Kostroma
+- id: 108
+  name: Липецк
+  name_en: Lipetsk
+- id: 109
+  name: Магнитогорск
+  name_en: Magnitogorsk
+- id: 110
+  name: Оренбург
+  name_en: Orenburg
+- id: 111
+  name: Пенза
+  name_en: Penza
+- id: 112
+  name: Саранск
+  name_en: Saransk
+- id: 113
+  name: Саратов
+  name_en: Saratov
+- id: 114
+  name: Тамбов
+  name_en: Tambov
+- id: 115
+  name: Тверь
+  name_en: Tver
+- id: 116
+  name: Уфа
+  name_en: Ufa
+- id: 117
+  name: Череповец
+  name_en: Cherepovets
+- id: 118
+  name: Ярославль
+  name_en: Yaroslavl
+- id: 119
+  name: Тюмень
+  name_en: Tyumen
+- id: 121
+  name: Могилев
+  name_en: Mogilev
+- id: 122
+  name: Витебск
+  name_en: Vitebsk
+- id: 123
+  name: Алма-Ата
+  name_en: Alma-Ata
+- id: 124
+  name: Шымкент
+  name_en: Shymkent
+- id: 125
+  name: Актобе
+  name_en: Aktobe
+- id: 126
+  name: Караганда
+  name_en: Karaganda
+- id: 127
+  name: Владивосток
+  name_en: Vladivostok
+- id: 128
+  name: Грозный
+  name_en: Grozny
+- id: 129
+  name: Пафос
+  name_en: Pathos
+- id: 130
+  name: Лимасол
+  name_en: Limassol
+- id: 131
+  name: Ларнака
+  name_en: Larnaca
+- id: 133
+  name: Тунис
+  name_en: Tunisia
+- id: 134
+  name: Триполи
+  name_en: Tripoli
+- id: 135
+  name: Геленджик
+  name_en: Gelendzhik
+- id: 136
+  name: Орел
+  name_en: Eagle
+- id: 137
+  name: Рязань
+  name_en: Ryazan
+- id: 138
+  name: Махачкала
+  name_en: Makhachkala
+- id: 139
+  name: Тирана
+  name_en: Tirana
+- id: 140
+  name: Копенгаген
+  name_en: Copenhagen
+- id: 141
+  name: Гамбург
+  name_en: Hamburg
+- id: 142
+  name: Лейпциг
+  name_en: Leipzig
+- id: 143
+  name: Антверпен
+  name_en: Antwerp
+- id: 144
+  name: Роттердам
+  name_en: Rotterdam
+- id: 145
+  name: Ницца
+  name_en: Nice
+- id: 146
+  name: Рим
+  name_en: Rome
+- id: 147
+  name: Валенсия
+  name_en: Valencia
+- id: 148
+  name: Мадрид
+  name_en: Madrid
+- id: 149
+  name: Малага
+  name_en: Málaga
+- id: 150
+  name: Чикаго
+  name_en: Chicago
+- id: 151
+  name: Майами
+  name_en: Miami
+- id: 152
+  name: Орландо
+  name_en: Orlando
+- id: 153
+  name: Гуаякиль
+  name_en: Guayaquil
+- id: 154
+  name: Сантьяго
+  name_en: Santiago
+- id: 155
+  name: Санто-Доминго
+  name_en: Santo Domingo
+- id: 156
+  name: Мехико
+  name_en: Mexico City
+- id: 157
+  name: Сургут
+  name_en: Surgut
+- id: 158
+  name: Батуми
+  name_en: Batumi
+- id: 159
+  name: Чернигов
+  name_en: Chernigov
+- id: 160
+  name: Монако
+  name_en: Monaco
+- id: 161
+  name: Мурманск
+  name_en: Murmansk
+- id: 162
+  name: Будва
+  name_en: Budva
+- id: 163
+  name: Белгород
+  name_en: Belgorod
+- id: 164
+  name: Старый Оскол
+  name_en: Stary Oskol
+- id: 165
+  name: Гродно
+  name_en: Grodno
+- id: 166
+  name: Брест
+  name_en: Brest
+- id: 167
+  name: Анталья
+  name_en: Antalya
+- id: 168
+  name: Анкара
+  name_en: Ankara
+- id: 169
+  name: Севастополь
+  name_en: Sevastopol
+- id: 170
+  name: Бишкек
+  name_en: Bishkek
+- id: 171
+  name: Хабаровск
+  name_en: Khabarovsk
+- id: 172
+  name: Адлер
+  name_en: Adler
+- id: 173
+  name: Ростов
+  name_en: Rostov
+- id: 174
+  name: Агарак
+  name_en: Agarak
+- id: 176
+  name: Владимир
+  name_en: Vladimir
+- id: 177
+  name: Афины
+  name_en: Athens
+- id: 178
+  name: Будапешт
+  name_en: Budapest
+- id: 179
+  name: Тирасполь
+  name_en: Tiraspol
+- id: 180
+  name: Братислава
+  name_en: Bratislava
+- id: 181
+  name: Вена
+  name_en: Vein
+- id: 182
+  name: Кошице
+  name_en: Košice
+- id: 183
+  name: Славянск
+  name_en: Slavyansk
+- id: 184
+  name: Северодвинск
+  name_en: Severodvinsk
+- id: 185
+  name: Мукачево
+  name_en: Mukachevo
+- id: 187
+  name: Кито
+  name_en: Quito
+- id: 188
+  name: Тель-Авив
+  name_en: Tel Aviv
+- id: 189
+  name: Измир
+  name_en: Izmir
+- id: 190
+  name: Бурса
+  name_en: Bursa
+- id: 191
+  name: София
+  name_en: Sofia
+- id: 192
+  name: Вроцлав
+  name_en: Wroclaw
+- id: 193
+  name: Гданьск
+  name_en: Gdańsk
+- id: 194
+  name: Краков
+  name_en: Krakow
+- id: 195
+  name: Бухарест
+  name_en: Bucharest
+- id: 196
+  name: Ковель
+  name_en: Kovel
+- id: 198
+  name: Варна
+  name_en: Varna
+- id: 199
+  name: Аланья
+  name_en: Alanya
+- id: 200
+  name: Кемер
+  name_en: Belt
+- id: 201
+  name: Белек
+  name_en: A gift
+- id: 202
+  name: Петрозаводск
+  name_en: Petrozavodsk
+- id: 203
+  name: Порту
+  name_en: Porto
+- id: 204
+  name: Лиссабон
+  name_en: Lisbon
+- id: 205
+  name: Фуншал
+  name_en: Funchal
+- id: 206
+  name: Рустави
+  name_en: Rustavi
+- id: 207
+  name: Газипаша
+  name_en: Gazipasa
+- id: 208
+  name: Мерсин
+  name_en: Mersin
+- id: 209
+  name: Дублин
+  name_en: Dublin
+- id: 210
+  name: Панама
+  name_en: Panama
+- id: 211
+  name: Богота
+  name_en: Bogotá
+- id: 212
+  name: Медельин
+  name_en: Medellin
+- id: 213
+  name: Лима
+  name_en: Lima
+- id: 214
+  name: Буэнос-Айрес
+  name_en: Buenos Aires
+- id: 215
+  name: Пшемысль
+  name_en: Przemysl
+- id: 216
+  name: Лодзь
+  name_en: Lodz
+- id: 217
+  name: Констанца
+  name_en: Constance
+- id: 218
+  name: Марбелья
+  name_en: Marbella
+- id: 219
+  name: Женева
+  name_en: Geneva
+- id: 220
+  name: Цюрих
+  name_en: Zurich
+- id: 221
+  name: Каунас
+  name_en: Kaunas
+- id: 222
+  name: Кельн
+  name_en: Cologne
+- id: 223
+  name: Дюссельдорф
+  name_en: Dusseldorf
+- id: 224
+  name: Дортмунд
+  name_en: Dortmund
+- id: 225
+  name: Подгорица
+  name_en: Podgorica
+- id: 226
+  name: Севилья
+  name_en: Seville
+- id: 227
+  name: Аликанте
+  name_en: Alicante
+- id: 228
+  name: Канны
+  name_en: Blood
+- id: 229
+  name: Марсель
+  name_en: Marcel
+- id: 230
+  name: Лион
+  name_en: Lyon
+- id: 231
+  name: Римини
+  name_en: Rimini
+- id: 232
+  name: Неаполь
+  name_en: Naples
+- id: 233
+  name: Катания
+  name_en: Catania
+- id: 234
+  name: Палермо
+  name_en: Palermo
+- id: 235
+  name: Торонто
+  name_en: Toronto
+- id: 236
+  name: Монреаль
+  name_en: Montreal
+- id: 237
+  name: Квебек
+  name_en: Quebec
+- id: 238
+  name: Калгари
+  name_en: Calgary
+- id: 239
+  name: Сиэтл
+  name_en: Seattle
+- id: 240
+  name: Сарагоса
+  name_en: Zaragoza
+- id: 241
+  name: Мурсия
+  name_en: Murcia
+- id: 242
+  name: Елец
+  name_en: Dace
+- id: 243
+  name: Ливерпуль
+  name_en: Liverpool
+- id: 244
+  name: Манчестер
+  name_en: Manchester
+- id: 245
+  name: Бирмингем
+  name_en: Birmingham
+- id: 246
+  name: Филадельфия
+  name_en: Philadelphia
+- id: 247
+  name: Лас-Вегас
+  name_en: Las Vegas
+- id: 248
+  name: Пхукет
+  name_en: Phuket
+- id: 249
+  name: Бали
+  name_en: Points
+- id: 250
+  name: Паттайя
+  name_en: Pattaya
+- id: 251
+  name: Бангкок
+  name_en: Bangkok
+- id: 252
+  name: Самуй
+  name_en: Samui
+- id: 253
+  name: Пханган
+  name_en: Phangan
+- id: 254
+  name: Чанг
+  name_en: War
+- id: 255
+  name: Краби
+  name_en: Crabs
+- id: 256
+  name: Сидней
+  name_en: Sydney
+- id: 257
+  name: Мельбурн
+  name_en: Melbourne
+- id: 258
+  name: Брисбен
+  name_en: Brisbane
+- id: 259
+  name: Голд-Кост
+  name_en: Gold Coast
+- id: 260
+  name: Аделаида
+  name_en: Adelaide
+- id: 261
+  name: Утрехт
+  name_en: Utrecht
+- id: 262
+  name: Ульяновск
+  name_en: Ulyanovsk
+- id: 263
+  name: Сыктывкар
+  name_en: Syktyvkar
+- id: 264
+  name: Тольятти
+  name_en: Tolyatti
+- id: 265
+  name: Кириния (Северный Кипр)
+  name_en: Kyrenia (Northern Cyprus)
+- id: 266
+  name: Фамагуста (Северный Кипр)
+  name_en: Famagusta (Northern Cyprus)
+- id: 267
+  name: Никосия (Северный Кипр)
+  name_en: Nicosia (Northern Cyprus)
+- id: 268
+  name: Самсун
+  name_en: Samsun
+- id: 269
+  name: Сеул
+  name_en: Seoul
+- id: 270
+  name: Барнаул
+  name_en: Barnaul
+- id: 271
+  name: Белград
+  name_en: Belgrade
+- id: 272
+  name: Нови-Сад
+  name_en: Novi-Sad
+- id: 273
+  name: Ниш
+  name_en: Niš
+- id: 274
+  name: Сан-Хосе
+  name_en: San Jose
+- id: 275
+  name: Никосия
+  name_en: Nicosia
+- id: 276
+  name: Томск
+  name_en: Tomsk
+- id: 277
+  name: Бар
+  name_en: There is
+- id: 278
+  name: Душанбе
+  name_en: Dushanbe
+- id: 279
+  name: Загреб
+  name_en: Zagreb
+- id: 280
+  name: Валлетта
+  name_en: Valletta
+- id: 281
+  name: Скопье
+  name_en: Skopje
+- id: 282
+  name: Салоники
+  name_en: Thessaloniki
+- id: 283
+  name: Каир
+  name_en: Cairo
+- id: 284
+  name: Александрия
+  name_en: Alexandria
+- id: 285
+  name: Бейрут
+  name_en: Beirut
+- id: 286
+  name: Джедда
+  name_en: Jeddah
+- id: 287
+  name: Доха
+  name_en: Doha
+- id: 288
+  name: Сингапур
+  name_en: Singapore
+- id: 289
+  name: Любляна
+  name_en: Ljubljana
+- id: 290
+  name: Люксембург
+  name_en: Luxembourg
+- id: 291
+  name: Хельсинки
+  name_en: Helsinki
+- id: 292
+  name: Фару
+  name_en: Faro
+- id: 293
+  name: Сан-Паулу
+  name_en: Sao Paulo
+- id: 294
+  name: Рио-де-Жанейро
+  name_en: Rio de Janeiro
+- id: 295
+  name: Бразилиа
+  name_en: Brasilia
+- id: 296
+  name: Сальвадор
+  name_en: Salvador
+- id: 297
+  name: Форталеза
+  name_en: Fortaleza
+- id: 298
+  name: Салават
+  name_en: Greetings
+- id: 299
+  name: Стерлитамак
+  name_en: Sterlitamak
+- id: 300
+  name: Абу-Даби
+  name_en: Abu Dhabi
+- id: 301
+  name: Шэньчжэнь
+  name_en: Shenzhen
+- id: 302
+  name: Бодрум
+  name_en: Bodrum
+- id: 303
+  name: Ибица
+  name_en: Ibiza
+- id: 304
+  name: Майорка
+  name_en: Majorca
+- id: 305
+  name: Тенерифе
+  name_en: Tenerife
+- id: 306
+  name: Токио
+  name_en: Tokyo
+- id: 307
+  name: Луанда
+  name_en: Luanda
+- id: 308
+  name: Абиджан
+  name_en: Abidjan
+- id: 309
+  name: Банжул
+  name_en: Banjul
+- id: 310
+  name: Аккра
+  name_en: Accra
+- id: 311
+  name: Кумаси
+  name_en: Kumasi
+- id: 312
+  name: Тема
+  name_en: Subject
+- id: 313
+  name: Конакри
+  name_en: Conakry
+- id: 314
+  name: Яунде
+  name_en: Yaounde
+- id: 315
+  name: Дуала
+  name_en: Duala
+- id: 316
+  name: Браззавиль
+  name_en: Brazzaville
+- id: 317
+  name: Киншаса
+  name_en: Kinshasa
+- id: 318
+  name: Лагос
+  name_en: Lagos
+- id: 319
+  name: Абуджа
+  name_en: Abuja
+- id: 320
+  name: Кано
+  name_en: Kano
+- id: 321
+  name: Могадишо
+  name_en: Mogadishu
+- id: 322
+  name: Дакар
+  name_en: Dakar
+- id: 323
+  name: Ломе
+  name_en: Broke
+- id: 324
+  name: Хараре
+  name_en: Harare
+- id: 325
+  name: Котону
+  name_en: Cotonou
+- id: 326
+  name: Ниамей
+  name_en: Niamey
+- id: 327
+  name: Аддис-Абеба
+  name_en: Addis Ababa
+- id: 328
+  name: Либревиль
+  name_en: Libreville
+- id: 329
+  name: Йоханнесбург
+  name_en: Johannesburg
+- id: 330
+  name: Найроби
+  name_en: Nairobi
+- id: 331
+  name: Момбаса
+  name_en: Mombasa
+- id: 332
+  name: Монровия
+  name_en: Monrovia
+- id: 333
+  name: Кигали
+  name_en: Kigali
+- id: 334
+  name: Фритаун
+  name_en: Freetown
+- id: 335
+  name: Дар-эс-Салам
+  name_en: Dar es Salaam
+- id: 336
+  name: Кампала
+  name_en: Kampala
+- id: 337
+  name: Бамако
+  name_en: Bamako
+- id: 338
+  name: Уагадугу
+  name_en: Ouagadougou
+- id: 339
+  name: Бобо-Диуласо
+  name_en: Grandpa-Diulaso
+- id: 340
+  name: Куала-Лумпур
+  name_en: Kuala Lumpur
+- id: 341
+  name: Познань
+  name_en: Poznań
+- id: 342
+  name: Ганновер
+  name_en: Hanover
+- id: 343
+  name: Эдмонтон
+  name_en: Edmonton
+- id: 344
+  name: Ванкувер
+  name_en: Vancouver
+- id: 345
+  name: Оттава
+  name_en: Ottawa
+- id: 346
+  name: Кашкайш
+  name_en: Kashkaish
+- id: 347
+  name: Тиват
+  name_en: Tivat
+- id: 348
+  name: Мариямполе
+  name_en: Marijampole
+- id: 349
+  name: Паневежис
+  name_en: Panevezys
+- id: 350
+  name: Бургас
+  name_en: Burgas
+- id: 351
+  name: Бенидорм
+  name_en: Benidorm
+- id: 352
+  name: Эссен
+  name_en: Essen
+- id: 353
+  name: Штутгарт
+  name_en: Stuttgart
+- id: 354
+  name: Бремен
+  name_en: Bremen
+- id: 355
+  name: Нюрнберг
+  name_en: Nuremberg
+- id: 356
+  name: Бостон
+  name_en: Boston
+- id: 357
+  name: Парма
+  name_en: Parma
+- id: 358
+  name: Флоренция
+  name_en: Florence
+- id: 359
+  name: Брно
+  name_en: Brno
+- id: 360
+  name: Карловы-Вары
+  name_en: Karlovy Vary
+- id: 361
+  name: Жешув
+  name_en: Rzeszów
+- id: 362
+  name: Щецин
+  name_en: Szczecin
+- id: 363
+  name: Люблин
+  name_en: Lublin
+- id: 364
+  name: Каменское
+  name_en: Kamenskoye
+- id: 366
+  name: Сан-Франциско
+  name_en: San Francisco
+- id: 367
+  name: Лугано
+  name_en: Lugano
+- id: 368
+  name: Лозанна
+  name_en: Lausanne
+- id: 369
+  name: Джибути
+  name_en: Djibouti
+- id: 377
+  name: Хайфа
+  name_en: Haifa
+- id: 380
+  name: Онне
+  name_en: Onne
+- id: 383
+  name: Алжир
+  name_en: Algeria
+- id: 387
+  name: Рабат
+  name_en: Rabat
+- id: 389
+  name: Надор
+  name_en: 'No'
+- id: 390
+  name: Танжер
+  name_en: Tangier
+- id: 391
+  name: Касабланка
+  name_en: Casablanca
+- id: 399
+  name: Уолфиш-Бей
+  name_en: Walvis Bay
+- id: 400
+  name: Кейптаун
+  name_en: Cape Town
+- id: 401
+  name: Дурбан
+  name_en: Durban
+- id: 402
+  name: Макао
+  name_en: Macau
+- id: 403
+  name: Инчхон
+  name_en: Incheon
+- id: 404
+  name: Ансан
+  name_en: Forgotten
+- id: 405
+  name: Мумбай
+  name_en: Mumbai
+- id: 406
+  name: Дели
+  name_en: Share
+- id: 407
+  name: Бангалор
+  name_en: Bangalore
+- id: 408
+  name: Ченнаи
+  name_en: Chennai
+- id: 409
+  name: Калькутта
+  name_en: Calcutta
+- id: 410
+  name: Чунцин
+  name_en: Chongqing
+- id: 411
+  name: Шанхай
+  name_en: Shanghai
+- id: 412
+  name: Чэнду
+  name_en: Chengdu
+- id: 413
+  name: Тяньцзинь
+  name_en: Tianjin
+- id: 414
+  name: Харбин
+  name_en: Harbin
+- id: 415
+  name: Нанкин
+  name_en: Nanjing
+- id: 416
+  name: Чанчунь
+  name_en: Changchun
+- id: 417
+  name: Хьюстон
+  name_en: Houston
+- id: 418
+  name: Шарджа
+  name_en: Sharjah
+- id: 419
+  name: Рас-эль-Хайма
+  name_en: Ras Al Khaimah
+- id: 420
+  name: Смоленск
+  name_en: Smolensk
+- id: 421
+  name: Тояма
+  name_en: Toyama
+- id: 422
+  name: Иокогама
+  name_en: Yokogama
+- id: 423
+  name: Киото
+  name_en: Kyoto
+- id: 424
+  name: Осака
+  name_en: Osaka
+- id: 425
+  name: Монтрё
+  name_en: Montreux
+- id: 426
+  name: Люцерн
+  name_en: Lucerne
+- id: 427
+  name: Берн
+  name_en: Berne
+- id: 428
+  name: Базель
+  name_en: Basel
+- id: 429
+  name: Нижневартовск
+  name_en: Nizhnevartovsk
+- id: 430
+  name: Хургада
+  name_en: Hurghada
+- id: 431
+  name: Шарм-эш-Шейх
+  name_en: Sharm el-Sheikh
+- id: 432
+  name: Дананг
+  name_en: Danang
+- id: 433
+  name: Нячанг
+  name_en: Nha Trang
+- id: 434
+  name: Ханой
+  name_en: Hanoi
+- id: 435
+  name: Хошимин
+  name_en: Hoshimin
+- id: 436
+  name: Хайфон
+  name_en: Haiphong
+- id: 437
+  name: Вашингтон
+  name_en: Washington
+- id: 438
+  name: Муйне
+  name_en: Neck
+- id: 439
+  name: Фукуок
+  name_en: Phu Quoc
+- id: 440
+  name: Красная Поляна
+  name_en: Krasnaya Polyana
+- id: 441
+  name: Сириус
+  name_en: Sirius
+- id: 442
+  name: Нижний Тагил
+  name_en: Nizhny Tagil
+- id: 443
+  name: Южно-Сахалинск
+  name_en: Yuzhno-Sakhalinsk
+- id: 444
+  name: Курган
+  name_en: Built
+- id: 445
+  name: Нижнекамск
+  name_en: Nizhnekamsk
+- id: 446
+  name: Альметьевск
+  name_en: Almetyevsk
+- id: 447
+  name: Благовещенск
+  name_en: Blagoveshchensk
+- id: 448
+  name: Уссурийск
+  name_en: Ussuriysk
+- id: 449
+  name: Находка
+  name_en: A find
+- id: 450
+  name: Ришон-ле-Цион
+  name_en: Rishon-le-Zion
+- id: 451
+  name: Бат-Ям
+  name_en: Bat Yam
+- id: 452
+  name: Нетания
+  name_en: Netanya
+- id: 453
+  name: Иу
+  name_en: Yu
+- id: 454
+  name: Минеральные Воды
+  name_en: Mineralnye Vody
+- id: 455
+  name: Иваново
+  name_en: Ivanovo
+- id: 456
+  name: Горно-Алтайск
+  name_en: Gorno-Altaisk
+- id: 457
+  name: Бийск
+  name_en: Biysk
+- id: 458
+  name: Улан-Удэ
+  name_en: Ulan-Ude
+- id: 459
+  name: Черкесск
+  name_en: Cherkessk
+- id: 460
+  name: Нальчик
+  name_en: Nalchik
+- id: 461
+  name: Элиста
+  name_en: Elista
+- id: 462
+  name: Владикавказ
+  name_en: Vladikavkaz
+- id: 463
+  name: Ессентуки
+  name_en: Essentuki
+- id: 464
+  name: Кисловодск
+  name_en: Kislovodsk
+- id: 465
+  name: Железноводск
+  name_en: Zheleznovodsk
+- id: 466
+  name: Невинномысск
+  name_en: Nevinnomyssk
+- id: 467
+  name: Горячеводский
+  name_en: Goryachevodsky
+- id: 468
+  name: Армавир
+  name_en: Armavir
+- id: 469
+  name: Архыз
+  name_en: Archyz
+- id: 470
+  name: Домбай
+  name_en: Dombai
+- id: 471
+  name: Ялта
+  name_en: Yalta
+- id: 472
+  name: Судак
+  name_en: Zander
+- id: 473
+  name: Якутск
+  name_en: Yakutsk
+- id: 474
+  name: Галифакс
+  name_en: Halifax
+- id: 475
+  name: Реджайна
+  name_en: Regina
+- id: 476
+  name: Саскатун
+  name_en: Saskatoon
+- id: 477
+  name: Виннипег
+  name_en: Winnipeg
+- id: 478
+  name: Келоуна
+  name_en: Kelowna
+- id: 479
+  name: Ред-Дир
+  name_en: Red Deer
+- id: 480
+  name: Летбридж
+  name_en: Lethbridge
+- id: 481
+  name: Влёра
+  name_en: Vlora
+- id: 482
+  name: Дуррес
+  name_en: Durres
+- id: 483
+  name: Саранда
+  name_en: Saranda
+- id: 484
+  name: Брага
+  name_en: Braga
+- id: 485
+  name: Улцинь
+  name_en: Ulcinj
+- id: 486
+  name: Сутоморе
+  name_en: Sutomore
+- id: 487
+  name: Петровац
+  name_en: Petrovac
+- id: 488
+  name: Котор
+  name_en: Kotor
+- id: 489
+  name: Сараево
+  name_en: Sarajevo
+- id: 490
+  name: Мостар
+  name_en: Mostar
+- id: 491
+  name: Торревьеха
+  name_en: Torrevieja
+- id: 492
+  name: Дубна
+  name_en: Dubna
+- id: 493
+  name: Химки
+  name_en: Khimki
+- id: 494
+  name: Балашиха
+  name_en: Balashikha
+- id: 495
+  name: Одинцово
+  name_en: Odintsovo
+- id: 496
+  name: Антиб
+  name_en: Antibes
+- id: 497
+  name: Вологда
+  name_en: Vologda
+- id: 498
+  name: Эр-Рияд
+  name_en: Riyadh
+- id: 499
+  name: Медина
+  name_en: Medina
+- id: 500
+  name: Мекка
+  name_en: Mecca
+- id: 501
+  name: Гент
+  name_en: Gent
+- id: 502
+  name: Брюгге
+  name_en: Bruges
+- id: 503
+  name: Линц
+  name_en: Linz
+- id: 504
+  name: Родос
+  name_en: Rhodes
+- id: 505
+  name: Баня-Лука
+  name_en: Banja Luka
+- id: 506
+  name: Гаага
+  name_en: The Hague
+- id: 507
+  name: Маастрихт
+  name_en: Maastricht
+- id: 508
+  name: Сен-Тропе
+  name_en: Saint-Tropez
+- id: 509
+  name: Монпелье
+  name_en: Montpellier
+- id: 510
+  name: Ним
+  name_en: Nim
+- id: 511
+  name: Гарлем
+  name_en: Harlem
+- id: 512
+  name: Гиза
+  name_en: Giza
+- id: 513
+  name: Атланта
+  name_en: Atlanta
+- id: 514
+  name: Даллас
+  name_en: Dallas
+- id: 515
+  name: Сакраменто
+  name_en: Sacramento
+- id: 516
+  name: Форт-Майерс
+  name_en: Fort Myers
+- id: 517
+  name: Хайдарабад
+  name_en: Hyderabad
+- id: 518
+  name: Рыбинск
+  name_en: Rybinsk
+- id: 519
+  name: Нефтеюганск
+  name_en: Nefteyugansk
+- id: 520
+  name: Ханты-Мансийск
+  name_en: Khanty-Mansiysk
+- id: 521
+  name: Ноябрьск
+  name_en: Noyabrsk
+- id: 522
+  name: Когалым
+  name_en: My friend
+- id: 524
+  name: Каменск-Уральский
+  name_en: Kamensk-Uralsky
+- id: 525
+  name: Первоуральск
+  name_en: Pervouralsk
+- id: 527
+  name: Верхняя Пышма
+  name_en: Verkhnyaya Pyshma
+- id: 528
+  name: Новоуральск
+  name_en: Novouralsk
+- id: 529
+  name: Берёзовский
+  name_en: Berezovsky
+- id: 530
+  name: Ревда
+  name_en: Revd
+- id: 531
+  name: Асбест
+  name_en: Asbestos
+- id: 533
+  name: Полевской
+  name_en: Polevskoy
+- id: 535
+  name: Верхняя Салда
+  name_en: Upper Salda
+- id: 540
+  name: Сергиев Посад
+  name_en: Sergiev Posad
+- id: 545
+  name: Тобольск
+  name_en: Tobolsk
+- id: 549
+  name: Камышлов
+  name_en: Kamyshlov
+- id: 550
+  name: Быдгощ
+  name_en: Bydgoszcz
+- id: 551
+  name: Белосток
+  name_en: Bialystok
+- id: 552
+  name: Каменец-Подольский
+  name_en: Kamenets-Podolsky
+- id: 553
+  name: Шептицкий
+  name_en: Sheptitsky
+- id: 554
+  name: Тячев
+  name_en: Tyachev
