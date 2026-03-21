@@ -1,13 +1,22 @@
 """
 API статистики дашборда (пользователи, менеджеры, кошельки, арбитраж).
 Ориентир: garantex node.py GET /api/dashboard/statistics.
+
+Котировки: GET ``/ratios`` — спотовые движки (BestChange не участвует); JWT пользователя
+(TRON/Web3) или cookie ``main_auth_token``. Статистика ``GET /`` — только админ.
 """
 from sqlalchemy import func, or_, select
 
 from fastapi import APIRouter
 
 from db.models import Wallet, WalletUser
-from web.endpoints.dependencies import DbSession, RequireAdminDepends
+from web.endpoints.dependencies import (
+    CurrentWalletUser,
+    DashboardServiceDep,
+    DbSession,
+    RequireAdminDepends,
+)
+from web.endpoints.v1.schemas.dashboard_ratios import ListRatiosResponse
 from web.endpoints.v1.schemas.node import DashboardStatisticsResponse
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -48,3 +57,21 @@ async def get_dashboard_statistics(
         wallets_count=wallets_count,
         arbiter_wallets_count=arbiter_wallets_count,
     )
+
+
+@router.get(
+    "/ratios",
+    response_model=ListRatiosResponse,
+    summary="Список котировок по system_currencies",
+)
+async def list_dashboard_ratios(
+    dashboard: DashboardServiceDep,
+    _user: CurrentWalletUser,
+):
+    """
+    Кросс-курсы для всех включённых спотовых движков (Forex, ЦБ, Rapira и т.д.):
+    пары, где есть фиат из ``system_currencies``, второй код — фиат или стейбл
+    из ``collateral_stablecoin`` (например USDT/RUB). BestChange не участвует.
+    """
+    data = await dashboard.list_ratios()
+    return ListRatiosResponse.model_validate(data)

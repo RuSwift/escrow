@@ -24,6 +24,7 @@ from services.tron_auth import TronAuth
 from services.wallet import WalletService
 from services.invite import InviteService
 from services.space import SpaceService
+from services.dashboard import DashboardService
 from services.wallet_user import WalletUserService
 from services.web3_auth import Web3Auth
 from settings import Settings
@@ -32,6 +33,7 @@ security = HTTPBearer()
 optional_bearer = HTTPBearer(auto_error=False)
 ADMIN_JWT_ALGORITHM = "HS256"
 ADMIN_TOKEN_COOKIE = "admin_token"
+MAIN_AUTH_TOKEN_COOKIE = "main_auth_token"
 
 
 class ResolvedSettings:
@@ -221,6 +223,14 @@ def get_bestchange_repository(
     return BestchangeYamlRepository(session=db, redis=redis, settings=settings.settings)
 
 
+def get_dashboard_service(
+    redis: RedisClient,
+    settings: AppSettings,
+) -> DashboardService:
+    """DashboardService: спотовые котировки (без BestChange)."""
+    return DashboardService(redis=redis, settings=settings.settings)
+
+
 async def get_admin(
     request: Request,
     credentials: Annotated[
@@ -273,6 +283,7 @@ InviteServiceDep = Annotated[InviteService, Depends(get_invite_service)]
 WalletServiceDep = Annotated[WalletService, Depends(get_wallet_service)]
 ArbiterServiceDep = Annotated[ArbiterService, Depends(get_arbiter_service)]
 BestchangeRepoDep = Annotated[BestchangeYamlRepository, Depends(get_bestchange_repository)]
+DashboardServiceDep = Annotated[DashboardService, Depends(get_dashboard_service)]
 BillingServiceDep = Annotated[BillingService, Depends(get_billing_service)]
 NodeServiceDep = Annotated[NodeService, Depends(get_node_service)]
 AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
@@ -357,11 +368,51 @@ async def get_current_tron_user(
     return UserInfo(standard="tron", wallet_address=wallet_address, did=did)
 
 
+async def get_current_wallet_user(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_bearer),
+    tron_auth: TronAuth = Depends(get_tron_auth),
+    web3_auth: Web3Auth = Depends(get_web3_auth),
+) -> UserInfo:
+    """
+    Текущий пользователь main app: JWT TRON или Web3.
+    Токен — Authorization: Bearer или cookie ``main_auth_token`` (как GET /{space}).
+    """
+    token = credentials.credentials if credentials else None
+    if not token:
+        token = request.cookies.get(MAIN_AUTH_TOKEN_COOKIE)
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
+    payload = tron_auth.verify_jwt_token(token)
+    if payload:
+        wallet_address = payload.get("wallet_address")
+        if wallet_address and payload.get("blockchain") == "tron":
+            return UserInfo(
+                standard="tron",
+                wallet_address=wallet_address,
+                did=get_user_did(wallet_address, "tron"),
+            )
+    payload = web3_auth.verify_jwt_token(token)
+    if payload:
+        wallet_address = payload.get("wallet_address")
+        if wallet_address:
+            return UserInfo(
+                standard="web3",
+                wallet_address=wallet_address,
+                did=get_user_did(wallet_address, "web3"),
+            )
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Invalid or expired token",
+    )
+
+
 CurrentWeb3User = Annotated[UserInfo, Depends(get_current_web3_user)]
 CurrentTronUser = Annotated[UserInfo, Depends(get_current_tron_user)]
-
-
-MAIN_AUTH_TOKEN_COOKIE = "main_auth_token"
+CurrentWalletUser = Annotated[UserInfo, Depends(get_current_wallet_user)]
 
 
 async def get_required_wallet_address_for_space(
@@ -412,6 +463,7 @@ __all__ = [
     "get_node_service",
     "get_admin_service",
     "get_bestchange_repository",
+    "get_dashboard_service",
     "get_web3_auth",
     "get_tron_auth",
     "get_current_web3_user",
@@ -427,6 +479,7 @@ __all__ = [
     "InviteServiceDep",
     "ArbiterServiceDep",
     "BestchangeRepoDep",
+    "DashboardServiceDep",
     "BillingServiceDep",
     "NodeServiceDep",
     "AdminServiceDep",
@@ -443,5 +496,7 @@ __all__ = [
     "NodeKeypairRequiredDep",
     "CurrentWeb3User",
     "CurrentTronUser",
+    "CurrentWalletUser",
+    "get_current_wallet_user",
     "get_required_wallet_address_for_space",
 ]

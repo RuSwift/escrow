@@ -458,7 +458,11 @@ class Settings(BaseSettings):
         default=["ru", "en"],
         description="Список поддерживаемых кодов локалей для валидации Accept-Language",
     )
-    
+    system_currencies: list[str] = Field(
+        default=["RUB", "CNY", "USD", "EUR"],
+        description="Коды валют (ISO 4217), используемые в системе",
+    )
+
     @property
     def is_node_initialized(self) -> bool:
         return bool(self.mnemonic.phrase or self.mnemonic.encrypted_phrase or self.pem)
