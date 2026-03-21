@@ -35,6 +35,8 @@ from db.models import (
     Deal,
     Wallet,
     BestchangeYamlSnapshot,
+    ExchangeService,
+    ExchangeServiceFeeTier,
 )
 
 # this is the Alembic Config object, which provides

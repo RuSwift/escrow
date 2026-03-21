@@ -3,7 +3,7 @@ Database models for storing encrypted node settings
 """
 from enum import Enum
 
-from sqlalchemy import CheckConstraint, Column, Integer, BigInteger, String, Text, DateTime, Boolean, Index, Numeric, ForeignKey, event, UniqueConstraint
+from sqlalchemy import CheckConstraint, Column, Integer, BigInteger, String, Text, DateTime, Boolean, Index, Numeric, ForeignKey, event, UniqueConstraint, text
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.dialects.postgresql import ARRAY, UUID, JSONB, JSON
 from sqlalchemy.sql import func
@@ -531,3 +531,246 @@ class BestchangeYamlSnapshot(Base):
 
     def __repr__(self):
         return f"<BestchangeYamlSnapshot(id={self.id}, file_hash={self.file_hash[:12]}..., exported_at={self.exported_at})>"
+
+
+class ExchangeServiceType(str, Enum):
+    """Тип сервиса обмена: фиат→стейбл (on-ramp) или стейбл→фиат (off-ramp)."""
+
+    on_ramp = "on_ramp"
+    off_ramp = "off_ramp"
+
+
+class ExchangeRateMode(str, Enum):
+    """Способ определения курса для сервиса обмена."""
+
+    manual = "manual"
+    on_request = "on_request"
+    ratios = "ratios"
+
+
+class ExchangeService(Base):
+    """Конфигурация сервиса обмена (on-ramp / off-ramp): валюты, курс, лимиты, формы, KYC."""
+
+    __tablename__ = "exchange_services"
+    __table_args__ = (
+        Index(
+            "ix_exchange_services_fiat_type_active",
+            "fiat_currency_code",
+            "service_type",
+            "is_active",
+        ),
+        Index(
+            "ix_exchange_services_network_contract",
+            "network",
+            "contract_address",
+        ),
+        Index(
+            "ix_exchange_services_requisites_schema",
+            "requisites_form_schema",
+            postgresql_using="gin",
+        ),
+        Index(
+            "ix_exchange_services_verification_req",
+            "verification_requirements",
+            postgresql_using="gin",
+        ),
+        CheckConstraint(
+            "min_fiat_amount < max_fiat_amount",
+            name="ck_exchange_services_fiat_amount_range",
+        ),
+        CheckConstraint(
+            "service_type IN ('on_ramp','off_ramp')",
+            name="ck_exchange_services_service_type",
+        ),
+        CheckConstraint(
+            "rate_mode IN ('manual','on_request','ratios')",
+            name="ck_exchange_services_rate_mode",
+        ),
+    )
+
+    id = Column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+        index=True,
+        comment="Идентификатор конфигурации сервиса обмена",
+    )
+
+    service_type = Column(
+        String(20),
+        nullable=False,
+        index=True,
+        comment="Тип: on_ramp (фиат+залог стейблом), off_ramp (крипта→фиат)",
+    )
+    fiat_currency_code = Column(
+        String(3),
+        nullable=False,
+        index=True,
+        comment="Код фиатной валюты (ISO 4217)",
+    )
+    stablecoin_symbol = Column(
+        String(32),
+        nullable=False,
+        comment="Символ стейблкоина (как CollateralStablecoinToken.symbol)",
+    )
+    network = Column(
+        String(64),
+        nullable=False,
+        comment="Имя сети блокчейна",
+    )
+    contract_address = Column(
+        String(128),
+        nullable=False,
+        comment="Адрес контракта токена",
+    )
+    stablecoin_base_currency = Column(
+        String(3),
+        nullable=True,
+        comment="Базовая валюта привязки стейбла (USD, RUB, …), опционально",
+    )
+
+    rate_mode = Column(
+        String(20),
+        nullable=False,
+        index=True,
+        comment="Режим курса: manual, on_request, ratios",
+    )
+    # Семантика: единиц фиата за 1 единицу стейблкоина (направление сделки задаёт service_type)
+    manual_rate = Column(
+        Numeric(28, 12),
+        nullable=True,
+        comment="Ручной курс: фиат за 1 стейбл; для rate_mode=manual",
+    )
+    manual_rate_valid_until = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="До какого момента действует ручной курс; NULL = без срока",
+    )
+    ratios_engine_key = Column(
+        String(255),
+        nullable=True,
+        comment="Ключ пары/источника в движке Ratios при rate_mode=ratios",
+    )
+    ratios_commission_percent = Column(
+        Numeric(10, 6),
+        nullable=True,
+        comment="Комиссия поверх котировки Ratios, %",
+    )
+
+    min_fiat_amount = Column(
+        Numeric(20, 8),
+        nullable=False,
+        comment="Минимальная сумма сделки в фиатной валюте",
+    )
+    max_fiat_amount = Column(
+        Numeric(20, 8),
+        nullable=False,
+        comment="Максимальная сумма сделки в фиатной валюте",
+    )
+
+    requisites_form_schema = Column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+        comment="JSON Schema (и опц. ui_hints) формы запроса реквизитов",
+    )
+    verification_requirements = Column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+        comment="KYC/KYB: тип субъекта, список документов и т.п. (JSON)",
+    )
+
+    is_active = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+        comment="Сервис доступен для выбора",
+    )
+    is_deleted = Column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="false",
+        comment="Мягкое удаление",
+    )
+
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        comment="Создано (UTC)",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+        comment="Обновлено (UTC)",
+    )
+
+    def __repr__(self):
+        return (
+            f"<ExchangeService(id={self.id}, type={self.service_type}, "
+            f"fiat={self.fiat_currency_code}, stable={self.stablecoin_symbol})>"
+        )
+
+
+class ExchangeServiceFeeTier(Base):
+    """Сетка комиссий по диапазонам суммы сделки в фиате."""
+
+    __tablename__ = "exchange_service_fee_tiers"
+    __table_args__ = (
+        Index("ix_exchange_fee_tiers_service_id", "exchange_service_id"),
+        CheckConstraint(
+            "fiat_min < fiat_max",
+            name="ck_exchange_fee_tiers_fiat_range",
+        ),
+        CheckConstraint(
+            "fee_percent >= 0",
+            name="ck_exchange_fee_tiers_fee_nonnegative",
+        ),
+    )
+
+    id = Column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+        index=True,
+        comment="Идентификатор строки сетки",
+    )
+    exchange_service_id = Column(
+        BigInteger,
+        ForeignKey("exchange_services.id", ondelete="CASCADE"),
+        nullable=False,
+        comment="Сервис обмена",
+    )
+    fiat_min = Column(
+        Numeric(20, 8),
+        nullable=False,
+        comment="Нижняя граница суммы в фиате (включительно)",
+    )
+    fiat_max = Column(
+        Numeric(20, 8),
+        nullable=False,
+        comment="Верхняя граница суммы в фиате (включительно или по правилу приложения)",
+    )
+    fee_percent = Column(
+        Numeric(10, 6),
+        nullable=False,
+        comment="Комиссия для диапазона, %",
+    )
+    sort_order = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="Порядок отображения / разрешения при пересечениях (меньше — раньше)",
+    )
+
+    def __repr__(self):
+        return (
+            f"<ExchangeServiceFeeTier(id={self.id}, service_id={self.exchange_service_id}, "
+            f"range={self.fiat_min}-{self.fiat_max})>"
+        )
