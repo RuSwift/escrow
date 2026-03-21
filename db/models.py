@@ -456,49 +456,6 @@ class Deal(Base):
         return f"<Deal(uid={self.uid}, status={self.status})>"
 
 
-class Advertisement(Base):
-    """Model for storing user advertisements (offers) on marketplace"""
-    
-    __tablename__ = "advertisements"
-    
-    id = Column(BigInteger, primary_key=True, autoincrement=True, index=True, comment="Autoincrement primary key")
-    
-    # Owner of the advertisement
-    user_id = Column(BigInteger, nullable=False, index=True, comment="User ID from wallet_users table")
-    
-    # Advertisement details (based on agent cards from index.html)
-    name = Column(String(255), nullable=False, comment="Display name for the advertisement")
-    description = Column(Text, nullable=False, comment="Detailed description of the offer")
-    
-    # Financial details
-    fee = Column(String(10), nullable=False, comment="Fee percentage (e.g. '2.5')")
-    min_limit = Column(Integer, nullable=False, comment="Minimum transaction limit in USDT")
-    max_limit = Column(Integer, nullable=False, comment="Maximum transaction limit in USDT")
-    currency = Column(String(10), nullable=False, comment="Currency code (USD, EUR, RUB, etc.)")
-    
-    # Status and verification
-    is_active = Column(Boolean, default=True, nullable=False, comment="Whether the advertisement is active")
-    is_verified = Column(Boolean, default=False, nullable=False, comment="Whether the advertisement is verified by admin")
-    escrow_enabled = Column(Boolean, default=False, nullable=False, comment="Whether escrow deals are enabled (agent conducts deal using their liquidity, debiting funds from escrow address upon service delivery)")
-    
-    # Statistics (for display purposes)
-    rating = Column(String(10), nullable=True, default="0.0", comment="User rating (e.g. '4.9')")
-    deals_count = Column(Integer, nullable=False, default=0, comment="Number of completed deals")
-    
-    # Timestamps
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False, comment="Creation timestamp (UTC)")
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False, comment="Last update timestamp (UTC)")
-    
-    # Indexes
-    __table_args__ = (
-        Index('ix_advertisements_user_active', 'user_id', 'is_active'),
-        Index('ix_advertisements_currency_active', 'currency', 'is_active'),
-    )
-    
-    def __repr__(self):
-        return f"<Advertisement(id={self.id}, name={self.name})>"
-
-
 class Wallet(Base):
     """Model for storing encrypted wallet mnemonics and addresses"""
     
