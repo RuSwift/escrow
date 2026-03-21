@@ -497,3 +497,37 @@ class Wallet(Base):
     
     def __repr__(self):
         return f"<Wallet(id={self.id}, name={self.name}, role={self.role})>"
+
+
+class BestchangeYamlSnapshot(Base):
+    """Снимок экспорта BestChange (bc.yaml): хеш, meta.exported_at и тело файла в JSON."""
+
+    __tablename__ = "bestchange_yaml_snapshots"
+    __table_args__ = (UniqueConstraint("file_hash", name="uq_bestchange_yaml_snapshots_file_hash"),)
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True, comment="Идентификатор записи")
+
+    file_hash = Column(
+        String(64),
+        nullable=False,
+        comment="SHA-256 (hex) содержимого файла bc.yaml",
+    )
+    exported_at = Column(
+        DateTime(timezone=True),
+        nullable=False,
+        comment="meta.exported_at из YAML (момент выгрузки из BestChange)",
+    )
+    payload = Column(
+        JSONB,
+        nullable=True,
+        comment="Содержимое bc.yaml, распарсенное в JSON (meta, payment_methods, cities, …)",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        comment="Время сохранения записи в БД (UTC)",
+    )
+
+    def __repr__(self):
+        return f"<BestchangeYamlSnapshot(id={self.id}, file_hash={self.file_hash[:12]}..., exported_at={self.exported_at})>"

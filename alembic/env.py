@@ -23,7 +23,19 @@ if env_file_path.exists():
 from settings import DatabaseSettings
 from db import Base
 # Import all models to ensure they are registered with Base.metadata
-from db.models import NodeSettings, Storage, AdminUser, AdminTronAddress, WalletUser, Connection, EscrowModel, EscrowTxnModel, Deal, Wallet
+from db.models import (
+    NodeSettings,
+    Storage,
+    AdminUser,
+    AdminTronAddress,
+    WalletUser,
+    Connection,
+    EscrowModel,
+    EscrowTxnModel,
+    Deal,
+    Wallet,
+    BestchangeYamlSnapshot,
+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
