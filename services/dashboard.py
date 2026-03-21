@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple, Type
 
 from redis.asyncio import Redis
 
@@ -135,13 +135,26 @@ class DashboardService:
             result[label] = _dedupe_mutual_pair_rows(rows)
         return result
 
-    async def update_ratios(self) -> Dict[str, Dict[str, Any]]:
+    async def update_ratios(
+        self,
+        *,
+        only_engine_types: Optional[
+            Tuple[Type[BaseRatioEngine], ...]
+        ] = None,
+    ) -> Dict[str, Dict[str, Any]]:
         """
         Принудительное обновление кэша ``market`` у спотовых движков
         (``refresh_cache=True`` при сборке).
+
+        Если задан ``only_engine_types``, обновляются только движки этого типа
+        (``isinstance`` по кортежу классов, напр. ``(ForexEngine, RapiraEngine)``).
         """
         out: Dict[str, Dict[str, Any]] = {}
         for engine in self._spot_engines(refresh_cache=True):
+            if only_engine_types is not None and not isinstance(
+                engine, only_engine_types
+            ):
+                continue
             label = type(engine).get_label()
             try:
                 await engine.market()

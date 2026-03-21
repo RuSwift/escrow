@@ -75,6 +75,59 @@ html.overflow-x-hidden *::after {
   min-height: 100%;
 }
 
+/* Дашборд: бегущая строка котировок */
+@keyframes dashboard-ratios-marquee {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+.dashboard-ratios-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: dashboard-ratios-marquee 55s linear infinite;
+}
+.dashboard-ratios-marquee-track:hover {
+  animation-play-state: paused;
+}
+
+/* Модалка котировок: горизонтальный скролл без «призраков» соседних колонок (Safari / iOS) */
+.dashboard-ratios-modal-scroll {
+  -webkit-overflow-scrolling: touch;
+}
+.dashboard-ratios-modal-table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.dashboard-ratios-modal-table th.dashboard-ratios-sticky-col,
+.dashboard-ratios-modal-table td.dashboard-ratios-sticky-col {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  background-clip: padding-box;
+  box-shadow: 6px 0 10px -4px rgba(0, 0, 0, 0.12);
+  transform: translateZ(0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+.dashboard-ratios-modal-table thead th.dashboard-ratios-sticky-col {
+  z-index: 5;
+  background-color: #f9fafb;
+}
+.dashboard-ratios-modal-table tbody td.dashboard-ratios-sticky-col {
+  background-color: #ffffff;
+}
+.dashboard-ratios-modal-table tbody tr:hover td.dashboard-ratios-sticky-col {
+  background-color: #f8fafd;
+}
+.dashboard-ratios-modal-table tbody td:not(.dashboard-ratios-sticky-col),
+.dashboard-ratios-modal-table thead th:not(.dashboard-ratios-sticky-col) {
+  position: relative;
+  z-index: 0;
+}
+
 /* Сайдбар main: мобильный drawer и оверлей */
 .sidebar-root {
   position: relative;

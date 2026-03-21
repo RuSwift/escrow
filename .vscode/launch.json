@@ -20,6 +20,15 @@
             "jinja": true,
             "cwd": "${workspaceFolder}",
             "console": "integratedTerminal"
+        },
+        {
+            "name": "Cron (ratios refresh)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/web/cron.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
+            "justMyCode": true
         }
     ]
 }

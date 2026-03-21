@@ -75,6 +75,50 @@ async def test_list_ratios_skips_non_spot_engine(test_redis):
 
 
 @pytest.mark.asyncio
+async def test_update_ratios_only_engine_types(test_redis):
+    """update_ratios(only_engine_types=…) обновляет только указанные классы движков."""
+
+    class EngineAlpha(BaseRatioEngine):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            self.calls = 0
+
+        async def market(self):
+            self.calls += 1
+            return []
+
+    class EngineBeta(BaseRatioEngine):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            self.calls = 0
+
+        async def market(self):
+            self.calls += 1
+            return []
+
+    alpha = EngineAlpha(
+        RatioCacheAdapter(test_redis, "Alpha"),
+        SimpleNamespace(),
+        refresh_cache=True,
+    )
+    beta = EngineBeta(
+        RatioCacheAdapter(test_redis, "Beta"),
+        SimpleNamespace(),
+        refresh_cache=True,
+    )
+    settings = Settings()
+    with patch(
+        "services.dashboard.get_ratios_engines",
+        return_value=[alpha, beta],
+    ):
+        svc = DashboardService(test_redis, settings)
+        await svc.update_ratios(only_engine_types=(EngineAlpha,))
+
+    assert alpha.calls == 1
+    assert beta.calls == 0
+
+
+@pytest.mark.asyncio
 async def test_update_ratios_calls_market_only_on_spot(test_redis):
     counting = CountingSpotEngine(
         RatioCacheAdapter(test_redis, "CountingSpotEngine"),

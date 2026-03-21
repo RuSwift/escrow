@@ -1,6 +1,51 @@
 /**
  * Vue 2 компонент: Дашборд (main)
  */
+(function() {
+    function authHeadersMain() {
+        var h = { Accept: 'application/json' };
+        var key = (typeof window !== 'undefined' && window.main_auth_token_key) ? window.main_auth_token_key : 'main_auth_token';
+        var token = null;
+        try {
+            token = localStorage.getItem(key);
+        } catch (e) {}
+        if (token) h['Authorization'] = 'Bearer ' + token;
+        return h;
+    }
+
+    function buildRatiosPivot(apiData) {
+        if (!apiData || typeof apiData !== 'object') return { engines: [], rows: [] };
+        var engines = Object.keys(apiData).filter(function(k) {
+            return Array.isArray(apiData[k]);
+        }).sort();
+        var pairMap = {};
+        engines.forEach(function(eng) {
+            apiData[eng].forEach(function(row) {
+                var key = row.base + '/' + row.quote;
+                if (!pairMap[key]) {
+                    pairMap[key] = { base: row.base, quote: row.quote, ratios: {}, utcMax: null };
+                }
+                var r = row.pair && typeof row.pair.ratio === 'number' ? row.pair.ratio : null;
+                pairMap[key].ratios[eng] = r;
+                var u = row.pair && typeof row.pair.utc === 'number' ? row.pair.utc : null;
+                if (r != null && u != null && isFinite(u)) {
+                    if (pairMap[key].utcMax == null || u > pairMap[key].utcMax) {
+                        pairMap[key].utcMax = u;
+                    }
+                }
+            });
+        });
+        var rows = Object.keys(pairMap).sort().map(function(k) {
+            return pairMap[k];
+        }).filter(function(row) {
+            return engines.some(function(eng) {
+                var v = row.ratios[eng];
+                return v != null && typeof v === 'number';
+            });
+        });
+        return { engines: engines, rows: rows };
+    }
+
 Vue.component('dashboard', {
     delimiters: ['[[', ']]'],
     data: function() {
@@ -21,10 +66,32 @@ Vue.component('dashboard', {
                 { id: 'esc-004', title: 'Software license', description: 'Annual enterprise license', amount: 12000, currency: 'USDT', status: 'disputed', buyer_id: '0x22B...4455C', seller_id: '0x77E...6677F', created_at: '2026-03-09T11:20:00' },
                 { id: 'esc-005', title: 'Hardware batch', description: 'Miners delivery', amount: 150000, currency: 'USDT', status: 'funded', buyer_id: '0x71C...8976F', seller_id: '0x42A...1122C', created_at: '2026-03-12T08:45:00' }
             ],
-            loading: false
+            loading: false,
+            ratiosRaw: null,
+            ratiosLoading: false,
+            ratiosError: null,
+            ratiosModalOpen: false
         };
     },
     computed: {
+        ratiosPivot: function() {
+            return buildRatiosPivot(this.ratiosRaw);
+        },
+        marqueeSegments: function() {
+            var pivot = this.ratiosPivot;
+            var rows = pivot.rows || [];
+            if (!rows.length) return [];
+            return rows.map(function(r) {
+                var vals = [];
+                (pivot.engines || []).forEach(function(e) {
+                    var x = r.ratios[e];
+                    if (x != null && typeof x === 'number') vals.push(x);
+                });
+                var maxVal = vals.length ? Math.max.apply(null, vals) : null;
+                var ratioText = maxVal != null ? String(Number(maxVal).toFixed(8)).replace(/\.?0+$/, '') : '—';
+                return { pair: r.base + '/' + r.quote, ratioText: ratioText };
+            });
+        },
         filteredEscrows: function() {
             var self = this;
             var query = (this.searchQuery || '').toLowerCase();
@@ -46,7 +113,47 @@ Vue.component('dashboard', {
             });
         }
     },
+    mounted: function() {
+        this.fetchRatios();
+    },
     methods: {
+        fetchRatios: function() {
+            var self = this;
+            self.ratiosLoading = true;
+            self.ratiosError = null;
+            fetch('/v1/dashboard/ratios', {
+                method: 'GET',
+                headers: authHeadersMain(),
+                credentials: 'include'
+            })
+                .then(function(res) {
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.json();
+                })
+                .then(function(data) {
+                    if (data && data.root && typeof data.root === 'object') {
+                        data = data.root;
+                    }
+                    self.ratiosRaw = data;
+                })
+                .catch(function() {
+                    self.ratiosError = true;
+                    self.ratiosRaw = null;
+                })
+                .finally(function() {
+                    self.ratiosLoading = false;
+                });
+        },
+        formatRatioCell: function(val) {
+            if (val == null || typeof val !== 'number') return '—';
+            return String(Number(val).toFixed(8)).replace(/\.?0+$/, '');
+        },
+        formatUtcCell: function(tsSeconds) {
+            if (tsSeconds == null || typeof tsSeconds !== 'number' || !isFinite(tsSeconds)) return '—';
+            var d = new Date(tsSeconds * 1000);
+            if (isNaN(d.getTime())) return '—';
+            return d.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+        },
         formatDate: function(created_at) {
             if (!created_at) return '—';
             var d = new Date(created_at);
@@ -117,6 +224,30 @@ Vue.component('dashboard', {
               [[ stat.change ]]
             </span>
           </div>
+        </div>
+      </div>
+      <div v-if="ratiosLoading" class="mb-6 h-10 rounded-lg bg-[#eff2f5] animate-pulse border border-[#eff2f5]" aria-hidden="true"></div>
+      <div v-else-if="ratiosError" class="mb-6 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-800">[[ $t('main.dashboard.ratios_load_error') ]]</div>
+      <div v-else-if="ratiosPivot.rows.length" class="mb-6 flex rounded-lg border border-[#eff2f5] bg-white overflow-hidden shadow-sm cursor-pointer group" @click="ratiosModalOpen = true" role="button" :aria-label="$t('main.dashboard.ratios_modal_title')">
+        <div class="flex-1 min-w-0 overflow-hidden py-2">
+          <div class="dashboard-ratios-marquee-track">
+            <div class="flex items-center shrink-0">
+              <span v-for="(seg, i) in marqueeSegments" :key="'m1-' + i" class="inline-flex items-center px-4 text-sm whitespace-nowrap border-r border-[#eff2f5]">
+                <span class="font-bold text-[#191d23]">[[ seg.pair ]]</span>
+                <span class="mx-2 text-cmc-muted">[[ seg.ratioText ]]</span>
+              </span>
+            </div>
+            <div class="flex items-center shrink-0">
+              <span v-for="(seg, i) in marqueeSegments" :key="'m2-' + i" class="inline-flex items-center px-4 text-sm whitespace-nowrap border-r border-[#eff2f5]">
+                <span class="font-bold text-[#191d23]">[[ seg.pair ]]</span>
+                <span class="mx-2 text-cmc-muted">[[ seg.ratioText ]]</span>
+              </span>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-1.5 px-3 sm:px-4 shrink-0 border-l border-[#eff2f5] bg-[#fafbfd] text-xs font-bold text-main-blue group-hover:bg-main-blue/5 transition-colors">
+          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+          <span class="hidden sm:inline">[[ $t('main.dashboard.ratios_expand') ]]</span>
         </div>
       </div>
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
@@ -232,6 +363,41 @@ Vue.component('dashboard', {
           </div>
         </div>
       </div>
+      <transition name="fade">
+        <div v-if="ratiosModalOpen" class="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" @click.self="ratiosModalOpen = false">
+          <div class="bg-white rounded-xl shadow-xl border border-[#eff2f5] w-full max-w-5xl max-h-[85vh] flex flex-col" role="dialog" aria-modal="true" @click.stop>
+            <div class="flex items-center justify-between gap-4 px-4 py-3 border-b border-[#eff2f5] shrink-0">
+              <h2 class="text-lg font-bold text-[#191d23]">[[ $t('main.dashboard.ratios_modal_title') ]]</h2>
+              <button type="button" class="p-2 rounded-lg text-[#58667e] hover:bg-[#eff2f5] transition-colors" @click="ratiosModalOpen = false" :aria-label="$t('main.dashboard.ratios_close')">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div class="dashboard-ratios-modal-scroll overflow-auto p-4 flex-1 min-h-0">
+              <div v-if="!ratiosPivot.rows.length" class="text-sm text-cmc-muted py-8 text-center">[[ $t('main.dashboard.ratios_empty') ]]</div>
+              <table v-else class="dashboard-ratios-modal-table w-full text-left text-sm">
+                <thead>
+                  <tr class="bg-gray-50">
+                    <th class="cmc-table-header dashboard-ratios-sticky-col min-w-[100px]">[[ $t('main.dashboard.ratios_col_pair') ]]</th>
+                    <th v-for="eng in ratiosPivot.engines" :key="eng" class="cmc-table-header whitespace-nowrap">[[ eng ]]</th>
+                    <th class="cmc-table-header whitespace-nowrap">[[ $t('main.dashboard.ratios_col_utc') ]]</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="(row, ri) in ratiosPivot.rows" :key="ri" class="hover:bg-[#f8fafd]">
+                    <td class="cmc-table-cell dashboard-ratios-sticky-col text-[#191d23] font-semibold">[[ row.base ]]/[[ row.quote ]]</td>
+                    <td v-for="eng in ratiosPivot.engines" :key="eng" class="cmc-table-cell text-cmc-muted font-mono text-xs tabular-nums">[[ formatRatioCell(row.ratios[eng]) ]]</td>
+                    <td class="cmc-table-cell text-cmc-muted text-xs tabular-nums whitespace-nowrap">[[ formatUtcCell(row.utcMax) ]]</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="px-4 py-3 border-t border-[#eff2f5] flex justify-end shrink-0">
+              <button type="button" class="px-4 py-2 text-sm font-semibold rounded-lg bg-main-blue text-white hover:opacity-90 transition-opacity" @click="ratiosModalOpen = false">[[ $t('main.dashboard.ratios_close') ]]</button>
+            </div>
+          </div>
+        </div>
+      </transition>
     </div>
     `
 });
+})();
