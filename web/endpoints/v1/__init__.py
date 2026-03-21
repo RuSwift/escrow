@@ -5,6 +5,7 @@ from web.endpoints.v1 import (
     admin,
     arbiter,
     auth,
+    autocomplete,
     dashboard,
     invite,
     node,
@@ -17,6 +18,7 @@ from web.endpoints.v1 import (
 router = APIRouter(prefix="/v1", tags=["v1"])
 router.include_router(auth.router)
 router.include_router(admin.router)
+router.include_router(autocomplete.router)
 router.include_router(arbiter.router)
 router.include_router(dashboard.router)
 router.include_router(invite.router)

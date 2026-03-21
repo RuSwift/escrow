@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.utils import get_user_did
 from db import get_db
 from db.models import AdminUser
+from repos.bestchange import BestchangeYamlRepository
 from repos.node import NodeRepository
 from services.admin import AdminService
 from services.arbiter import ArbiterService
@@ -211,6 +212,15 @@ def get_arbiter_service(
     return ArbiterService(session=db, redis=redis, settings=settings.settings)
 
 
+def get_bestchange_repository(
+    db: DbSession,
+    redis: RedisClient,
+    settings: AppSettings,
+) -> BestchangeYamlRepository:
+    """BestchangeYamlRepository: снимок bc.yaml в БД, кеш Redis."""
+    return BestchangeYamlRepository(session=db, redis=redis, settings=settings.settings)
+
+
 async def get_admin(
     request: Request,
     credentials: Annotated[
@@ -262,6 +272,7 @@ SpaceServiceDep = Annotated[SpaceService, Depends(get_space_service)]
 InviteServiceDep = Annotated[InviteService, Depends(get_invite_service)]
 WalletServiceDep = Annotated[WalletService, Depends(get_wallet_service)]
 ArbiterServiceDep = Annotated[ArbiterService, Depends(get_arbiter_service)]
+BestchangeRepoDep = Annotated[BestchangeYamlRepository, Depends(get_bestchange_repository)]
 BillingServiceDep = Annotated[BillingService, Depends(get_billing_service)]
 NodeServiceDep = Annotated[NodeService, Depends(get_node_service)]
 AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
@@ -400,6 +411,7 @@ __all__ = [
     "get_billing_service",
     "get_node_service",
     "get_admin_service",
+    "get_bestchange_repository",
     "get_web3_auth",
     "get_tron_auth",
     "get_current_web3_user",
@@ -414,6 +426,7 @@ __all__ = [
     "SpaceServiceDep",
     "InviteServiceDep",
     "ArbiterServiceDep",
+    "BestchangeRepoDep",
     "BillingServiceDep",
     "NodeServiceDep",
     "AdminServiceDep",

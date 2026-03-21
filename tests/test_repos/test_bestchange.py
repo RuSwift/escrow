@@ -122,3 +122,74 @@ async def test_new_snapshot_id_rebuilds_cache(bestchange_repo: BestchangeYamlRep
 
     rows2 = await bestchange_repo.list("payment_methods", locale="en", limit=5)
     assert rows2[0].payment_code == "B2"
+
+
+@pytest.mark.asyncio
+async def test_list_q_case_insensitive(bestchange_repo: BestchangeYamlRepository, test_db):
+    snap = BestchangeYamlSnapshot(
+        file_hash="f" * 64,
+        exported_at=datetime(2025, 6, 1, tzinfo=timezone.utc),
+        payload={
+            "payment_methods": [
+                {
+                    "payment_code": "AbCd",
+                    "cur": "usd",
+                    "payment_name": "Название",
+                    "payment_name_en": "Mixed Case Title",
+                },
+            ],
+            "cities": [{"id": 42, "name": "САНКТ-Петербург", "name_en": "Saint Petersburg"}],
+        },
+    )
+    test_db.add(snap)
+    await test_db.commit()
+
+    pm = await bestchange_repo.list("payment_methods", locale="en", q="MIXED case", limit=10)
+    assert len(pm) == 1 and pm[0].payment_code == "AbCd"
+
+    pm2 = await bestchange_repo.list("payment_methods", locale="en", q="abcd", limit=10)
+    assert len(pm2) == 1
+
+    pm3 = await bestchange_repo.list("payment_methods", locale="en", q="USD", limit=10)
+    assert len(pm3) == 1
+
+    ct = await bestchange_repo.list("cities", locale="en", q="saint peter", limit=10)
+    assert len(ct) == 1 and ct[0].id == 42
+
+    ct_ru = await bestchange_repo.list("cities", locale="ru", q="санкт-пет", limit=10)
+    assert len(ct_ru) == 1
+
+
+@pytest.mark.asyncio
+async def test_list_without_locale_searches_all_localized_names(bestchange_repo: BestchangeYamlRepository, test_db):
+    snap = BestchangeYamlSnapshot(
+        file_hash="9" * 64,
+        exported_at=datetime(2025, 7, 1, tzinfo=timezone.utc),
+        payload={
+            "payment_methods": [
+                {
+                    "payment_code": "PMX",
+                    "cur": "RUB",
+                    "payment_name": "Только русское имя",
+                    "payment_name_en": "Only English",
+                },
+            ],
+            "cities": [{"id": 7, "name": "Тула", "name_en": "Tula"}],
+        },
+    )
+    test_db.add(snap)
+    await test_db.commit()
+
+    pm_en_only = await bestchange_repo.list("payment_methods", locale="en", q="Только", limit=10)
+    assert len(pm_en_only) == 0
+
+    pm_all = await bestchange_repo.list("payment_methods", locale=None, q="Только", limit=10)
+    assert len(pm_all) == 1 and pm_all[0].payment_code == "PMX"
+    assert pm_all[0].name == "Only English"
+
+    city_en = await bestchange_repo.list("cities", locale="en", q="Тул", limit=10)
+    assert len(city_en) == 0
+
+    city_all = await bestchange_repo.list("cities", locale=None, q="Тул", limit=10)
+    assert len(city_all) == 1 and city_all[0].id == 7
+    assert city_all[0].name == "Tula"
