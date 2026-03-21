@@ -53,4 +53,30 @@ def get_translations_for_locale(locale: str) -> dict[str, str]:
     return table
 
 
-__all__ = ["get_translation", "get_translations_for_locale"]
+def supported_locales() -> frozenset[str]:
+    """Коды языков из i18n/translations/*.json (имена файлов без .json)."""
+    translations = _load_translations()
+    if not translations:
+        return frozenset({"en"})
+    return frozenset(translations.keys())
+
+
+def normalize_locale(locale: str | None) -> str:
+    """
+    Код языка как в i18n (en, ru). BCP-47 сводится к основному тегу (ru-RU -> ru).
+    Если не задан или неизвестен — en.
+    """
+    if not locale:
+        return "en"
+    code = locale.split("-")[0].lower()
+    if code in supported_locales():
+        return code
+    return "en"
+
+
+__all__ = [
+    "get_translation",
+    "get_translations_for_locale",
+    "normalize_locale",
+    "supported_locales",
+]
