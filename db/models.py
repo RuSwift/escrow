@@ -478,8 +478,8 @@ class Wallet(Base):
     # Wallet name (editable)
     name = Column(String(255), nullable=False, comment="Wallet name (editable)")
     
-    # Encrypted mnemonic phrase
-    encrypted_mnemonic = Column(Text, nullable=False, comment="Encrypted mnemonic phrase")
+    # Encrypted mnemonic phrase (optional for role external / реквизиты без ключа)
+    encrypted_mnemonic = Column(Text, nullable=True, comment="Encrypted mnemonic phrase")
     
     # Blockchain addresses (unique per role and owner_did, not globally unique)
     tron_address = Column(String(34), nullable=False, comment="TRON address")

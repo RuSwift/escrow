@@ -4,9 +4,9 @@ Resource использует is_active; в БД хранится role. Мапп
 """
 import logging
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Self
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from sqlalchemy import select, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
@@ -36,11 +36,17 @@ class ArbiterResource(BaseResource):
 
     class Create(BaseResource.Create):
         name: str = Field(..., max_length=255, description="Arbiter address name")
-        encrypted_mnemonic: str = Field(..., description="Encrypted mnemonic")
+        encrypted_mnemonic: Optional[str] = Field(None, description="Encrypted mnemonic")
         tron_address: str = Field(..., max_length=34, description="TRON address")
         ethereum_address: str = Field(..., max_length=42, description="Ethereum address")
         is_active: bool = Field(..., description="True = active arbiter, False = backup")
         owner_did: Optional[str] = Field(None, max_length=255, description="Owner node DID")
+
+        @model_validator(mode="after")
+        def encrypted_mnemonic_non_empty(self) -> Self:
+            if self.encrypted_mnemonic is None or not str(self.encrypted_mnemonic).strip():
+                raise ValueError("encrypted_mnemonic is required")
+            return self
 
     class Get(BaseResource.Get):
         id: int

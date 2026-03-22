@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from db.models import Wallet
 from repos.wallet import (
+    ExchangeWalletResource,
     WalletResource,
     WalletRepository,
     _model_to_get,
@@ -45,6 +46,49 @@ def test_wallet_resource_create_missing_field_raises():
             tron_address="TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
             # ethereum_address missing
         )
+
+
+def test_wallet_resource_create_external_allows_empty_mnemonic():
+    """role=external: encrypted_mnemonic может быть пустым."""
+    data = WalletResource.Create(
+        name="Ext",
+        role="external",
+        encrypted_mnemonic=None,
+        tron_address="TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
+        ethereum_address="0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+    )
+    assert data.role == "external"
+    assert data.encrypted_mnemonic is None
+
+
+def test_wallet_resource_create_multisig_requires_mnemonic():
+    """role=multisig: без мнемоники — ValidationError."""
+    with pytest.raises(ValidationError):
+        WalletResource.Create(
+            name="Ms",
+            role="multisig",
+            encrypted_mnemonic=None,
+            tron_address="TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
+            ethereum_address="0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+        )
+
+
+def test_wallet_resource_create_operation_requires_mnemonic():
+    """Операционный (role None): мнемоника обязательна."""
+    with pytest.raises(ValidationError):
+        WalletResource.Create(
+            name="Op",
+            encrypted_mnemonic=None,
+            tron_address="TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
+            ethereum_address="0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+        )
+
+
+def test_wallet_resource_patch_empty_mnemonic_only_with_external():
+    """Patch: пустой encrypted_mnemonic только вместе с role=external."""
+    WalletResource.Patch(encrypted_mnemonic=None, role="external")
+    with pytest.raises(ValidationError):
+        WalletResource.Patch(encrypted_mnemonic=None, role="multisig")
 
 
 # --- list_operation_wallets ---
@@ -248,3 +292,57 @@ async def test_exists_operation_wallet_with_addresses_other_returns_false(wallet
         "TLrJJKGK4aNTq5A6bM7nQ8sV2wXyZ9eRt",
         "0x1234567890123456789012345678901234567890",
     ) is False
+
+
+# --- exchange wallets (external / multisig) ---
+
+
+@pytest.mark.asyncio
+async def test_create_exchange_wallet_external_list_get_patch_delete(wallet_repo):
+    """create_exchange_wallet, list, get, patch, delete для owner_did."""
+    owner = "did:example:exchange_owner"
+    created = await wallet_repo.create_exchange_wallet(
+        WalletResource.Create(
+            name="Bank",
+            role="external",
+            encrypted_mnemonic=None,
+            tron_address="TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
+            ethereum_address="0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+        ),
+        owner_did=owner,
+    )
+    assert isinstance(created, ExchangeWalletResource.Get)
+    assert created.role == "external"
+
+    listed = await wallet_repo.list_exchange_wallets(owner)
+    assert len(listed) == 1
+    got = await wallet_repo.get_exchange_wallet(created.id, owner)
+    assert got is not None
+    assert got.name == "Bank"
+
+    patched = await wallet_repo.patch_exchange_wallet(
+        created.id,
+        owner,
+        WalletResource.Patch(name="Bank2"),
+    )
+    assert patched is not None
+    assert patched.name == "Bank2"
+
+    assert await wallet_repo.delete_exchange_wallet(created.id, owner) is True
+    assert await wallet_repo.get_exchange_wallet(created.id, owner) is None
+
+
+@pytest.mark.asyncio
+async def test_create_exchange_wallet_wrong_role_raises(wallet_repo):
+    """create_exchange_wallet принимает только external | multisig."""
+    with pytest.raises(ValueError, match="external"):
+        await wallet_repo.create_exchange_wallet(
+            WalletResource.Create(
+                name="Bad",
+                role=None,
+                encrypted_mnemonic="enc",
+                tron_address="TLrJJKGK4aNTq5A6bM7nQ8sV2wXyZ9eRt",
+                ethereum_address="0x1234567890123456789012345678901234567890",
+            ),
+            owner_did="did:x",
+        )

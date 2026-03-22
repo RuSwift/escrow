@@ -35,6 +35,18 @@ def test_arbiter_resource_create_required_fields():
     assert data.is_active is True
 
 
+def test_arbiter_resource_create_empty_mnemonic_raises():
+    """Create с пустым encrypted_mnemonic — ValidationError."""
+    with pytest.raises(ValidationError):
+        ArbiterResource.Create(
+            name="X",
+            encrypted_mnemonic="  ",
+            tron_address="TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
+            ethereum_address="0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+            is_active=True,
+        )
+
+
 def test_arbiter_resource_create_is_active_false():
     """Create с is_active=False маппится в role=arbiter-backup при записи."""
     data = ArbiterResource.Create(

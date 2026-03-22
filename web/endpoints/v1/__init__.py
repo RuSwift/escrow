@@ -7,6 +7,7 @@ from web.endpoints.v1 import (
     auth,
     autocomplete,
     dashboard,
+    exchange_wallets,
     guarantor,
     invite,
     node,
@@ -27,5 +28,6 @@ router.include_router(node.router)
 router.include_router(profile.router)
 router.include_router(space_participants.router)
 router.include_router(guarantor.router)
+router.include_router(exchange_wallets.router)
 router.include_router(users.router)
 router.include_router(wallets.router)
