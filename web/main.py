@@ -136,12 +136,16 @@ def create_app() -> FastAPI:
         allowed = await wallet_service.get_spaces_for_address(wallet_address, "tron")
         if space_clean not in allowed:
             return RedirectResponse(url="/", status_code=302)
+        space_company_name = await space_service.get_space_company_name_for_display(
+            space_clean
+        )
         space_role = await space_service.get_space_role(space_clean, wallet_address, "tron")
 
         if initial_page in ("space-roles", "space-profile") and space_role != WalletUserSubRole.owner:
             ctx = {
                 **_main_context(request, "dashboard"),
                 "space": space_clean,
+                "space_company_name": space_company_name,
                 "space_role": space_role.value,
                 "space_subs_count": -1,
                 "space_profile_filled": True,
@@ -176,6 +180,7 @@ def create_app() -> FastAPI:
                 "initial_page": page,
                 "escrow_id": escrow_id.strip() if page == "detail" else "",
                 "space": space_clean,
+                "space_company_name": space_company_name,
                 "space_role": space_role.value,
                 "space_subs_count": space_subs_count,
                 "space_profile_filled": space_profile_filled,

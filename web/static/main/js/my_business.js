@@ -43,12 +43,7 @@
                 return FIAT_OPTIONS.filter(function(f) { return f.toLowerCase().indexOf(q) !== -1; });
             },
             onRampCount: function() { return this.services.filter(function(s) { return s.type === 'onRamp'; }).length; },
-            offRampCount: function() { return this.services.filter(function(s) { return s.type === 'offRamp'; }).length; },
-            avgCommission: function() {
-                if (this.services.length === 0) return '0';
-                var sum = this.services.reduce(function(a, s) { return a + (parseFloat(s.commission) || 0); }, 0);
-                return (sum / this.services.length).toFixed(1);
-            }
+            offRampCount: function() { return this.services.filter(function(s) { return s.type === 'offRamp'; }).length; }
         },
         methods: {
             selectFiat: function(fiat) { this.newService.fiatCurrency = fiat; },
@@ -101,41 +96,6 @@
             '      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>',
             '      [[ $t(\'main.my_business.create_service\') ]]',
             '    </button>',
-            '  </div>',
-
-            '  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">',
-            '    <div class="bg-white p-5 rounded-2xl border border-[#eff2f5] shadow-sm hover:shadow-md transition-all">',
-            '      <div class="flex items-center justify-between mb-3">',
-            '        <div class="p-2 rounded-xl bg-gray-50 text-blue-500"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg></div>',
-            '        <span class="text-[10px] font-bold text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full">+5%</span>',
-            '      </div>',
-            '      <div class="text-2xl font-bold text-[#191d23]">[[ services.length ]]</div>',
-            '      <div class="text-xs text-[#58667e] mt-1">[[ $t(\'main.my_business.stat_services\') ]]</div>',
-            '    </div>',
-            '    <div class="bg-white p-5 rounded-2xl border border-[#eff2f5] shadow-sm hover:shadow-md transition-all">',
-            '      <div class="flex items-center justify-between mb-3">',
-            '        <div class="p-2 rounded-xl bg-gray-50 text-purple-500"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg></div>',
-            '        <span class="text-[10px] font-bold text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full">+5%</span>',
-            '      </div>',
-            '      <div class="text-2xl font-bold text-[#191d23]">[[ partners.length ]]</div>',
-            '      <div class="text-xs text-[#58667e] mt-1">[[ $t(\'main.my_business.stat_partners\') ]]</div>',
-            '    </div>',
-            '    <div class="bg-white p-5 rounded-2xl border border-[#eff2f5] shadow-sm hover:shadow-md transition-all">',
-            '      <div class="flex items-center justify-between mb-3">',
-            '        <div class="p-2 rounded-xl bg-gray-50 text-emerald-500"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div>',
-            '        <span class="text-[10px] font-bold text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full">+5%</span>',
-            '      </div>',
-            '      <div class="text-2xl font-bold text-[#191d23]">[[ avgCommission ]]%</div>',
-            '      <div class="text-xs text-[#58667e] mt-1">[[ $t(\'main.my_business.stat_commission\') ]]</div>',
-            '    </div>',
-            '    <div class="bg-white p-5 rounded-2xl border border-[#eff2f5] shadow-sm hover:shadow-md transition-all">',
-            '      <div class="flex items-center justify-between mb-3">',
-            '        <div class="p-2 rounded-xl bg-gray-50 text-orange-500"><svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" /></svg></div>',
-            '        <span class="text-[10px] font-bold text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded-full">+5%</span>',
-            '      </div>',
-            '      <div class="text-2xl font-bold text-[#191d23]">$12,450</div>',
-            '      <div class="text-xs text-[#58667e] mt-1">[[ $t(\'main.my_business.stat_turnover\') ]]</div>',
-            '    </div>',
             '  </div>',
 
             '  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">',

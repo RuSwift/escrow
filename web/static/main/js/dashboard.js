@@ -50,12 +50,6 @@ Vue.component('dashboard', {
     delimiters: ['[[', ']]'],
     data: function() {
         return {
-            stats: [
-                { labelKey: 'main.dashboard.stat_tvl', value: '$1.2M', change: '+12.5%', isPositive: true },
-                { labelKey: 'main.dashboard.stat_active', value: '1,284', change: '+3.2%', isPositive: true },
-                { labelKey: 'main.dashboard.stat_success', value: '99.8%', change: '+0.1%', isPositive: true },
-                { labelKey: 'main.dashboard.stat_release', value: '4.2h', change: '-15.4%', isPositive: false }
-            ],
             searchQuery: '',
             statusFilter: 'all',
             participantFilter: '',
@@ -214,17 +208,6 @@ Vue.component('dashboard', {
       <div v-if="typeof window !== \'undefined\' && window.__SPACE_ROLE__ === \'owner\' && window.__SPACE_PROFILE_FILLED__ === false" class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-6 text-amber-800 text-sm font-medium flex flex-wrap items-center gap-x-2 gap-y-1">
         <span>[[ $t(\'main.dashboard.no_profile_warning\') ]]</span>
         <a :href="profilePageHref()" @click.prevent="goToProfile()" class="font-semibold text-main-blue hover:underline">[[ $t(\'main.dashboard.go_to_profile\') ]]</a>
-      </div>
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-        <div v-for="(stat, i) in stats" :key="i" class="cmc-card p-4 flex flex-col">
-          <span class="text-xs text-cmc-muted font-medium mb-1">[[ $t(stat.labelKey) ]]</span>
-          <div class="flex items-end gap-2">
-            <span class="text-xl font-bold">[[ stat.value ]]</span>
-            <span :class="['text-xs font-bold flex items-center mb-1', stat.isPositive ? 'text-main-green' : 'text-main-red']">
-              [[ stat.change ]]
-            </span>
-          </div>
-        </div>
       </div>
       <div v-if="ratiosLoading" class="mb-6 h-10 rounded-lg bg-[#eff2f5] animate-pulse border border-[#eff2f5]" aria-hidden="true"></div>
       <div v-else-if="ratiosError" class="mb-6 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-800">[[ $t('main.dashboard.ratios_load_error') ]]</div>

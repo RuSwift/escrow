@@ -386,6 +386,19 @@ async def test_space_profile_company_name_roundtrip(space_with_owner_and_sub, sp
 
 
 @pytest.mark.asyncio
+async def test_get_space_company_name_for_display(space_with_owner_and_sub, space_service):
+    """company_name для шапки читается по nickname спейса без проверки owner."""
+    assert await space_service.get_space_company_name_for_display(SPACE_NAME) is None
+    assert await space_service.get_space_company_name_for_display("nonexistent_space_xyz") is None
+    await space_service.update_space_profile(
+        SPACE_NAME,
+        WALLET_OWNER,
+        WalletUserProfileSchema(company_name="ООО Ромашка"),
+    )
+    assert await space_service.get_space_company_name_for_display(SPACE_NAME) == "ООО Ромашка"
+
+
+@pytest.mark.asyncio
 async def test_space_profile_only_description(space_with_owner_and_sub, space_service):
     """Профиль только с description корректно сохраняется и читается."""
     await space_service.update_space_profile(

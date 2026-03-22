@@ -245,6 +245,20 @@ class SpaceService:
             return None
         return owner.profile.model_dump()
 
+    async def get_space_company_name_for_display(self, space: str) -> Optional[str]:
+        """
+        company_name из профиля владельца спейса (для шапки UI).
+        Вызывать только после проверки, что пользователь имеет доступ к space.
+        """
+        owner = await self._repo.get_by_nickname(space)
+        if not owner or not owner.profile:
+            return None
+        cn = owner.profile.company_name
+        if cn is None:
+            return None
+        stripped = str(cn).strip()
+        return stripped if stripped else None
+
     async def update_space_profile(
         self,
         space: str,
