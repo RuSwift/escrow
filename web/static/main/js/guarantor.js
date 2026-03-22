@@ -46,6 +46,8 @@
                 commissionPercent: 0.1,
                 isVerified: true,
                 showAddModal: false,
+                showAddDirectionErrorModal: false,
+                addDirectionErrorMessage: '',
                 showVerificationInfoModal: false,
                 modal: draftAutocomplete(),
                 conditionsDraft: '',
@@ -57,7 +59,11 @@
                 _commissionFeedbackTimer: null,
                 _modalCurrencyBlurTimer: null,
                 _modalPaymentBlurTimer: null,
-                _docClick: null
+                _docClick: null,
+                directionEditingId: null,
+                directionEditDraft: '',
+                directionEditSaving: false,
+                directionEditError: null
             };
         },
         mounted: function() {
@@ -202,6 +208,22 @@
                 }
                 return String(d);
             },
+            /** POST /guarantor/directions: detail = { code, message } — показываем перевод по code */
+            _guarantorDirectionCreateErrorMessage: function(j) {
+                var d = j && j.detail;
+                if (d && typeof d === 'object' && !Array.isArray(d) && d.code) {
+                    var key = 'main.guarantor.errors.' + d.code;
+                    var t = this.$t(key);
+                    if (t && t !== key) {
+                        return t;
+                    }
+                    if (d.message) {
+                        return String(d.message);
+                    }
+                }
+                var fallback = this._formatPatchErrorBody(j);
+                return fallback || this.$t('main.guarantor.error_load');
+            },
             _scheduleClearCommissionFeedback: function() {
                 var self = this;
                 if (this._commissionFeedbackTimer) {
@@ -284,6 +306,12 @@
             },
             closeAddModal: function() {
                 this.showAddModal = false;
+                this.showAddDirectionErrorModal = false;
+                this.addDirectionErrorMessage = '';
+            },
+            closeAddDirectionErrorModal: function() {
+                this.showAddDirectionErrorModal = false;
+                this.addDirectionErrorMessage = '';
             },
             openVerificationInfoModal: function() {
                 this.showVerificationInfoModal = true;
@@ -321,9 +349,15 @@
                             throw new Error(self.$t('main.guarantor.error_403'));
                         }
                         if (!r.ok) {
-                            return r.json().then(function(j) {
-                                throw new Error((j && j.detail) || 'POST failed');
-                            });
+                            return r.json().then(
+                                function(j) {
+                                    var msg = self._guarantorDirectionCreateErrorMessage(j);
+                                    throw new Error(msg);
+                                },
+                                function() {
+                                    throw new Error(self.$t('main.guarantor.error_load'));
+                                }
+                            );
                         }
                         return r.json();
                     })
@@ -332,7 +366,9 @@
                         self.fetchState();
                     })
                     .catch(function(e) {
-                        alert((e && e.message) || self.$t('main.guarantor.error_load'));
+                        var msg = (e && e.message) || self.$t('main.guarantor.error_load');
+                        self.addDirectionErrorMessage = msg;
+                        self.showAddDirectionErrorModal = true;
                     });
             },
             confirmDeleteDirection: function(d) {
@@ -370,9 +406,66 @@
                         if (!r.ok && r.status !== 204) {
                             throw new Error(self.$t('main.guarantor.error_load'));
                         }
+                        if (self.directionEditingId === directionId) {
+                            self.cancelEditDirection();
+                        }
                         self.fetchState();
                     })
                     .catch(function() {});
+            },
+            startEditDirection: function(d) {
+                this.directionEditingId = d.id;
+                this.directionEditDraft =
+                    d.conditions_text !== null && d.conditions_text !== undefined
+                        ? String(d.conditions_text)
+                        : '';
+                this.directionEditError = null;
+            },
+            cancelEditDirection: function() {
+                this.directionEditingId = null;
+                this.directionEditDraft = '';
+                this.directionEditError = null;
+            },
+            saveDirectionConditions: function(d) {
+                var self = this;
+                if (this.directionEditingId !== d.id) {
+                    return;
+                }
+                var base = this.apiBase();
+                if (!base) {
+                    return;
+                }
+                var text = (this.directionEditDraft || '').trim();
+                this.directionEditSaving = true;
+                this.directionEditError = null;
+                fetch(base + '/directions/' + encodeURIComponent(String(d.id)), {
+                    method: 'PATCH',
+                    headers: this.authHeaders(),
+                    credentials: 'include',
+                    body: JSON.stringify({ conditions_text: text ? text : null })
+                })
+                    .then(function(r) {
+                        if (r.status === 403) {
+                            throw new Error(self.$t('main.guarantor.error_403'));
+                        }
+                        if (!r.ok) {
+                            return r.json().then(function(j) {
+                                var msg = self._formatPatchErrorBody(j);
+                                throw new Error(msg || self.$t('main.guarantor.error_load'));
+                            });
+                        }
+                        return r.json();
+                    })
+                    .then(function() {
+                        self.cancelEditDirection();
+                        self.fetchState();
+                    })
+                    .catch(function(e) {
+                        self.directionEditError = (e && e.message) || self.$t('main.guarantor.error_load');
+                    })
+                    .finally(function() {
+                        self.directionEditSaving = false;
+                    });
             },
             onDocumentClick: function(e) {
                 if (!this.$el || !this.$el.contains(e.target)) {
@@ -430,6 +523,9 @@
                 if (!m.currencyCode) {
                     return;
                 }
+                if (m.paymentCode === '*') {
+                    return;
+                }
                 m.paymentOpen = true;
                 this.fetchPaymentsList(m, (m.paymentInput || '').trim(), AC_LIMIT_PAYMENT_FOCUS);
             },
@@ -447,6 +543,9 @@
                 this._clearModalPaymentBlurTimer();
                 var m = this.modal;
                 if (!m.currencyCode) {
+                    return;
+                }
+                if (m.paymentCode === '*') {
                     return;
                 }
                 if (m.paymentOpen) {
@@ -486,6 +585,9 @@
             onModalPaymentInput: function() {
                 var self = this;
                 var m = this.modal;
+                if (m.paymentCode === '*') {
+                    return;
+                }
                 var v = (m.paymentInput || '').trim();
                 m.paymentNoHits = false;
                 if (m.paymentCode && v !== (m.paymentName || '').trim()) {
@@ -534,6 +636,9 @@
                 if (!b.currencyCode) {
                     b.paymentSuggestions = [];
                     b.paymentTotalForCur = null;
+                    return;
+                }
+                if (b.paymentCode === '*') {
                     return;
                 }
                 var self = this;
@@ -599,10 +704,33 @@
                 m.paymentOpen = false;
                 m.paymentNoHits = false;
             },
+            onToggleAllPaymentMethods: function(e) {
+                var m = this.modal;
+                if (e.target.checked) {
+                    m.paymentCode = '*';
+                    var label = this.$t('main.guarantor.all_payment_methods_label');
+                    m.paymentName = label;
+                    m.paymentInput = label;
+                    m.paymentOpen = false;
+                    m.paymentSuggestions = [];
+                    m.paymentTotalForCur = null;
+                    m.paymentNoHits = false;
+                } else {
+                    m.paymentCode = '';
+                    m.paymentName = '';
+                    m.paymentInput = '';
+                    m.paymentSuggestions = [];
+                    m.paymentTotalForCur = null;
+                    m.paymentNoHits = false;
+                }
+            },
             directionCurrencyLabel: function(d) {
                 return d.currency_code || '—';
             },
             directionPaymentLabel: function(d) {
+                if (d.payment_code === '*') {
+                    return this.$t('main.guarantor.all_payment_methods_label');
+                }
                 return d.payment_name || d.payment_code || '—';
             }
         },
@@ -668,7 +796,7 @@
             '        </div>',
             '        <div class="space-y-4">',
             '          <article v-for="d in directions" :key="d.id" class="rounded-xl border border-[#eff2f5] bg-white shadow-sm p-4 md:p-5">',
-            '            <div class="flex flex-wrap items-start justify-between gap-3 mb-3">',
+            '            <div class="flex flex-wrap items-start justify-between gap-3" :class="d.payment_code === \'*\' ? \'mb-2\' : \'mb-3\'">',
             '              <div class="flex flex-wrap items-center gap-2 min-w-0">',
             '                <span class="inline-flex items-center gap-1.5 rounded-full bg-[#f8fafd] border border-[#eff2f5] px-3 py-1 text-xs font-semibold text-[#191d23]">',
             '                  <svg class="w-3.5 h-3.5 text-main-blue shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>',
@@ -681,9 +809,21 @@
             '              </div>',
             '              <button type="button" @click="confirmDeleteDirection(d)" class="shrink-0 text-xs font-semibold text-red-600 hover:text-red-700 px-2 py-1 rounded-lg hover:bg-red-50">[[ $t(\'main.guarantor.delete_direction\') ]]</button>',
             '            </div>',
+            '            <p v-if="d.payment_code === \'*\'" class="mb-3 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">[[ $t(\'main.guarantor.all_methods_geo_rank_hint\', { currency: d.currency_code }) ]]</p>',
             '            <div class="rounded-lg bg-[#f8fafd] border border-[#eff2f5] p-3 md:p-4">',
-            '              <div class="text-[10px] font-bold text-[#58667e] uppercase tracking-wider mb-2">[[ $t(\'main.guarantor.conditions_label\') ]]</div>',
-            '              <p class="text-sm text-[#191d23] leading-relaxed whitespace-pre-wrap">[[ (d.conditions_text && d.conditions_text.length) ? d.conditions_text : $t(\'main.guarantor.placeholder_conditions\') ]]</p>',
+            '              <div class="flex flex-wrap items-center justify-between gap-2 mb-2">',
+            '                <div class="text-[10px] font-bold text-[#58667e] uppercase tracking-wider min-w-0">[[ $t(\'main.guarantor.conditions_label\') ]]</div>',
+            '                <template v-if="directionEditingId === d.id">',
+            '                  <div class="flex flex-wrap items-center gap-2 shrink-0">',
+            '                    <button type="button" @click="cancelEditDirection" :disabled="directionEditSaving" class="text-xs font-medium text-[#58667e] hover:bg-[#eff2f5] px-2 py-1 rounded-lg disabled:opacity-50">[[ $t(\'main.guarantor.modal_cancel\') ]]</button>',
+            '                    <button type="button" @click="saveDirectionConditions(d)" :disabled="directionEditSaving" class="text-xs font-semibold text-white bg-main-blue px-3 py-1 rounded-lg hover:opacity-90 disabled:opacity-50">[[ $t(\'main.guarantor.save_conditions\') ]]</button>',
+            '                  </div>',
+            '                </template>',
+            '                <button v-else type="button" @click="startEditDirection(d)" class="text-xs font-semibold text-main-blue hover:underline px-2 py-1 rounded-lg shrink-0">[[ $t(\'main.guarantor.edit_conditions\') ]]</button>',
+            '              </div>',
+            '              <textarea v-if="directionEditingId === d.id" v-model="directionEditDraft" rows="4" class="w-full px-3 py-2 rounded-lg border border-[#eff2f5] text-sm text-[#191d23] focus:outline-none focus:ring-2 focus:ring-main-blue/20" :placeholder="$t(\'main.guarantor.placeholder_conditions\')"></textarea>',
+            '              <p v-else class="text-sm text-[#191d23] leading-relaxed whitespace-pre-wrap">[[ (d.conditions_text && d.conditions_text.length) ? d.conditions_text : $t(\'main.guarantor.placeholder_conditions\') ]]</p>',
+            '              <p v-if="directionEditError && directionEditingId === d.id" class="mt-2 text-xs text-red-600">[[ directionEditError ]]</p>',
             '            </div>',
             '          </article>',
             '          <p v-if="!directions.length" class="text-sm text-[#58667e] py-2">[[ $t(\'main.guarantor.no_directions\') ]]</p>',
@@ -707,6 +847,15 @@
             '        </div>',
             '      </div>',
             '    </aside>',
+            '  </div>',
+            '  <div v-if="showAddDirectionErrorModal" class="fixed inset-0 z-[92] flex items-center justify-center p-4 bg-black/50" @click.self="closeAddDirectionErrorModal">',
+            '    <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 md:p-6 border border-amber-200 ring-1 ring-amber-100" @click.stop role="alertdialog" aria-modal="true" aria-labelledby="guarantor-direction-error-title">',
+            '      <h2 id="guarantor-direction-error-title" class="text-lg font-bold text-[#191d23] mb-3">[[ $t(\'main.guarantor.direction_error_modal_title\') ]]</h2>',
+            '      <p class="text-sm text-[#58667e] leading-relaxed mb-6 whitespace-pre-wrap break-words">[[ addDirectionErrorMessage ]]</p>',
+            '      <div class="flex justify-end">',
+            '        <button type="button" @click="closeAddDirectionErrorModal" class="px-4 py-2 text-sm font-semibold text-white bg-main-blue rounded-lg hover:opacity-90">[[ $t(\'main.guarantor.direction_error_modal_close\') ]]</button>',
+            '      </div>',
+            '    </div>',
             '  </div>',
             '  <div v-if="showVerificationInfoModal" class="fixed inset-0 z-[91] flex items-center justify-center p-4 bg-black/50" @click.self="closeVerificationInfoModal">',
             '    <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-5 md:p-6 border border-[#eff2f5]" @click.stop role="dialog" aria-modal="true" :aria-label="$t(\'main.guarantor.verification_info_aria\')">',
@@ -736,17 +885,22 @@
             '        </div>',
             '        <div class="relative">',
             '          <label class="block text-xs font-medium text-[#58667e] mb-1">[[ $t(\'main.guarantor.payment_placeholder\') ]]</label>',
-            '          <div :class="!modal.currencyCode ? \'flex rounded-lg border border-[#eff2f5] bg-[#f8fafd] overflow-hidden opacity-90\' : \'flex rounded-lg border border-[#eff2f5] bg-white overflow-hidden focus-within:ring-2 focus-within:ring-main-blue/20\'">',
-            '            <input v-model="modal.paymentInput" type="text" :disabled="!modal.currencyCode" :placeholder="modal.currencyCode ? $t(\'main.guarantor.payment_placeholder\') : $t(\'main.guarantor.select_currency_first\')" autocomplete="off" @focus="onModalPaymentFocus" @blur="onModalPaymentBlur" @input="onModalPaymentInput" :class="!modal.currencyCode ? \'flex-1 min-w-0 border-0 rounded-none px-3 py-2 text-sm bg-transparent text-[#58667e] cursor-not-allowed\' : \'flex-1 min-w-0 border-0 rounded-none px-3 py-2 text-sm text-[#191d23] focus:outline-none focus:ring-0\'" />',
-            '            <button type="button" :disabled="!modal.currencyCode" @mousedown.prevent @click.stop="toggleModalPaymentDropdown" :aria-expanded="modal.paymentOpen ? \'true\' : \'false\'" :aria-label="$t(\'main.guarantor.ac_open_payment_list\')" :class="!modal.currencyCode ? \'shrink-0 px-2.5 border-l border-[#eff2f5] bg-[#f8fafd] text-[#58667e] cursor-not-allowed\' : \'shrink-0 px-2.5 border-l border-[#eff2f5] bg-[#f8fafd] text-main-blue hover:bg-main-blue/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-main-blue/30\'">',
+            '          <label v-if="modal.currencyCode" class="flex items-start gap-2 mb-2 text-xs text-[#58667e] cursor-pointer select-none">',
+            '            <input type="checkbox" :checked="modal.paymentCode === \'*\'" @change="onToggleAllPaymentMethods" class="mt-0.5 rounded border-[#cbd6e2] text-main-blue focus:ring-main-blue/30" />',
+            '            <span>[[ $t(\'main.guarantor.all_payment_methods_option\') ]]</span>',
+            '          </label>',
+            '          <div :class="!modal.currencyCode ? \'flex rounded-lg border border-[#eff2f5] bg-[#f8fafd] overflow-hidden opacity-90\' : (modal.paymentCode === \'*\' ? \'flex rounded-lg border border-[#eff2f5] bg-[#f8fafd] overflow-hidden opacity-90\' : \'flex rounded-lg border border-[#eff2f5] bg-white overflow-hidden focus-within:ring-2 focus-within:ring-main-blue/20\')">',
+            '            <input v-model="modal.paymentInput" type="text" :disabled="!modal.currencyCode || modal.paymentCode === \'*\'" :placeholder="modal.currencyCode ? $t(\'main.guarantor.payment_placeholder\') : $t(\'main.guarantor.select_currency_first\')" autocomplete="off" @focus="onModalPaymentFocus" @blur="onModalPaymentBlur" @input="onModalPaymentInput" :class="!modal.currencyCode || modal.paymentCode === \'*\' ? \'flex-1 min-w-0 border-0 rounded-none px-3 py-2 text-sm bg-transparent text-[#58667e] cursor-not-allowed\' : \'flex-1 min-w-0 border-0 rounded-none px-3 py-2 text-sm text-[#191d23] focus:outline-none focus:ring-0\'" />',
+            '            <button type="button" :disabled="!modal.currencyCode || modal.paymentCode === \'*\'" @mousedown.prevent @click.stop="toggleModalPaymentDropdown" :aria-expanded="modal.paymentOpen ? \'true\' : \'false\'" :aria-label="$t(\'main.guarantor.ac_open_payment_list\')" :class="!modal.currencyCode || modal.paymentCode === \'*\' ? \'shrink-0 px-2.5 border-l border-[#eff2f5] bg-[#f8fafd] text-[#58667e] cursor-not-allowed\' : \'shrink-0 px-2.5 border-l border-[#eff2f5] bg-[#f8fafd] text-main-blue hover:bg-main-blue/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-main-blue/30\'">',
             '              <svg class="w-5 h-5 transition-transform duration-200" :class="modal.paymentOpen ? \'rotate-180\' : \'\'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>',
             '            </button>',
             '          </div>',
-            '          <ul v-show="modal.paymentOpen && modal.currencyCode && (modal.paymentSuggestions.length > 0 || modal.paymentNoHits || (modal.paymentInput || \'\').trim().length < 1)" @mousedown="_clearModalPaymentBlurTimer" class="absolute left-0 right-0 top-full mt-1 z-30 max-h-40 overflow-y-auto rounded-lg border border-[#eff2f5] bg-white shadow-lg py-1 text-sm">',
+            '          <ul v-show="modal.paymentOpen && modal.currencyCode && modal.paymentCode !== \'*\' && (modal.paymentSuggestions.length > 0 || modal.paymentNoHits || (modal.paymentInput || \'\').trim().length < 1)" @mousedown="_clearModalPaymentBlurTimer" class="absolute left-0 right-0 top-full mt-1 z-30 max-h-40 overflow-y-auto rounded-lg border border-[#eff2f5] bg-white shadow-lg py-1 text-sm">',
             '            <li v-if="modal.paymentTotalForCur != null" class="sticky top-0 z-10 px-3 py-1.5 text-[10px] font-medium text-[#58667e] bg-[#fafbfc] border-b border-[#eff2f5]">[[ $t(\'main.guarantor.payment_total_for_currency\', { count: modal.paymentTotalForCur }) ]]</li>',
             '            <li v-for="p in modal.paymentSuggestions" :key="p.payment_code"><button type="button" class="w-full text-left px-3 py-2 hover:bg-[#f8fafd]" @mousedown.prevent @click.stop="selectModalPayment(p)"><span class="font-medium">[[ p.name ]]</span><span class="text-[#58667e] text-xs ml-1">[[ p.cur ]] · [[ p.payment_code ]]</span></button></li>',
             '            <li v-if="modal.paymentNoHits && !modal.paymentSuggestions.length" class="px-3 py-2 text-xs text-[#58667e]">[[ $t(\'main.guarantor.no_results\') ]]</li>',
             '          </ul>',
+            '          <p v-if="modal.paymentCode === \'*\'" class="mt-2 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 leading-relaxed">[[ $t(\'main.guarantor.all_methods_geo_rank_hint\', { currency: modal.currencyCode }) ]]</p>',
             '        </div>',
             '        <div>',
             '          <label class="block text-xs font-medium text-[#58667e] mb-1">[[ $t(\'main.guarantor.conditions_label\') ]]</label>',

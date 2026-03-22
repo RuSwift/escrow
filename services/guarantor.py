@@ -11,10 +11,11 @@ from typing import Any, List, Optional
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.exceptions import GuarantorDirectionValidationError
 from core.iso4217_fiat import iso4217_active_fiat_only
 from db.models import GuarantorDirection, GuarantorProfile
 from repos.bestchange import BestchangeYamlRepository, CurrencyRow
-from repos.guarantor_direction import GuarantorDirectionRepository
+from repos.guarantor_direction import GuarantorDirectionRepository, _optional_text
 from services.ratios import get_ratios_engines
 from services.ratios.forex import ForexEngine
 from services.space import SpaceService
@@ -138,6 +139,60 @@ async def list_autocomplete_fiat_currencies(
 MIN_GUARANTOR_COMMISSION_PERCENT = Decimal("0.1")
 MAX_GUARANTOR_COMMISSION_PERCENT = Decimal("100")
 
+# Зарезервировано: все способы оплаты для валюты (взаимоисключение с конкретными методами — в create_direction).
+GUARANTOR_ALL_PAYMENT_METHODS_CODE = "*"
+
+
+def _normalize_currency_code(s: str) -> str:
+    return (s or "").strip().upper()
+
+
+def _normalize_payment_code(s: str) -> str:
+    return (s or "").strip()
+
+
+def _direction_already_exists(
+    existing: list[GuarantorDirection],
+    currency_norm: str,
+    payment_norm: str,
+) -> bool:
+    for d in existing:
+        if (
+            _normalize_currency_code(d.currency_code) == currency_norm
+            and _normalize_payment_code(d.payment_code) == payment_norm
+        ):
+            return True
+    return False
+
+
+def _validate_direction_no_currency_wildcard_conflict(
+    existing: list[GuarantorDirection],
+    currency_norm: str,
+    payment_norm: str,
+) -> None:
+    """
+    Для одной валюты в space нельзя сочетать направление «все методы» (payment_code ``*``)
+    с направлениями с конкретным payment_code.
+    """
+    is_all = payment_norm == GUARANTOR_ALL_PAYMENT_METHODS_CODE
+    for d in existing:
+        cur = _normalize_currency_code(d.currency_code)
+        if cur != currency_norm:
+            continue
+        pm = _normalize_payment_code(d.payment_code)
+        if is_all:
+            if pm != GUARANTOR_ALL_PAYMENT_METHODS_CODE:
+                raise GuarantorDirectionValidationError(
+                    "all_methods_blocked_by_specific",
+                    "Cannot add all payment methods: specific methods already exist for this currency.",
+                )
+        else:
+            if pm == GUARANTOR_ALL_PAYMENT_METHODS_CODE:
+                raise GuarantorDirectionValidationError(
+                    "specific_blocked_by_all_methods",
+                    'Cannot add a specific payment method: "all payment methods" is already set for this currency.',
+                )
+
 
 def _validate_commission(value: Decimal | None) -> None:
     if value is None:
@@ -222,15 +277,44 @@ class GuarantorService:
         await self._space._ensure_owner_and_owner_id(space, actor_wallet_address)
         if commission_percent is not None:
             _validate_commission(commission_percent)
+        currency_norm = _normalize_currency_code(currency_code)
+        payment_norm = _normalize_payment_code(payment_code)
+        if not payment_norm:
+            raise GuarantorDirectionValidationError("payment_code_required", "payment_code is required")
+        existing = await self._repo.list_for_space(space)
+        if _direction_already_exists(existing, currency_norm, payment_norm):
+            raise GuarantorDirectionValidationError(
+                "direction_already_exists",
+                "A direction with this currency and payment method already exists.",
+            )
+        _validate_direction_no_currency_wildcard_conflict(existing, currency_norm, payment_norm)
         row = await self._repo.create(
             space,
-            currency_code=currency_code,
-            payment_code=payment_code,
+            currency_code=currency_norm,
+            payment_code=payment_norm,
             payment_name=payment_name,
             conditions_text=conditions_text,
             commission_percent=commission_percent,
             sort_order=sort_order,
         )
+        await self._session.commit()
+        await self._session.refresh(row)
+        return row
+
+    async def patch_direction(
+        self,
+        space: str,
+        direction_id: int,
+        actor_wallet_address: str,
+        *,
+        conditions_text: str | None,
+    ) -> GuarantorDirection | None:
+        """Обновить ``conditions_text`` направления (валюта/метод не меняются)."""
+        await self._space._ensure_owner_and_owner_id(space, actor_wallet_address)
+        normalized = _optional_text(conditions_text)
+        row = await self._repo.update(direction_id, space, conditions_text=normalized)
+        if row is None:
+            return None
         await self._session.commit()
         await self._session.refresh(row)
         return row

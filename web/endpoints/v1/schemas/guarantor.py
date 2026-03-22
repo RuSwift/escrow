@@ -41,9 +41,21 @@ class PatchGuarantorProfileRequest(BaseModel):
     conditions_text: Optional[str] = Field(None, description="Общие условия гаранта в space")
 
 
+class PatchGuarantorDirectionRequest(BaseModel):
+    conditions_text: Optional[str] = Field(
+        ...,
+        description="Текст условий направления; пустая строка или null сбрасывает поле.",
+    )
+
+
 class CreateGuarantorDirectionRequest(BaseModel):
     currency_code: str = Field(..., min_length=1, max_length=64)
-    payment_code: str = Field(..., min_length=1, max_length=128)
+    payment_code: str = Field(
+        ...,
+        min_length=1,
+        max_length=128,
+        description='Код метода из BestChange; «*» означает все способы оплаты для валюты (исключает другие направления с той же валютой).',
+    )
     payment_name: Optional[str] = Field(None, max_length=512)
     conditions_text: Optional[str] = None
     commission_percent: Optional[Decimal] = None

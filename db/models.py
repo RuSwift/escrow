@@ -844,7 +844,11 @@ class GuarantorDirection(Base):
     payment_code = Column(
         String(128),
         nullable=False,
-        comment="Код платёжного метода (payment_code в bc.yaml)",
+        comment=(
+            "Код платёжного метода (payment_code в bc.yaml). "
+            "Зарезервировано: «*» — все способы оплаты для данной валюты; "
+            "с конкретными методами по той же валюте в одном space не сочетается (проверка в GuarantorService)."
+        ),
     )
     payment_name = Column(
         String(512),

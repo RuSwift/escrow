@@ -4,7 +4,7 @@
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from core.exceptions import SpacePermissionDenied
+from core.exceptions import GuarantorDirectionValidationError, SpacePermissionDenied
 from services.guarantor import GuarantorService
 from web.endpoints.dependencies import (
     get_guarantor_service,
@@ -15,6 +15,7 @@ from web.endpoints.v1.schemas.guarantor import (
     GuarantorDirectionResponse,
     GuarantorProfileResponse,
     GuarantorStateResponse,
+    PatchGuarantorDirectionRequest,
     PatchGuarantorProfileRequest,
 )
 
@@ -110,8 +111,41 @@ async def create_guarantor_direction(
         )
     except SpacePermissionDenied as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+    except GuarantorDirectionValidationError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": e.code, "message": str(e)},
+        ) from e
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    return _direction_to_response(row)
+
+
+@router.patch(
+    "/{space}/guarantor/directions/{direction_id}",
+    response_model=GuarantorDirectionResponse,
+)
+async def patch_guarantor_direction(
+    space: str,
+    direction_id: int,
+    body: PatchGuarantorDirectionRequest,
+    wallet_address: str = Depends(get_required_wallet_address_for_space),
+    svc: GuarantorService = Depends(get_guarantor_service),
+):
+    """Обновить текст условий направления (только owner спейса)."""
+    try:
+        row = await svc.patch_direction(
+            space,
+            direction_id,
+            wallet_address,
+            conditions_text=body.conditions_text,
+        )
+    except SpacePermissionDenied as e:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Direction not found")
     return _direction_to_response(row)
 
 

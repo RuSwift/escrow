@@ -260,3 +260,186 @@ async def test_guarantor_directions_create_and_delete(main_app, test_db):
             headers=headers,
         )
         assert get2.json()["directions"] == []
+
+
+@pytest.mark.asyncio
+async def test_guarantor_patch_direction_conditions(main_app, test_db):
+    priv, tron_address = _tron_key_and_address(b"guarantor-test-owner-patch-dir")
+    space = "g_space_patch_dir"
+    test_db.add(
+        WalletUser(
+            wallet_address=tron_address,
+            blockchain="tron",
+            did="did:tron:" + tron_address,
+            nickname=space,
+        )
+    )
+    await test_db.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=main_app),
+        base_url="http://test",
+    ) as client:
+        token = await _verify_tron(client, priv, tron_address)
+        headers = {"Authorization": f"Bearer {token}"}
+        post_r = await client.post(
+            f"/v1/spaces/{space}/guarantor/directions",
+            headers=headers,
+            json={
+                "currency_code": "USD",
+                "payment_code": "CARD",
+                "payment_name": "Card",
+                "conditions_text": "Original",
+                "sort_order": 0,
+            },
+        )
+        assert post_r.status_code == 200
+        direction_id = post_r.json()["id"]
+
+        patch_r = await client.patch(
+            f"/v1/spaces/{space}/guarantor/directions/{direction_id}",
+            headers=headers,
+            json={"conditions_text": "Updated terms"},
+        )
+        assert patch_r.status_code == 200
+        assert patch_r.json()["conditions_text"] == "Updated terms"
+        assert patch_r.json()["currency_code"] == "USD"
+
+        get_r = await client.get(f"/v1/spaces/{space}/guarantor", headers=headers)
+        assert get_r.status_code == 200
+        assert get_r.json()["directions"][0]["conditions_text"] == "Updated terms"
+
+        not_found = await client.patch(
+            f"/v1/spaces/{space}/guarantor/directions/999999",
+            headers=headers,
+            json={"conditions_text": "x"},
+        )
+        assert not_found.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_guarantor_direction_wildcard_all_methods_conflict(main_app, test_db):
+    """payment_code '*' взаимоисключает с конкретными методами по той же валюте."""
+    priv, tron_address = _tron_key_and_address(b"guarantor-test-owner-wild")
+    space = "g_space_wildcard"
+    test_db.add(
+        WalletUser(
+            wallet_address=tron_address,
+            blockchain="tron",
+            did="did:tron:" + tron_address,
+            nickname=space,
+        )
+    )
+    await test_db.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=main_app),
+        base_url="http://test",
+    ) as client:
+        token = await _verify_tron(client, priv, tron_address)
+        headers = {"Authorization": f"Bearer {token}"}
+        post_body = {
+            "conditions_text": "Terms",
+            "sort_order": 0,
+        }
+
+        r1 = await client.post(
+            f"/v1/spaces/{space}/guarantor/directions",
+            headers=headers,
+            json={
+                **post_body,
+                "currency_code": "EUR",
+                "payment_code": "ALIPAY",
+                "payment_name": "Alipay",
+            },
+        )
+        assert r1.status_code == 200
+
+        r2 = await client.post(
+            f"/v1/spaces/{space}/guarantor/directions",
+            headers=headers,
+            json={
+                **post_body,
+                "currency_code": "EUR",
+                "payment_code": "*",
+                "payment_name": None,
+            },
+        )
+        assert r2.status_code == 400
+        assert r2.json().get("detail", {}).get("code") == "all_methods_blocked_by_specific"
+
+    priv2, tron2 = _tron_key_and_address(b"guarantor-test-owner-wild-b")
+    space2 = "g_space_wildcard_b"
+    test_db.add(
+        WalletUser(
+            wallet_address=tron2,
+            blockchain="tron",
+            did="did:tron:" + tron2,
+            nickname=space2,
+        )
+    )
+    await test_db.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=main_app),
+        base_url="http://test",
+    ) as client:
+        token = await _verify_tron(client, priv2, tron2)
+        headers = {"Authorization": f"Bearer {token}"}
+        post_body = {"conditions_text": "T", "sort_order": 0}
+
+        ra = await client.post(
+            f"/v1/spaces/{space2}/guarantor/directions",
+            headers=headers,
+            json={**post_body, "currency_code": "EUR", "payment_code": "*", "payment_name": "All"},
+        )
+        assert ra.status_code == 200
+
+        rb = await client.post(
+            f"/v1/spaces/{space2}/guarantor/directions",
+            headers=headers,
+            json={**post_body, "currency_code": "EUR", "payment_code": "SEPA", "payment_name": "SEPA"},
+        )
+        assert rb.status_code == 400
+        assert rb.json().get("detail", {}).get("code") == "specific_blocked_by_all_methods"
+
+    priv3, tron3 = _tron_key_and_address(b"guarantor-test-owner-wild-c")
+    space3 = "g_space_wildcard_c"
+    test_db.add(
+        WalletUser(
+            wallet_address=tron3,
+            blockchain="tron",
+            did="did:tron:" + tron3,
+            nickname=space3,
+        )
+    )
+    await test_db.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=main_app),
+        base_url="http://test",
+    ) as client:
+        token = await _verify_tron(client, priv3, tron3)
+        headers = {"Authorization": f"Bearer {token}"}
+        post_body = {"conditions_text": "T", "sort_order": 0}
+
+        rc = await client.post(
+            f"/v1/spaces/{space3}/guarantor/directions",
+            headers=headers,
+            json={**post_body, "currency_code": "EUR", "payment_code": "*", "payment_name": None},
+        )
+        assert rc.status_code == 200
+        rd = await client.post(
+            f"/v1/spaces/{space3}/guarantor/directions",
+            headers=headers,
+            json={**post_body, "currency_code": "USD", "payment_code": "CARD", "payment_name": "Card"},
+        )
+        assert rd.status_code == 200
+
+        r_dup = await client.post(
+            f"/v1/spaces/{space3}/guarantor/directions",
+            headers=headers,
+            json={**post_body, "currency_code": "EUR", "payment_code": "*", "payment_name": None},
+        )
+        assert r_dup.status_code == 400
+        assert r_dup.json().get("detail", {}).get("code") == "direction_already_exists"

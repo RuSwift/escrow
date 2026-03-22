@@ -73,3 +73,15 @@ class MissingNickname(Exception):
 
 class DuplicateParticipant(Exception):
     """Участник с таким адресом кошелька и сетью уже есть в спейсе."""
+
+
+class GuarantorDirectionValidationError(Exception):
+    """
+    Ошибка валидации при создании направления гаранта.
+    ``code`` — стабильный идентификатор для i18n на клиенте (например ``all_methods_blocked_by_specific``).
+    """
+
+    def __init__(self, code: str, message: str | None = None) -> None:
+        self.code = code
+        self.message = message or code
+        super().__init__(self.message)
