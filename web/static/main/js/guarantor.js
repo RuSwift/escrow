@@ -736,7 +736,7 @@
         },
         template: [
             '<div class="max-w-7xl mx-auto px-4 py-6 md:py-8">',
-            '  <div v-if="loading" class="text-sm text-[#58667e] py-8">{{ $t(\'main.guarantor.loading\') }}</div>',
+            '  <div v-if="loading" class="text-sm text-[#58667e] py-8">[[ $t(\'main.guarantor.loading\') ]]</div>',
             '  <div v-else-if="loadError" class="rounded-xl border border-red-200 bg-red-50 text-red-800 px-4 py-3 text-sm">[[ loadError ]]</div>',
             '  <div v-else class="flex flex-col lg:flex-row gap-6 lg:gap-8 lg:items-start">',
             '    <div class="flex-1 min-w-0 space-y-6">',
