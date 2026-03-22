@@ -1,6 +1,6 @@
 /**
  * Vue 2 компонент: Профиль спейса (main). Только для владельца.
- * GET/PATCH /v1/spaces/{space}/profile. Поля: description, icon (base64).
+ * GET/PATCH /v1/spaces/{space}/profile. Поля: description, company_name, icon (base64).
  */
 (function() {
     var PROFILE_ICON_MAX_LEN = 524288; // 512 KB (base64 length)
@@ -12,6 +12,7 @@
         data: function() {
             return {
                 description: '',
+                company_name: '',
                 icon: '',
                 loading: false,
                 error: null,
@@ -60,10 +61,12 @@
                     .then(function(data) {
                         if (!data || typeof data !== 'object') {
                             self.description = '';
+                            self.company_name = '';
                             self.icon = '';
                             return;
                         }
                         self.description = data.description || '';
+                        self.company_name = data.company_name || '';
                         self.icon = data.icon || '';
                     })
                     .catch(function(e) {
@@ -131,6 +134,7 @@
                 this.successMessage = null;
                 var body = JSON.stringify({
                     description: this.description || null,
+                    company_name: this.company_name || null,
                     icon: this.icon || null
                 });
                 fetch(base, {
@@ -193,9 +197,15 @@
             '            <button type="button" class="px-4 py-2.5 rounded-xl border border-[#eff2f5] text-sm font-medium text-[#191d23] hover:bg-gray-50 transition-colors" @click="generateAvatar">[[ $t(\'main.space_profile.generate_avatar\') ]]</button>',
             '          </div>',
             '        </div>',
-            '        <div class="flex-1 min-w-0">',
+            '        <div class="flex-1 min-w-0 space-y-5">',
+            '          <div>',
+            '            <label class="block text-xs font-bold text-[#58667e] uppercase tracking-wider mb-2">[[ $t(\'main.space_profile.form_company_name\') ]]</label>',
+            '            <input v-model="company_name" type="text" maxlength="255" class="w-full px-4 py-3 border border-[#eff2f5] rounded-xl text-sm text-[#191d23] placeholder-[#58667e] focus:outline-none focus:border-[#3861fb] focus:ring-2 focus:ring-[#3861fb]/20 transition-all" :placeholder="$t(\'main.space_profile.form_company_name_placeholder\')" />',
+            '          </div>',
+            '          <div>',
             '          <label class="block text-xs font-bold text-[#58667e] uppercase tracking-wider mb-2">[[ $t(\'main.space_profile.form_description\') ]]</label>',
             '          <textarea v-model="description" rows="5" class="w-full px-4 py-3 border border-[#eff2f5] rounded-xl text-sm text-[#191d23] placeholder-[#58667e] focus:outline-none focus:border-[#3861fb] focus:ring-2 focus:ring-[#3861fb]/20 transition-all resize-none" :placeholder="$t(\'main.space_profile.form_description_placeholder\')"></textarea>',
+            '          </div>',
             '        </div>',
             '      </div>',
             '      <div class="px-6 md:px-8 py-4 bg-gray-50/80 border-t border-[#eff2f5] flex justify-end">',

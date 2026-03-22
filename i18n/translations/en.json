@@ -218,6 +218,8 @@
   "main.my_business.my_commission_label": "My commission (%)",
   "main.my_business.connect_btn": "Connect",
   "main.space_profile.title": "Profile of space {{space}}",
+  "main.space_profile.form_company_name": "Company name",
+  "main.space_profile.form_company_name_placeholder": "Legal or brand name",
   "main.space_profile.form_description": "Description",
   "main.space_profile.form_description_placeholder": "Short description of the space",
   "main.space_profile.form_icon": "Icon",

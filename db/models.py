@@ -92,7 +92,7 @@ class WalletUser(Base):
     did = Column(String(300), unique=True, nullable=False, index=True, comment="Decentralized Identifier (DID)")
     nickname = Column(String(100), nullable=False, comment="User display name (unique)")
     avatar = Column(Text, nullable=True, comment="User avatar in base64 format (data:image/...)")
-    profile = Column(JSONB, nullable=True, default=None, comment="Space profile: description, icon (base64)")
+    profile = Column(JSONB, nullable=True, default=None, comment="Space profile: description, company_name, icon (base64)")
     access_to_admin_panel = Column(Boolean, default=False, nullable=False, comment="Access to admin panel")
     is_verified = Column(Boolean, default=False, nullable=False, comment="Whether the user is verified (document verification)")
     balance_usdt = Column(Numeric(20, 8), default=0, nullable=False, comment="USDT balance")

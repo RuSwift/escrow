@@ -17,8 +17,9 @@ logger = logging.getLogger(__name__)
 
 
 class WalletUserProfileSchema(BaseModel):
-    """Space profile: description and icon (base64). Stored in WalletUser.profile as JSON."""
+    """Space profile: description, company name, icon (base64). Stored in WalletUser.profile as JSON."""
     description: Optional[str] = None
+    company_name: Optional[str] = Field(default=None, max_length=255)
     icon: Optional[str] = None
 
 

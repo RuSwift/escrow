@@ -218,6 +218,8 @@
   "main.my_business.my_commission_label": "Моя комиссия (%)",
   "main.my_business.connect_btn": "Подключить",
   "main.space_profile.title": "Профиль пространства {{space}}",
+  "main.space_profile.form_company_name": "Фирменное название",
+  "main.space_profile.form_company_name_placeholder": "Название компании или бренда",
   "main.space_profile.form_description": "Описание",
   "main.space_profile.form_description_placeholder": "Краткое описание спейса",
   "main.space_profile.form_icon": "Иконка",

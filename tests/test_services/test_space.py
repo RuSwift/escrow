@@ -374,6 +374,18 @@ async def test_update_space_profile_icon_within_limit_succeeds(space_with_owner_
 
 
 @pytest.mark.asyncio
+async def test_space_profile_company_name_roundtrip(space_with_owner_and_sub, space_service):
+    """company_name сохраняется и возвращается в get_space_profile."""
+    await space_service.update_space_profile(
+        SPACE_NAME,
+        WALLET_OWNER,
+        WalletUserProfileSchema(company_name="ООО Ромашка"),
+    )
+    profile = await space_service.get_space_profile(SPACE_NAME, WALLET_OWNER)
+    assert profile.get("company_name") == "ООО Ромашка"
+
+
+@pytest.mark.asyncio
 async def test_space_profile_only_description(space_with_owner_and_sub, space_service):
     """Профиль только с description корректно сохраняется и читается."""
     await space_service.update_space_profile(
@@ -382,7 +394,11 @@ async def test_space_profile_only_description(space_with_owner_and_sub, space_se
         WalletUserProfileSchema(description="Desc only"),
     )
     profile = await space_service.get_space_profile(SPACE_NAME, WALLET_OWNER)
-    assert profile == {"description": "Desc only", "icon": None}
+    assert profile == {
+        "description": "Desc only",
+        "company_name": None,
+        "icon": None,
+    }
 
 
 @pytest.mark.asyncio
@@ -393,9 +409,22 @@ async def test_space_profile_get_space_profile_filled(space_with_owner_and_sub, 
     assert space_service.get_space_profile_filled({"description": "x"}) is True
     assert space_service.get_space_profile_filled({"icon": "data:image/png;base64,x"}) is True
     assert space_service.get_space_profile_filled({"description": "", "icon": None}) is False
+    assert space_service.get_space_profile_filled({"company_name": "Acme"}) is True
+    assert space_service.get_space_profile_filled({"description": "", "company_name": "", "icon": None}) is False
 
 
 # --- Валидация description (XSS, инъекции) ---
+
+
+@pytest.mark.asyncio
+async def test_update_space_profile_rejects_script_in_company_name(space_with_owner_and_sub, space_service):
+    """update_space_profile отклоняет company_name с тегом script."""
+    with pytest.raises(ValueError, match="script|HTML"):
+        await space_service.update_space_profile(
+            SPACE_NAME,
+            WALLET_OWNER,
+            WalletUserProfileSchema(company_name="Hello <script>alert(1)</script>"),
+        )
 
 
 @pytest.mark.asyncio

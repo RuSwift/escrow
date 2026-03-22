@@ -48,24 +48,33 @@ _PROFILE_DESCRIPTION_FORBIDDEN = (
 _PROFILE_DESCRIPTION_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
-def _validate_profile_description(description: Optional[str]) -> None:
+def _validate_profile_text_field(text: Optional[str], field_label: str) -> None:
     """
-    Проверяет description на вредоносные символы и типичные эксплойты инъекций (XSS, HTML).
-    При обнаружении опасного содержимого выбрасывает ValueError.
+    Проверяет произвольное текстовое поле профиля на XSS/HTML и управляющие символы.
+    field_label — префикс сообщений об ошибке, напр. «Profile description».
     """
-    if not description or not description.strip():
+    if not text or not text.strip():
         return
-    text = description
     if _PROFILE_DESCRIPTION_CONTROL_CHARS.search(text):
-        raise ValueError("Profile description must not contain control characters")
+        raise ValueError(f"{field_label} must not contain control characters")
     if "<" in text or ">" in text:
-        raise ValueError("Profile description must not contain HTML tags")
+        raise ValueError(f"{field_label} must not contain HTML tags")
     lower = text.lower()
     for forbidden in _PROFILE_DESCRIPTION_FORBIDDEN:
         if forbidden in lower:
             raise ValueError(
-                "Profile description must not contain script or event handler content"
+                f"{field_label} must not contain script or event handler content"
             )
+
+
+def _validate_profile_description(description: Optional[str]) -> None:
+    """Проверяет description профиля спейса (см. _validate_profile_text_field)."""
+    _validate_profile_text_field(description, "Profile description")
+
+
+def _validate_profile_company_name(company_name: Optional[str]) -> None:
+    """Проверяет фирменное название в профиле спейса (см. _validate_profile_text_field)."""
+    _validate_profile_text_field(company_name, "Profile company name")
 
 
 def validate_wallet_address(blockchain: str, wallet_address: str) -> bool:
@@ -229,7 +238,7 @@ class SpaceService:
     async def get_space_profile(
         self, space: str, actor_wallet_address: str
     ) -> Optional[Dict[str, Any]]:
-        """Профиль спейса (description, icon). Только owner. Возвращает dict или None."""
+        """Профиль спейса (description, company_name, icon). Только owner. Возвращает dict или None."""
         await self._ensure_owner_and_owner_id(space, actor_wallet_address)
         owner = await self._repo.get_by_nickname(space)
         if not owner or not owner.profile:
@@ -251,6 +260,7 @@ class SpaceService:
         if profile.icon is not None and len(profile.icon) > PROFILE_ICON_MAX_BASE64_LEN:
             raise ValueError("Profile icon size is too large (max 512 KB)")
         _validate_profile_description(profile.description)
+        _validate_profile_company_name(profile.company_name)
         patch_data = WalletUserResource.Patch(profile=profile)
         updated = await self._repo.patch(owner_id, patch_data)
         if updated:
@@ -261,10 +271,14 @@ class SpaceService:
     def get_space_profile_filled(
         self, profile: Optional[Dict[str, Any]]
     ) -> bool:
-        """True если профиль заполнен (есть description или icon)."""
+        """True если профиль заполнен (есть description, company_name или icon)."""
         if not profile:
             return False
-        return bool(profile.get("description") or profile.get("icon"))
+        return bool(
+            profile.get("description")
+            or profile.get("company_name")
+            or profile.get("icon")
+        )
 
 
 __all__ = [
