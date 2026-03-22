@@ -38,7 +38,7 @@ async def main_app_autocomplete(test_db, test_redis, test_settings):
 
 
 @pytest.mark.asyncio
-async def test_autocomplete_cities_and_directions(main_app_autocomplete, test_db):
+async def test_autocomplete_cities_and_directions(main_app_autocomplete, test_db, monkeypatch):
     snap = BestchangeYamlSnapshot(
         file_hash="f" * 64,
         exported_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
@@ -74,6 +74,14 @@ async def test_autocomplete_cities_and_directions(main_app_autocomplete, test_db
         assert r_d.status_code == 200
         data_d = r_d.json()
         assert data_d["items"] == [{"payment_code": "PM1", "cur": "USD", "name": "One"}]
+        assert data_d.get("total_for_cur") is None
+
+        r_d_usd_total = await client.get(
+            "/v1/autocomplete/directions",
+            params={"locale": "en", "limit": 5, "cur": "USD"},
+        )
+        assert r_d_usd_total.status_code == 200
+        assert r_d_usd_total.json()["total_for_cur"] == 1
 
         r_cur = await client.get("/v1/autocomplete/currencies", params={"q": "US"})
         assert r_cur.status_code == 200
@@ -93,26 +101,36 @@ async def test_autocomplete_cities_and_directions(main_app_autocomplete, test_db
         assert r_d_filtered_out.status_code == 200
         assert r_d_filtered_out.json()["items"] == []
 
+        r_no_q_cities = await client.get(
+            "/v1/autocomplete/cities",
+            params={"locale": "en", "limit": 5},
+        )
+        assert r_no_q_cities.status_code == 200
+        assert r_no_q_cities.json()["items"] == [{"id": 10, "name": "City"}]
 
-@pytest.mark.asyncio
-async def test_autocomplete_q_min_length_400(main_app_autocomplete):
-    detail = (
-        "Параметр q обязателен: минимум 1 значащий символ после удаления пробелов по краям."
-    )
-    transport = ASGITransport(app=main_app_autocomplete)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        r1 = await client.get("/v1/autocomplete/cities", params={"locale": "en"})
-        assert r1.status_code == 400
-        assert r1.json()["detail"] == detail
+        r_no_q_cur = await client.get("/v1/autocomplete/currencies", params={"limit": 5})
+        assert r_no_q_cur.status_code == 200
+        assert [x["code"] for x in r_no_q_cur.json()["items"]] == ["EUR", "USD"]
 
-        r2 = await client.get("/v1/autocomplete/cities", params={"locale": "en", "q": ""})
-        assert r2.status_code == 400
-        assert r2.json()["detail"] == detail
+        from services import guarantor as guarantor_svc
 
-        r3 = await client.get("/v1/autocomplete/cities", params={"locale": "en", "q": "   "})
-        assert r3.status_code == 400
-        assert r3.json()["detail"] == detail
+        async def fake_forex_codes(_repo, _redis, _settings):
+            return {"USD", "EUR", "RUB", "CNY"}
 
-        r4 = await client.get("/v1/autocomplete/directions", params={})
-        assert r4.status_code == 400
-        assert r4.json()["detail"] == detail
+        monkeypatch.setattr(guarantor_svc, "async_forex_supported_codes", fake_forex_codes)
+        r_fiat = await client.get(
+            "/v1/autocomplete/currencies",
+            params={"is_fiat": "true", "limit": 10},
+        )
+        assert r_fiat.status_code == 200
+        fiat_codes = [x["code"] for x in r_fiat.json()["items"]]
+        # Пустой q: порядок Settings.system_currencies (дефолт RUB,CNY,USD,EUR), затем прочие по коду
+        assert fiat_codes == ["RUB", "CNY", "USD", "EUR"]
+
+        r_no_q_dir = await client.get(
+            "/v1/autocomplete/directions",
+            params={"locale": "en", "limit": 5},
+        )
+        assert r_no_q_dir.status_code == 200
+        assert r_no_q_dir.json().get("total_for_cur") is None
+        assert len(r_no_q_dir.json()["items"]) == 2

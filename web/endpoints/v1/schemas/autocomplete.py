@@ -21,6 +21,10 @@ class AutocompleteDirectionItem(BaseModel):
 
 class AutocompleteDirectionsResponse(BaseModel):
     items: list[AutocompleteDirectionItem]
+    total_for_cur: int | None = Field(
+        default=None,
+        description="Сколько платёжных методов для cur в снимке; только если query-параметр cur задан.",
+    )
 
 
 class AutocompleteCurrencyItem(BaseModel):

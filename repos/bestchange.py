@@ -2,6 +2,7 @@
 Репозиторий по снимку BestChange (bestchange_yaml_snapshots): только строка с max(id).
 Данные из payload разворачиваются в «таблицы» платёжных методов и городов с учётом языка (i18n).
 Кеш в Redis с инвалидацией при смене max(id).
+Опционально: список кодов forex-валют в payload.forex_currencies (или meta.forex_currencies) для autocomplete is_fiat.
 """
 from __future__ import annotations
 
@@ -25,6 +26,8 @@ Kind = Literal["payment_methods", "cities", "currencies"]
 
 _REDIS_SID = "bestchange_yaml:sid"
 _REDIS_DATA = "bestchange_yaml:data"
+_REDIS_FOREX_SID = "bestchange_yaml:forex_sid"
+_REDIS_FOREX_CODES = "bestchange_yaml:forex_codes"
 # Подстраховка, если БД очищена без сброса Redis
 _CACHE_TTL_SEC = 86400 * 7
 
@@ -32,6 +35,27 @@ _CACHE_TTL_SEC = 86400 * 7
 def _casefold_ci(s: str) -> str:
     """Безрегистровое сравнение подстрок (Unicode, предпочтительнее чем lower())."""
     return (s or "").casefold()
+
+
+def _forex_currency_codes_from_payload(payload: dict[str, Any]) -> set[str]:
+    """
+    Коды из необязательного списка forex_currencies в корне payload или в meta.
+    Пустой набор, если ключа нет или список пуст — тогда autocomplete is_fiat использует Forex ratios.
+    """
+    raw = payload.get("forex_currencies")
+    if raw is None:
+        meta = payload.get("meta")
+        if isinstance(meta, dict):
+            raw = meta.get("forex_currencies")
+    if raw is None:
+        return set()
+    if not isinstance(raw, list):
+        return set()
+    out: set[str] = set()
+    for item in raw:
+        if isinstance(item, str) and item.strip():
+            out.add(item.strip().upper())
+    return out
 
 
 def _locale_provided(locale: str | None) -> bool:
@@ -123,8 +147,16 @@ def _city_id_matches_any_locale(tables: dict[str, Any], city_id: int, needle: st
     return False
 
 
-def _filter_pm_all_locales(tables: dict[str, Any], q: str | None, limit: int) -> list[PaymentMethodRow]:
+def _filter_pm_all_locales(
+    tables: dict[str, Any],
+    q: str | None,
+    limit: int,
+    cur: str | None = None,
+) -> list[PaymentMethodRow]:
     canonical = _canonical_pm_map(tables)
+    if cur and str(cur).strip():
+        want = _casefold_ci(str(cur).strip())
+        canonical = {k: v for k, v in canonical.items() if _casefold_ci(v.cur) == want}
     if not canonical:
         return []
     if not q or not str(q).strip():
@@ -190,6 +222,20 @@ def _filter_cities_all_locales(tables: dict[str, Any], q: str | None, limit: int
     return out
 
 
+def _pm_count_for_currency(tables: dict[str, Any], locale: str | None, cur: str) -> int:
+    """Сколько платёжных методов с данной валютой в снимке (без учёта q и limit)."""
+    if not cur or not str(cur).strip():
+        return 0
+    cur_s = str(cur).strip()
+    if not _locale_provided(locale):
+        canonical = _canonical_pm_map(tables)
+        want = _casefold_ci(cur_s)
+        return sum(1 for v in canonical.values() if _casefold_ci(v.cur) == want)
+    loc = normalize_locale(locale)
+    rows_pm = tables["payment_methods"][loc]
+    return len(_filter_pm_by_cur(rows_pm, cur_s))
+
+
 class PaymentMethodRow(BaseModel):
     payment_code: str
     cur: str
@@ -228,21 +274,35 @@ class BestchangeYamlRepository(BaseRepository):
         Список для autocomplete. Если locale не задан — поиск по всем локалям (имена en, ru, …);
         в ответе name как у локали en, иначе первая доступная. Если locale задан — только эта локаль.
         Для kind=currencies locale не влияет на набор кодов (уникальные cur из платёжных методов).
-        Для payment_methods при непустом cur — только методы с этой валютой (безрегистровое сравнение).
+        Для payment_methods при непустом cur — только методы с этой валютой (безрегистровое сравнение);
+        limit и q применяются уже внутри этой выборки (при пустом q — первые limit методов по валюте).
         """
         tables = await self._tables()
         if kind == "currencies":
             return _filter_currencies(tables, q, limit)
         if not _locale_provided(locale):
             if kind == "payment_methods":
-                return _filter_pm_by_cur(_filter_pm_all_locales(tables, q, limit), cur)
+                return _filter_pm_all_locales(tables, q, limit, cur)
             return _filter_cities_all_locales(tables, q, limit)
         loc = normalize_locale(locale)
         if kind == "payment_methods":
             rows_pm: list[PaymentMethodRow] = tables["payment_methods"][loc]
-            return _filter_pm_by_cur(self._filter_pm(rows_pm, q, limit), cur)
+            rows_scoped = _filter_pm_by_cur(rows_pm, cur)
+            return self._filter_pm(rows_scoped, q, limit)
         rows_c: list[CityRow] = tables["cities"][loc]
         return self._filter_cities(rows_c, q, limit)
+
+    async def count_payment_methods_for_currency(
+        self,
+        *,
+        locale: str | None = None,
+        cur: str | None = None,
+    ) -> int | None:
+        """Число методов для ``cur`` в снимке; ``None`` если ``cur`` не задан."""
+        if cur is None or not str(cur).strip():
+            return None
+        tables = await self._tables()
+        return _pm_count_for_currency(tables, locale, str(cur).strip())
 
     async def get(
         self,
@@ -268,9 +328,46 @@ class BestchangeYamlRepository(BaseRepository):
                 return row
         return None
 
+    async def snapshot_forex_currency_codes(self) -> set[str]:
+        """
+        Коды forex из последнего снимка: ``forex_currencies`` в корне payload или в ``meta``.
+        Если ключа нет или список пуст — ``set()`` (для autocomplete is_fiat тогда используют Forex ratios).
+        Кеш Redis по ``max(id)`` снимка.
+        """
+        max_id = await self._scalar_max_id()
+        if max_id is None:
+            await self._redis.delete(_REDIS_FOREX_SID, _REDIS_FOREX_CODES)
+            return set()
+
+        sid_raw = await self._redis.get(_REDIS_FOREX_SID)
+        data_raw = await self._redis.get(_REDIS_FOREX_CODES)
+        if sid_raw == str(max_id) and data_raw is not None:
+            try:
+                arr = json.loads(data_raw)
+                if isinstance(arr, list):
+                    return {str(x).strip().upper() for x in arr if str(x).strip()}
+            except (json.JSONDecodeError, TypeError) as e:
+                logger.warning("bestchange_yaml: повреждённый кеш forex_codes, пересборка: %s", e)
+
+        stmt = select(BestchangeYamlSnapshot).where(BestchangeYamlSnapshot.id == max_id)
+        result = await self._session.execute(stmt)
+        row = result.scalar_one_or_none()
+        if row is None or row.payload is None:
+            await self._redis.delete(_REDIS_FOREX_SID, _REDIS_FOREX_CODES)
+            return set()
+
+        pl = row.payload if isinstance(row.payload, dict) else {}
+        codes = _forex_currency_codes_from_payload(pl)
+        payload_list = sorted(codes)
+        pipe = self._redis.pipeline()
+        pipe.set(_REDIS_FOREX_SID, str(max_id), ex=_CACHE_TTL_SEC)
+        pipe.set(_REDIS_FOREX_CODES, json.dumps(payload_list, ensure_ascii=False), ex=_CACHE_TTL_SEC)
+        await pipe.execute()
+        return codes
+
     async def patch(self) -> None:
         """Сбросить кеш Redis; данные пересоберутся из БД при следующем list/get."""
-        await self._redis.delete(_REDIS_SID, _REDIS_DATA)
+        await self._redis.delete(_REDIS_SID, _REDIS_DATA, _REDIS_FOREX_SID, _REDIS_FOREX_CODES)
 
     @staticmethod
     def _filter_pm(rows: list[PaymentMethodRow], q: str | None, limit: int) -> list[PaymentMethodRow]:
@@ -314,7 +411,7 @@ class BestchangeYamlRepository(BaseRepository):
         """
         max_id = await self._scalar_max_id()
         if max_id is None:
-            await self._redis.delete(_REDIS_SID, _REDIS_DATA)
+            await self._redis.delete(_REDIS_SID, _REDIS_DATA, _REDIS_FOREX_SID, _REDIS_FOREX_CODES)
             return _empty_tables()
 
         sid_raw = await self._redis.get(_REDIS_SID)
@@ -330,7 +427,7 @@ class BestchangeYamlRepository(BaseRepository):
         result = await self._session.execute(stmt)
         row = result.scalar_one_or_none()
         if row is None or row.payload is None:
-            await self._redis.delete(_REDIS_SID, _REDIS_DATA)
+            await self._redis.delete(_REDIS_SID, _REDIS_DATA, _REDIS_FOREX_SID, _REDIS_FOREX_CODES)
             return _empty_tables()
 
         built = _build_tables_from_payload(row.payload)

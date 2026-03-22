@@ -255,3 +255,88 @@ async def test_list_payment_methods_filter_by_cur(bestchange_repo: BestchangeYam
 
     beta_usd = await bestchange_repo.list("payment_methods", locale="en", q="Beta", cur="usd", limit=10)
     assert len(beta_usd) == 1 and beta_usd[0].payment_code == "PM_USD"
+
+
+@pytest.mark.asyncio
+async def test_list_payment_methods_empty_q_cur_before_limit(bestchange_repo: BestchangeYamlRepository, test_db):
+    """При пустом q limit применяется среди методов с выбранной валютой, не по всем методам сразу."""
+    snap = BestchangeYamlSnapshot(
+        file_hash="cur" + "0" * 61,
+        exported_at=datetime(2025, 11, 15, tzinfo=timezone.utc),
+        payload={
+            "payment_methods": [
+                {"payment_code": "E1", "cur": "EUR", "payment_name": "E one", "payment_name_en": "E one"},
+                {"payment_code": "E2", "cur": "EUR", "payment_name": "E two", "payment_name_en": "E two"},
+                {"payment_code": "E3", "cur": "EUR", "payment_name": "E three", "payment_name_en": "E three"},
+                {"payment_code": "E4", "cur": "EUR", "payment_name": "E four", "payment_name_en": "E four"},
+                {"payment_code": "E5", "cur": "EUR", "payment_name": "E five", "payment_name_en": "E five"},
+                {"payment_code": "U1", "cur": "USD", "payment_name": "U one", "payment_name_en": "U one"},
+                {"payment_code": "U2", "cur": "USD", "payment_name": "U two", "payment_name_en": "U two"},
+                {"payment_code": "U3", "cur": "USD", "payment_name": "U three", "payment_name_en": "U three"},
+                {"payment_code": "U4", "cur": "USD", "payment_name": "U four", "payment_name_en": "U four"},
+                {"payment_code": "U5", "cur": "USD", "payment_name": "U five", "payment_name_en": "U five"},
+            ],
+            "cities": [],
+        },
+    )
+    test_db.add(snap)
+    await test_db.commit()
+
+    rows = await bestchange_repo.list("payment_methods", locale="en", q=None, cur="USD", limit=5)
+    # Порядок как в снимке: сортировка по name.lower(), затем payment_code
+    assert [r.payment_code for r in rows] == ["U5", "U4", "U1", "U3", "U2"]
+
+    n = await bestchange_repo.count_payment_methods_for_currency(locale="en", cur="USD")
+    assert n == 5
+
+
+@pytest.mark.asyncio
+async def test_snapshot_forex_currency_codes(bestchange_repo: BestchangeYamlRepository, test_db):
+    snap = BestchangeYamlSnapshot(
+        file_hash="fx" + "0" * 62,
+        exported_at=datetime(2025, 10, 1, tzinfo=timezone.utc),
+        payload={
+            "payment_methods": [
+                {"payment_code": "P", "cur": "USD", "payment_name": "a", "payment_name_en": "a"},
+            ],
+            "cities": [],
+            "forex_currencies": ["usd", "GBP", "  "],
+        },
+    )
+    test_db.add(snap)
+    await test_db.commit()
+
+    codes = await bestchange_repo.snapshot_forex_currency_codes()
+    assert codes == {"USD", "GBP"}
+
+    await bestchange_repo.patch()
+    codes2 = await bestchange_repo.snapshot_forex_currency_codes()
+    assert codes2 == {"USD", "GBP"}
+
+
+@pytest.mark.asyncio
+async def test_snapshot_forex_currency_codes_from_meta(bestchange_repo: BestchangeYamlRepository, test_db):
+    snap = BestchangeYamlSnapshot(
+        file_hash="fy" + "0" * 62,
+        exported_at=datetime(2025, 11, 1, tzinfo=timezone.utc),
+        payload={
+            "meta": {"forex_currencies": ["CHF"]},
+            "payment_methods": [],
+            "cities": [],
+        },
+    )
+    test_db.add(snap)
+    await test_db.commit()
+    assert await bestchange_repo.snapshot_forex_currency_codes() == {"CHF"}
+
+
+@pytest.mark.asyncio
+async def test_snapshot_forex_currency_codes_empty_without_key(bestchange_repo: BestchangeYamlRepository, test_db):
+    snap = BestchangeYamlSnapshot(
+        file_hash="fz" + "0" * 62,
+        exported_at=datetime(2025, 12, 1, tzinfo=timezone.utc),
+        payload={"payment_methods": [], "cities": []},
+    )
+    test_db.add(snap)
+    await test_db.commit()
+    assert await bestchange_repo.snapshot_forex_currency_codes() == set()
