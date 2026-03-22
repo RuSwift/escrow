@@ -1,4 +1,4 @@
-"""Схемы ответов для GET /v1/autocomplete/cities и /v1/autocomplete/directions."""
+"""Схемы ответов для GET /v1/autocomplete/cities, directions, currencies."""
 from pydantic import BaseModel, Field
 
 
@@ -21,3 +21,11 @@ class AutocompleteDirectionItem(BaseModel):
 
 class AutocompleteDirectionsResponse(BaseModel):
     items: list[AutocompleteDirectionItem]
+
+
+class AutocompleteCurrencyItem(BaseModel):
+    code: str = Field(description="Код валюты (поле cur из bc.yaml)")
+
+
+class AutocompleteCurrenciesResponse(BaseModel):
+    items: list[AutocompleteCurrencyItem]

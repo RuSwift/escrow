@@ -10,6 +10,8 @@ from web.endpoints.dependencies import BestchangeRepoDep
 from web.endpoints.v1.schemas.autocomplete import (
     AutocompleteCitiesResponse,
     AutocompleteCityItem,
+    AutocompleteCurrenciesResponse,
+    AutocompleteCurrencyItem,
     AutocompleteDirectionItem,
     AutocompleteDirectionsResponse,
 )
@@ -61,12 +63,27 @@ async def autocomplete_directions(
         description="Код языка как в i18n (en, ru). Если не указан — поиск по всем локалям; в ответе имена в основном как en.",
     ),
     limit: int = Query(50, ge=1, le=200),
+    cur: str | None = Query(
+        None,
+        description="Если указан — только платёжные методы с этой валютой (поле cur).",
+    ),
 ):
     """Подсказки направлений оплаты (платёжные методы) из bc.yaml."""
-    rows = await repo.list("payment_methods", locale=locale, q=q, limit=limit)
+    rows = await repo.list("payment_methods", locale=locale, q=q, limit=limit, cur=cur)
     return AutocompleteDirectionsResponse(
         items=[
             AutocompleteDirectionItem(payment_code=r.payment_code, cur=r.cur, name=r.name)
             for r in rows
         ],
     )
+
+
+@router.get("/currencies", response_model=AutocompleteCurrenciesResponse)
+async def autocomplete_currencies(
+    repo: BestchangeRepoDep,
+    q: AutocompleteQ,
+    limit: int = Query(50, ge=1, le=200),
+):
+    """Подсказки валют — уникальные коды cur из платёжных методов снимка bc.yaml (язык не влияет на коды)."""
+    rows = await repo.list("currencies", q=q, limit=limit)
+    return AutocompleteCurrenciesResponse(items=[AutocompleteCurrencyItem(code=r.code) for r in rows])

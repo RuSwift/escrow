@@ -804,3 +804,153 @@ class DashboardState(Base):
 
     def __repr__(self) -> str:
         return f"<DashboardState(id={self.id}, updated_at={self.updated_at})>"
+
+
+class GuarantorDirection(Base):
+    """
+    Направление работы гаранта в разрезе space: валюта и платёжный метод из снимка BestChange (cur, payment_code),
+    текст условий и опциональная комиссия по направлению.
+    """
+
+    __tablename__ = "guarantor_directions"
+    __table_args__ = (
+        UniqueConstraint(
+            "space",
+            "currency_code",
+            "payment_code",
+            name="uq_guarantor_directions_space_cur_pm",
+        ),
+        Index("ix_guarantor_directions_space_sort", "space", "sort_order"),
+    )
+
+    id = Column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+        index=True,
+        comment="Идентификатор направления",
+    )
+    space = Column(
+        String(255),
+        nullable=False,
+        index=True,
+        comment="Идентификатор space (как в URL /{space}/…)",
+    )
+    currency_code = Column(
+        String(64),
+        nullable=False,
+        comment="Код валюты (поле cur из bc.yaml / BestChange)",
+    )
+    payment_code = Column(
+        String(128),
+        nullable=False,
+        comment="Код платёжного метода (payment_code в bc.yaml)",
+    )
+    payment_name = Column(
+        String(512),
+        nullable=True,
+        comment="Локализованное имя метода на момент сохранения (подсказка для UI)",
+    )
+    conditions_text = Column(
+        Text,
+        nullable=True,
+        comment="Описание условий по направлению",
+    )
+    commission_percent = Column(
+        Numeric(10, 6),
+        nullable=True,
+        comment="Комиссия гаранта по направлению, %; NULL — использовать общую настройку",
+    )
+    sort_order = Column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+        comment="Порядок отображения (меньше — выше)",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        comment="Создано (UTC)",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+        comment="Обновлено (UTC)",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<GuarantorDirection(id={self.id}, space={self.space!r}, "
+            f"cur={self.currency_code}, pm={self.payment_code})>"
+        )
+
+
+class GuarantorProfile(Base):
+    """
+    Общие условия гаранта для пары (WalletUser, space): одна строка на пользователя и space.
+    Направления (валюта/метод) хранятся в ``GuarantorDirection``.
+    """
+
+    __tablename__ = "guarantor_profiles"
+    __table_args__ = (
+        UniqueConstraint(
+            "wallet_user_id",
+            "space",
+            name="uq_guarantor_profiles_wallet_space",
+        ),
+        Index("ix_guarantor_profiles_wallet_space", "wallet_user_id", "space"),
+    )
+
+    id = Column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+        index=True,
+        comment="Идентификатор профиля гаранта",
+    )
+    wallet_user_id = Column(
+        Integer,
+        ForeignKey("wallet_users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="Владелец настроек гаранта в данном space",
+    )
+    space = Column(
+        String(255),
+        nullable=False,
+        index=True,
+        comment="Идентификатор space (как в URL /{space}/…)",
+    )
+    commission_percent = Column(
+        Numeric(10, 6),
+        nullable=True,
+        comment="Базовая комиссия гаранта для панели, %",
+    )
+    conditions_text = Column(
+        Text,
+        nullable=True,
+        comment="Общие условия работы гаранта в этом space",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        comment="Создано (UTC)",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+        comment="Обновлено (UTC)",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<GuarantorProfile(id={self.id}, wallet_user_id={self.wallet_user_id}, "
+            f"space={self.space!r})>"
+        )

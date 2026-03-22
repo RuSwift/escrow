@@ -21,7 +21,7 @@ from settings import Settings
 
 logger = logging.getLogger(__name__)
 
-Kind = Literal["payment_methods", "cities"]
+Kind = Literal["payment_methods", "cities", "currencies"]
 
 _REDIS_SID = "bestchange_yaml:sid"
 _REDIS_DATA = "bestchange_yaml:data"
@@ -143,6 +143,33 @@ def _filter_pm_all_locales(tables: dict[str, Any], q: str | None, limit: int) ->
     return out
 
 
+def _filter_pm_by_cur(rows: list[PaymentMethodRow], cur: str | None) -> list[PaymentMethodRow]:
+    if not cur or not str(cur).strip():
+        return rows
+    want = _casefold_ci(str(cur).strip())
+    return [r for r in rows if _casefold_ci(r.cur) == want]
+
+
+def _filter_currencies(tables: dict[str, Any], q: str | None, limit: int) -> list[CurrencyRow]:
+    canonical = _canonical_pm_map(tables)
+    codes_set: set[str] = set()
+    for r in canonical.values():
+        c = (r.cur or "").strip()
+        if c:
+            codes_set.add(c)
+    codes_sorted = sorted(codes_set, key=lambda x: _casefold_ci(x))
+    if not q or not str(q).strip():
+        return [CurrencyRow(code=c) for c in codes_sorted[:limit]]
+    needle = _casefold_ci(str(q).strip())
+    out: list[CurrencyRow] = []
+    for c in codes_sorted:
+        if needle in _casefold_ci(c):
+            out.append(CurrencyRow(code=c))
+            if len(out) >= limit:
+                break
+    return out
+
+
 def _filter_cities_all_locales(tables: dict[str, Any], q: str | None, limit: int) -> list[CityRow]:
     canonical = _canonical_city_map(tables)
     if not canonical:
@@ -174,6 +201,12 @@ class CityRow(BaseModel):
     name: str = Field(description="Отображаемое имя для выбранной локали")
 
 
+class CurrencyRow(BaseModel):
+    """Уникальный код валюты (поле cur) из платёжных методов снимка."""
+
+    code: str
+
+
 class BestchangeYamlRepository(BaseRepository):
     """
     Чтение последнего снимка bc.yaml (max(id)), списки для autocomplete с Redis-кешем.
@@ -189,20 +222,25 @@ class BestchangeYamlRepository(BaseRepository):
         locale: str | None = None,
         q: str | None = None,
         limit: int = 50,
-    ) -> list[PaymentMethodRow] | list[CityRow]:
+        cur: str | None = None,
+    ) -> list[PaymentMethodRow] | list[CityRow] | list[CurrencyRow]:
         """
         Список для autocomplete. Если locale не задан — поиск по всем локалям (имена en, ru, …);
         в ответе name как у локали en, иначе первая доступная. Если locale задан — только эта локаль.
+        Для kind=currencies locale не влияет на набор кодов (уникальные cur из платёжных методов).
+        Для payment_methods при непустом cur — только методы с этой валютой (безрегистровое сравнение).
         """
         tables = await self._tables()
+        if kind == "currencies":
+            return _filter_currencies(tables, q, limit)
         if not _locale_provided(locale):
             if kind == "payment_methods":
-                return _filter_pm_all_locales(tables, q, limit)
+                return _filter_pm_by_cur(_filter_pm_all_locales(tables, q, limit), cur)
             return _filter_cities_all_locales(tables, q, limit)
         loc = normalize_locale(locale)
         if kind == "payment_methods":
-            rows: list[PaymentMethodRow] = tables["payment_methods"][loc]
-            return self._filter_pm(rows, q, limit)
+            rows_pm: list[PaymentMethodRow] = tables["payment_methods"][loc]
+            return _filter_pm_by_cur(self._filter_pm(rows_pm, q, limit), cur)
         rows_c: list[CityRow] = tables["cities"][loc]
         return self._filter_cities(rows_c, q, limit)
 
@@ -214,6 +252,8 @@ class BestchangeYamlRepository(BaseRepository):
         locale: str | None = None,
     ) -> PaymentMethodRow | CityRow | None:
         """Один платёжный метод по payment_code или город по id."""
+        if kind == "currencies":
+            return None
         loc = normalize_locale(locale)
         tables = await self._tables()
         if kind == "payment_methods":

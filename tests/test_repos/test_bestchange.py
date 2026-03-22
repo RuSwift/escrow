@@ -193,3 +193,65 @@ async def test_list_without_locale_searches_all_localized_names(bestchange_repo:
     city_all = await bestchange_repo.list("cities", locale=None, q="Тул", limit=10)
     assert len(city_all) == 1 and city_all[0].id == 7
     assert city_all[0].name == "Tula"
+
+
+@pytest.mark.asyncio
+async def test_list_currencies(bestchange_repo: BestchangeYamlRepository, test_db):
+    snap = BestchangeYamlSnapshot(
+        file_hash="g" * 64,
+        exported_at=datetime(2025, 8, 1, tzinfo=timezone.utc),
+        payload={
+            "payment_methods": [
+                {"payment_code": "A", "cur": "USD", "payment_name": "a", "payment_name_en": "a"},
+                {"payment_code": "B", "cur": "EUR", "payment_name": "b", "payment_name_en": "b"},
+                {"payment_code": "C", "cur": "USD", "payment_name": "c", "payment_name_en": "c"},
+            ],
+            "cities": [],
+        },
+    )
+    test_db.add(snap)
+    await test_db.commit()
+
+    rows = await bestchange_repo.list("currencies", q="us", limit=10)
+    assert [r.code for r in rows] == ["USD"]
+
+    all_codes = await bestchange_repo.list("currencies", q=None, limit=10)
+    assert sorted(r.code for r in all_codes) == ["EUR", "USD"]
+
+    assert await bestchange_repo.get("currencies", ref="x") is None
+
+
+@pytest.mark.asyncio
+async def test_list_payment_methods_filter_by_cur(bestchange_repo: BestchangeYamlRepository, test_db):
+    snap = BestchangeYamlSnapshot(
+        file_hash="h" * 64,
+        exported_at=datetime(2025, 9, 1, tzinfo=timezone.utc),
+        payload={
+            "payment_methods": [
+                {
+                    "payment_code": "PM_EUR",
+                    "cur": "EUR",
+                    "payment_name": "Альфа",
+                    "payment_name_en": "Alpha pay",
+                },
+                {
+                    "payment_code": "PM_USD",
+                    "cur": "USD",
+                    "payment_name": "Бета",
+                    "payment_name_en": "Beta pay",
+                },
+            ],
+            "cities": [],
+        },
+    )
+    test_db.add(snap)
+    await test_db.commit()
+
+    eur = await bestchange_repo.list("payment_methods", locale="en", q="Alpha", cur="EUR", limit=10)
+    assert len(eur) == 1 and eur[0].payment_code == "PM_EUR"
+
+    usd_empty = await bestchange_repo.list("payment_methods", locale="en", q="Alpha", cur="USD", limit=10)
+    assert len(usd_empty) == 0
+
+    beta_usd = await bestchange_repo.list("payment_methods", locale="en", q="Beta", cur="usd", limit=10)
+    assert len(beta_usd) == 1 and beta_usd[0].payment_code == "PM_USD"

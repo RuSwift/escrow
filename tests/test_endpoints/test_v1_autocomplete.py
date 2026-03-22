@@ -1,4 +1,4 @@
-"""GET /v1/autocomplete/cities и /v1/autocomplete/directions."""
+"""GET /v1/autocomplete/cities, directions, currencies."""
 from datetime import datetime, timezone
 
 import pytest
@@ -50,6 +50,12 @@ async def test_autocomplete_cities_and_directions(main_app_autocomplete, test_db
                     "payment_name": "Один",
                     "payment_name_en": "One",
                 },
+                {
+                    "payment_code": "PM2",
+                    "cur": "EUR",
+                    "payment_name": "Два",
+                    "payment_name_en": "Two",
+                },
             ],
             "cities": [{"id": 10, "name": "Город", "name_en": "City"}],
         },
@@ -68,6 +74,24 @@ async def test_autocomplete_cities_and_directions(main_app_autocomplete, test_db
         assert r_d.status_code == 200
         data_d = r_d.json()
         assert data_d["items"] == [{"payment_code": "PM1", "cur": "USD", "name": "One"}]
+
+        r_cur = await client.get("/v1/autocomplete/currencies", params={"q": "US"})
+        assert r_cur.status_code == 200
+        assert r_cur.json()["items"] == [{"code": "USD"}]
+
+        r_d_eur = await client.get(
+            "/v1/autocomplete/directions",
+            params={"locale": "en", "q": "Two", "cur": "EUR"},
+        )
+        assert r_d_eur.status_code == 200
+        assert r_d_eur.json()["items"] == [{"payment_code": "PM2", "cur": "EUR", "name": "Two"}]
+
+        r_d_filtered_out = await client.get(
+            "/v1/autocomplete/directions",
+            params={"locale": "en", "q": "One", "cur": "EUR"},
+        )
+        assert r_d_filtered_out.status_code == 200
+        assert r_d_filtered_out.json()["items"] == []
 
 
 @pytest.mark.asyncio

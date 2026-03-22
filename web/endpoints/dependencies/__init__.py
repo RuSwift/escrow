@@ -16,6 +16,7 @@ from db import get_db
 from db.models import AdminUser
 from repos.bestchange import BestchangeYamlRepository
 from repos.dashboard import DashboardStateRepository
+from repos.guarantor_direction import GuarantorDirectionRepository
 from repos.node import NodeRepository
 from services.admin import AdminService
 from services.arbiter import ArbiterService
@@ -237,6 +238,15 @@ def get_dashboard_state_repository(db: DbSession) -> DashboardStateRepository:
     return DashboardStateRepository(session=db)
 
 
+def get_guarantor_direction_repository(
+    db: DbSession,
+    redis: RedisClient,
+    settings: AppSettings,
+) -> GuarantorDirectionRepository:
+    """Направления гаранта по space (таблица ``guarantor_directions``)."""
+    return GuarantorDirectionRepository(session=db, redis=redis, settings=settings.settings)
+
+
 async def get_admin(
     request: Request,
     credentials: Annotated[
@@ -293,6 +303,10 @@ DashboardServiceDep = Annotated[DashboardService, Depends(get_dashboard_service)
 DashboardStateRepoDep = Annotated[
     DashboardStateRepository,
     Depends(get_dashboard_state_repository),
+]
+GuarantorDirectionRepoDep = Annotated[
+    GuarantorDirectionRepository,
+    Depends(get_guarantor_direction_repository),
 ]
 BillingServiceDep = Annotated[BillingService, Depends(get_billing_service)]
 NodeServiceDep = Annotated[NodeService, Depends(get_node_service)]
@@ -475,6 +489,7 @@ __all__ = [
     "get_bestchange_repository",
     "get_dashboard_service",
     "get_dashboard_state_repository",
+    "get_guarantor_direction_repository",
     "get_web3_auth",
     "get_tron_auth",
     "get_current_web3_user",
@@ -492,6 +507,7 @@ __all__ = [
     "BestchangeRepoDep",
     "DashboardServiceDep",
     "DashboardStateRepoDep",
+    "GuarantorDirectionRepoDep",
     "BillingServiceDep",
     "NodeServiceDep",
     "AdminServiceDep",
