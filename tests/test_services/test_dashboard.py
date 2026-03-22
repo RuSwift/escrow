@@ -7,6 +7,7 @@ import pytest
 
 from core.ratio_entities import ExchangePair
 from core.utils import utc_now_float
+from repos.dashboard import DashboardStateRepository
 from services.dashboard import (
     DashboardService,
     _dedupe_mutual_pair_rows,
@@ -42,6 +43,66 @@ class CountingSpotEngine(BaseRatioEngine):
     async def market(self) -> list[ExchangePair]:
         self.market_calls += 1
         return []
+
+
+@pytest.mark.asyncio
+async def test_list_ratios_for_engine_types_filters(test_redis):
+    """list_ratios_for_engine_types оставляет только указанные классы движков."""
+
+    class OtherSpot(BaseRatioEngine):
+        async def market(self):
+            return []
+
+    spot = FakeSpotEngine(
+        RatioCacheAdapter(test_redis, "FakeSpotEngine"),
+        SimpleNamespace(),
+        refresh_cache=False,
+    )
+    other = OtherSpot(
+        RatioCacheAdapter(test_redis, "OtherSpot"),
+        SimpleNamespace(),
+        refresh_cache=False,
+    )
+    settings = Settings(system_currencies=["USD", "RUB"])
+    with patch(
+        "services.dashboard.get_ratios_engines",
+        return_value=[other, spot],
+    ):
+        svc = DashboardService(test_redis, settings)
+        data = await svc.list_ratios_for_engine_types((FakeSpotEngine,))
+
+    assert set(data.keys()) == {"FakeSpot"}
+
+
+@pytest.mark.asyncio
+async def test_dashboard_state_merge_preserves_other_engines(test_db):
+    """merge_ratios_engines не удаляет ключи других движков."""
+    from db.models import DashboardState
+
+    row = await test_db.get(DashboardState, 1)
+    if row is None:
+        test_db.add(
+            DashboardState(
+                id=1,
+                ratios={"Forex": [{"base": "X", "quote": "Y", "pair": None}]},
+            )
+        )
+    else:
+        row.ratios = {"Forex": [{"base": "X", "quote": "Y", "pair": None}]}
+    await test_db.commit()
+
+    repo = DashboardStateRepository(test_db)
+    await repo.merge_ratios_engines(
+        {"Cbr": [{"base": "RUB", "quote": "USD", "pair": None}]}
+    )
+    await test_db.commit()
+
+    from sqlalchemy import select
+
+    res = await test_db.execute(select(DashboardState).where(DashboardState.id == 1))
+    row = res.scalar_one()
+    assert set(row.ratios.keys()) == {"Forex", "Cbr"}
+    assert len(row.ratios["Cbr"]) == 1
 
 
 @pytest.mark.asyncio

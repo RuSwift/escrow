@@ -88,7 +88,7 @@ Vue.component('dashboard', {
                     if (x != null && typeof x === 'number') vals.push(x);
                 });
                 var maxVal = vals.length ? Math.max.apply(null, vals) : null;
-                var ratioText = maxVal != null ? String(Number(maxVal).toFixed(8)).replace(/\.?0+$/, '') : '—';
+                var ratioText = maxVal != null ? String(Number(maxVal).toFixed(2)).replace(/\.?0+$/, '') : '—';
                 return { pair: r.base + '/' + r.quote, ratioText: ratioText };
             });
         },
@@ -146,7 +146,7 @@ Vue.component('dashboard', {
         },
         formatRatioCell: function(val) {
             if (val == null || typeof val !== 'number') return '—';
-            return String(Number(val).toFixed(8)).replace(/\.?0+$/, '');
+            return String(Number(val).toFixed(2)).replace(/\.?0+$/, '');
         },
         formatUtcCell: function(tsSeconds) {
             if (tsSeconds == null || typeof tsSeconds !== 'number' || !isFinite(tsSeconds)) return '—';

@@ -15,6 +15,7 @@ from core.utils import get_user_did
 from db import get_db
 from db.models import AdminUser
 from repos.bestchange import BestchangeYamlRepository
+from repos.dashboard import DashboardStateRepository
 from repos.node import NodeRepository
 from services.admin import AdminService
 from services.arbiter import ArbiterService
@@ -231,6 +232,11 @@ def get_dashboard_service(
     return DashboardService(redis=redis, settings=settings.settings)
 
 
+def get_dashboard_state_repository(db: DbSession) -> DashboardStateRepository:
+    """Снимок котировок дашборда в ``dashboard_state`` (id=1)."""
+    return DashboardStateRepository(session=db)
+
+
 async def get_admin(
     request: Request,
     credentials: Annotated[
@@ -284,6 +290,10 @@ WalletServiceDep = Annotated[WalletService, Depends(get_wallet_service)]
 ArbiterServiceDep = Annotated[ArbiterService, Depends(get_arbiter_service)]
 BestchangeRepoDep = Annotated[BestchangeYamlRepository, Depends(get_bestchange_repository)]
 DashboardServiceDep = Annotated[DashboardService, Depends(get_dashboard_service)]
+DashboardStateRepoDep = Annotated[
+    DashboardStateRepository,
+    Depends(get_dashboard_state_repository),
+]
 BillingServiceDep = Annotated[BillingService, Depends(get_billing_service)]
 NodeServiceDep = Annotated[NodeService, Depends(get_node_service)]
 AdminServiceDep = Annotated[AdminService, Depends(get_admin_service)]
@@ -464,6 +474,7 @@ __all__ = [
     "get_admin_service",
     "get_bestchange_repository",
     "get_dashboard_service",
+    "get_dashboard_state_repository",
     "get_web3_auth",
     "get_tron_auth",
     "get_current_web3_user",
@@ -480,6 +491,7 @@ __all__ = [
     "ArbiterServiceDep",
     "BestchangeRepoDep",
     "DashboardServiceDep",
+    "DashboardStateRepoDep",
     "BillingServiceDep",
     "NodeServiceDep",
     "AdminServiceDep",

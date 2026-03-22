@@ -2,9 +2,11 @@
 API статистики дашборда (пользователи, менеджеры, кошельки, арбитраж).
 Ориентир: garantex node.py GET /api/dashboard/statistics.
 
-Котировки: GET ``/ratios`` — спотовые движки (BestChange не участвует); JWT пользователя
+Котировки: GET ``/ratios`` — снимок из БД (спотовые движки); JWT пользователя
 (TRON/Web3) или cookie ``main_auth_token``. Статистика ``GET /`` — только админ.
 """
+import logging
+
 from sqlalchemy import func, or_, select
 
 from fastapi import APIRouter
@@ -12,10 +14,12 @@ from fastapi import APIRouter
 from db.models import Wallet, WalletUser
 from web.endpoints.dependencies import (
     CurrentWalletUser,
-    DashboardServiceDep,
+    DashboardStateRepoDep,
     DbSession,
     RequireAdminDepends,
 )
+
+logger = logging.getLogger(__name__)
 from web.endpoints.v1.schemas.dashboard_ratios import ListRatiosResponse
 from web.endpoints.v1.schemas.node import DashboardStatisticsResponse
 
@@ -65,13 +69,17 @@ async def get_dashboard_statistics(
     summary="Список котировок по system_currencies",
 )
 async def list_dashboard_ratios(
-    dashboard: DashboardServiceDep,
+    dashboard_repo: DashboardStateRepoDep,
     _user: CurrentWalletUser,
 ):
     """
-    Кросс-курсы для всех включённых спотовых движков (Forex, ЦБ, Rapira и т.д.):
-    пары, где есть фиат из ``system_currencies``, второй код — фиат или стейбл
-    из ``collateral_stablecoin`` (например USDT/RUB). BestChange не участвует.
+    Кросс-курсы из снимка ``dashboard_state.ratios`` (обновляется cron после прогрева Redis).
+    При отсутствии строки в БД — пустой объект ``{}`` (200). BestChange не участвует.
     """
-    data = await dashboard.list_ratios()
+    raw = await dashboard_repo.get_ratios()
+    if raw is None:
+        logger.warning("dashboard_state: row id=1 missing, returning empty ratios")
+        data: dict = {}
+    else:
+        data = raw
     return ListRatiosResponse.model_validate(data)

@@ -179,6 +179,7 @@ async def test_db(db_engine) -> AsyncGenerator[AsyncSession, None]:
         await conn.execute(text("TRUNCATE TABLE deal CASCADE"))
         await conn.execute(text("TRUNCATE TABLE wallets CASCADE"))
         await conn.execute(text("TRUNCATE TABLE bestchange_yaml_snapshots CASCADE"))
+        await conn.execute(text("TRUNCATE TABLE dashboard_state CASCADE"))
 
 
 @pytest.fixture

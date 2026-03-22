@@ -115,12 +115,44 @@ class DashboardService:
         Значение ``pair`` — JSON ``ExchangePair`` или ``null``, если курс недоступен.
         Для взаимных направлений (A/B и B/A) в ответе одна строка — с большим
         ``pair.ratio``.
+
+        Публичный HTTP-эндпоинт котировок читает снимок из БД (``dashboard_state``);
+        этот метод используется фоном (cron) для построения снимка после прогрева Redis.
         """
         fiats = _normalize_system_currencies(self._settings.system_currencies)
         stables = _stablecoin_symbols(self._settings)
         pairs = _fiat_involving_pairs(fiats, stables)
         result: Dict[str, List[Dict[str, Any]]] = {}
         for engine in self._spot_engines(refresh_cache=False):
+            label = type(engine).get_label()
+            rows: List[Dict[str, Any]] = []
+            for base, quote in pairs:
+                ex = await engine.ratio(base, quote)
+                rows.append(
+                    {
+                        "base": base,
+                        "quote": quote,
+                        "pair": ex.model_dump(mode="json") if ex is not None else None,
+                    }
+                )
+            result[label] = _dedupe_mutual_pair_rows(rows)
+        return result
+
+    async def list_ratios_for_engine_types(
+        self,
+        only_engine_types: Tuple[Type[BaseRatioEngine], ...],
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        Котировки только для указанных классов движков (те же пары и дедуп, что в
+        ``list_ratios``). Используется cron-ом для частичного сохранения в БД.
+        """
+        fiats = _normalize_system_currencies(self._settings.system_currencies)
+        stables = _stablecoin_symbols(self._settings)
+        pairs = _fiat_involving_pairs(fiats, stables)
+        result: Dict[str, List[Dict[str, Any]]] = {}
+        for engine in self._spot_engines(refresh_cache=False):
+            if not isinstance(engine, only_engine_types):
+                continue
             label = type(engine).get_label()
             rows: List[Dict[str, Any]] = []
             for base, quote in pairs:

@@ -774,3 +774,33 @@ class ExchangeServiceFeeTier(Base):
             f"<ExchangeServiceFeeTier(id={self.id}, service_id={self.exchange_service_id}, "
             f"range={self.fiat_min}-{self.fiat_max})>"
         )
+
+
+class DashboardState(Base):
+    """
+    Единая строка состояния дашборда (id=1): котировки по движкам и задел под другие метрики.
+    Ключи в ``ratios`` — метки движков (``get_label()``), значения — списки строк пар.
+    """
+
+    __tablename__ = "dashboard_state"
+
+    id = Column(
+        Integer,
+        primary_key=True,
+        comment="Фиксированный идентификатор: всегда 1",
+    )
+    ratios = Column(
+        JSONB,
+        nullable=True,
+        comment="Снимок котировок: dict[engine_label, list[{base, quote, pair}]]",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+        comment="Время последнего обновления строки",
+    )
+
+    def __repr__(self) -> str:
+        return f"<DashboardState(id={self.id}, updated_at={self.updated_at})>"
