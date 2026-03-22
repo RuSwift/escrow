@@ -25,17 +25,17 @@
         <span class="font-medium">{{ invite.participant_nickname }}</span>
       </div>
       {% endif %}
-      <div>
-        <span class="text-[#58667e]">{{ _('main.invite.wallet_mask_label') }}</span>
-        <span class="font-mono text-[#191d23]">{{ invite.wallet_address_mask }}</span>
+      <div class="flex flex-col gap-1 sm:flex-row sm:flex-wrap sm:items-baseline sm:gap-x-2">
+        <span class="text-[#58667e] shrink-0">{{ _('main.invite.wallet_mask_label') }}</span>
+        <span class="font-mono text-lg sm:text-xl font-semibold text-[#191d23] tracking-tight break-all">{{ invite.wallet_address or invite.wallet_address_mask }}</span>
       </div>
     </div>
     <div class="mt-8 pt-6 border-t border-[#eff2f5]">
       <p class="text-[#58667e] text-sm mb-4">{{ _('main.invite.sign_prompt') }}</p>
+      <p id="invite-error" class="mb-4 text-main-red text-sm leading-relaxed hidden" role="alert"></p>
       <button type="button" id="invite-sign-btn" class="cmc-btn-primary px-6 py-3 font-medium">
         {{ _('main.invite.sign_button') }}
       </button>
-      <p id="invite-error" class="mt-3 text-main-red text-sm hidden"></p>
       <p id="invite-loading" class="mt-3 text-[#58667e] text-sm hidden">{{ _('main.loading') }}</p>
     </div>
   </div>

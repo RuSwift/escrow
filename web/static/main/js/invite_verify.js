@@ -4,6 +4,9 @@
  * TronLink only. Адрес должен совпадать с приглашённым.
  */
 (function() {
+    var STORAGE_SNAPSHOT = 'main_invite_tron_snapshot';
+    var STORAGE_REMINDER = 'main_invite_wallet_reminder';
+
     var root = document.getElementById('invite-verify-root');
     if (!root) return;
     var invalid = root.getAttribute('data-invite-invalid') === 'true';
@@ -18,9 +21,6 @@
     } catch (e) {}
     if (invalid || !token || !invite) return;
 
-    console.log('[invite-verify] token (first 8):', token ? token.substring(0, 8) + '...' : '');
-    console.log('[invite-verify] expected wallet_address from invite:', invite.wallet_address || '', 'length:', (invite.wallet_address || '').length);
-
     var signBtn = document.getElementById('invite-sign-btn');
     var errEl = document.getElementById('invite-error');
     var loadingEl = document.getElementById('invite-loading');
@@ -30,20 +30,45 @@
         return t[key] !== undefined ? t[key] : key;
     }
 
+    function tParams(key, params) {
+        var s = tKey(key);
+        if (params && typeof s === 'string') {
+            Object.keys(params).forEach(function(k) {
+                s = s.replace(new RegExp('\\{' + k + '\\}', 'g'), params[k]);
+            });
+        }
+        return s;
+    }
+
+    function maskAddress(addr) {
+        if (!addr || addr.length < 6) return addr || '—';
+        return addr.slice(0, 2) + '…' + addr.slice(-4);
+    }
+
+    function captureTronSnapshot() {
+        try {
+            var tw = window.tronWeb;
+            if (tw && tw.defaultAddress && tw.defaultAddress.base58) {
+                var a = (tw.defaultAddress.base58 || '').trim();
+                if (a) sessionStorage.setItem(STORAGE_SNAPSHOT, a);
+            }
+        } catch (e) {}
+    }
+
+    captureTronSnapshot();
+    window.addEventListener('load', captureTronSnapshot);
+
     function getTronWeb() {
         if (window.tronLink && window.tronLink.request) {
             return window.tronLink.request({ method: 'tron_requestAccounts' }).then(function(res) {
-                console.log('[invite-verify] tron_requestAccounts response:', res ? { code: res.code } : res);
                 if (res && res.code === 4001) return Promise.reject(new Error('USER_REJECTED'));
                 var tw = window.tronLink.tronWeb || window.tronWeb;
                 var addr = tw && tw.defaultAddress && tw.defaultAddress.base58 ? tw.defaultAddress.base58 : '';
-                console.log('[invite-verify] tronWeb.defaultAddress.base58 after request:', addr, 'length:', addr.length);
                 if (addr) return tw;
                 return null;
             });
         }
         if (window.tronWeb && window.tronWeb.defaultAddress && window.tronWeb.defaultAddress.base58) {
-            console.log('[invite-verify] using existing window.tronWeb.defaultAddress');
             return Promise.resolve(window.tronWeb);
         }
         return Promise.reject(new Error('NO_TRONLINK'));
@@ -60,6 +85,17 @@
         if (signBtn) signBtn.disabled = on;
     }
 
+    function walletMismatchMessage(currentAddress, expectedAddress) {
+        var detail = tParams('main.invite.wallet_mismatch_detail', {
+            current: maskAddress(currentAddress),
+            expected: maskAddress(expectedAddress)
+        });
+        if (!detail || detail === 'main.invite.wallet_mismatch_detail') {
+            return tKey('main.invite.wallet_mismatch');
+        }
+        return detail;
+    }
+
     if (signBtn) {
         signBtn.addEventListener('click', function() {
             showError('');
@@ -68,29 +104,21 @@
                 .then(function(tronWeb) {
                     var currentAddress = ((tronWeb.defaultAddress && tronWeb.defaultAddress.base58) ? tronWeb.defaultAddress.base58 : '').trim();
                     var expectedAddress = ((invite && invite.wallet_address) ? invite.wallet_address : '').trim();
-                    console.log('[invite-verify] currentAddress (TronLink):', currentAddress, 'length:', currentAddress.length);
-                    console.log('[invite-verify] expectedAddress (invite):', expectedAddress, 'length:', expectedAddress.length);
-                    console.log('[invite-verify] match:', currentAddress === expectedAddress, 'strict eq:', currentAddress === expectedAddress);
                     if (currentAddress !== expectedAddress) {
-                        console.warn('[invite-verify] address mismatch, throwing wallet_mismatch');
-                        throw new Error(tKey('main.invite.wallet_mismatch'));
+                        throw new Error(walletMismatchMessage(currentAddress, expectedAddress));
                     }
-                    console.log('[invite-verify] requesting nonce...');
                     return fetch('/v1/invite/' + encodeURIComponent(token) + '/nonce', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         credentials: 'same-origin'
                     }).then(function(r) {
                         if (!r.ok) {
-                            console.error('[invite-verify] nonce request failed:', r.status);
                             throw new Error(tKey('main.invite.error_nonce'));
                         }
                         return r.json();
                     }).then(function(data) {
                         var message = data.message || ('Nonce: ' + (data.nonce || ''));
-                        console.log('[invite-verify] nonce received, message length:', message.length);
                         return tronWeb.trx.signMessageV2(message).then(function(signature) {
-                            console.log('[invite-verify] signature received, sending confirm...');
                             return { signature: signature, message: message };
                         });
                     });
@@ -108,14 +136,22 @@
                 })
                 .then(function(data) {
                     var url = (data && data.redirect_url) ? data.redirect_url : '/';
-                    console.log('[invite-verify] confirm success, redirect_url:', url);
                     if (data && data.token) {
                         try { localStorage.setItem('main_auth_token', data.token); } catch (e) {}
                     }
+                    try {
+                        var snap = (sessionStorage.getItem(STORAGE_SNAPSHOT) || '').trim();
+                        var exp = ((invite && invite.wallet_address) ? invite.wallet_address : '').trim();
+                        if (snap && exp && snap !== exp) {
+                            sessionStorage.setItem(STORAGE_REMINDER, JSON.stringify({
+                                previous: snap,
+                                masked: maskAddress(snap)
+                            }));
+                        }
+                    } catch (e) {}
                     window.location.href = url;
                 })
                 .catch(function(err) {
-                    console.error('[invite-verify] error:', err && err.message ? err.message : err);
                     if (err && err.message === 'USER_REJECTED') {
                         showError(tKey('main.tron.user_rejected'));
                     } else if (err && err.message === 'NO_TRONLINK') {

@@ -70,5 +70,84 @@
         document.body.appendChild(container);
     }
 
+    /**
+     * Модальное предупреждение после приглашения: ранее был другой адрес в TronLink.
+     * options: { previous, masked, onContinue, onRelogin } — previous (полный base58) или masked для {previous}.
+     */
+    function showInviteWalletReminderModal(options) {
+        var previous = (options && options.previous) ? String(options.previous) : '';
+        if (!previous && options && options.masked) previous = String(options.masked);
+        var onContinue = options && options.onContinue;
+        var onRelogin = options && options.onRelogin;
+
+        function t(key) {
+            var tr = window.__TRANSLATIONS__;
+            return (tr && tr[key] !== undefined) ? tr[key] : key;
+        }
+
+        function substitute(str) {
+            return String(str || '').replace(/\{previous\}/g, previous);
+        }
+
+        function esc(s) {
+            return String(s)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        var title = esc(substitute(t('main.invite.wallet_reminder_modal_title')));
+        var body = esc(substitute(t('main.invite.wallet_reminder_modal_body')));
+        var btnContinue = esc(t('main.invite.wallet_reminder_continue'));
+        var btnRelogin = esc(substitute(t('main.invite.wallet_reminder_relogin')));
+
+        var container = document.createElement('div');
+        container.setAttribute('role', 'dialog');
+        container.setAttribute('aria-modal', 'true');
+        container.setAttribute('aria-labelledby', 'invite-reminder-dialog-title');
+        container.className = 'fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm';
+        container.innerHTML =
+            '<div class="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 border border-amber-200 ring-1 ring-amber-100">' +
+            '  <div class="flex gap-3 mb-4">' +
+            '    <div class="shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-700 font-bold text-lg" aria-hidden="true">!</div>' +
+            '    <div class="min-w-0">' +
+            '      <h2 id="invite-reminder-dialog-title" class="text-lg font-bold text-[#191d23] mb-2">' + title + '</h2>' +
+            '      <p class="text-sm text-[#58667e] leading-relaxed break-words">' + body + '</p>' +
+            '    </div>' +
+            '  </div>' +
+            '  <div class="flex flex-col sm:flex-row sm:justify-end sm:flex-wrap gap-3 pt-2">' +
+            '    <button type="button" data-invite-reminder-action="continue" class="w-full sm:w-auto px-4 py-2 text-[13px] font-medium text-[#58667e] hover:bg-[#f8fafd] rounded-lg transition-colors border border-[#eff2f5]">' + btnContinue + '</button>' +
+            '    <button type="button" data-invite-reminder-action="relogin" class="w-full sm:w-auto px-4 py-2 text-[13px] font-semibold text-white bg-main-blue hover:bg-main-blue/90 rounded-lg transition-colors">' + btnRelogin + '</button>' +
+            '  </div>' +
+            '</div>';
+
+        function hide() {
+            if (container && container.parentNode) {
+                container.parentNode.removeChild(container);
+            }
+        }
+
+        container.addEventListener('click', function(e) {
+            if (e.target === container) {
+                if (typeof onContinue === 'function') onContinue();
+                hide();
+                return;
+            }
+            var btn = e.target.closest('[data-invite-reminder-action]');
+            if (!btn) return;
+            var action = btn.getAttribute('data-invite-reminder-action');
+            if (action === 'relogin') {
+                if (typeof onRelogin === 'function') onRelogin();
+            } else {
+                if (typeof onContinue === 'function') onContinue();
+            }
+            hide();
+        });
+
+        document.body.appendChild(container);
+    }
+
     window.showConfirm = showConfirm;
+    window.showInviteWalletReminderModal = showInviteWalletReminderModal;
 })();

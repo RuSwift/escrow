@@ -4,6 +4,43 @@
  * Ожидает: <div id="app-main" data-initial-page="dashboard" data-escrow-id="" data-space=""></div>
  */
 (function() {
+    var INVITE_REMINDER_KEY = 'main_invite_wallet_reminder';
+    (function initInviteWalletReminderModal() {
+        if (typeof window.showInviteWalletReminderModal !== 'function') return;
+        var raw = null;
+        try {
+            raw = sessionStorage.getItem(INVITE_REMINDER_KEY);
+        } catch (e) {}
+        if (!raw) return;
+        var parsed = null;
+        try {
+            parsed = JSON.parse(raw);
+        } catch (e) {}
+        if (!parsed || (!parsed.previous && !parsed.masked)) return;
+
+        window.showInviteWalletReminderModal({
+            previous: parsed.previous || parsed.masked,
+            masked: parsed.masked,
+            onContinue: function() {
+                try {
+                    sessionStorage.removeItem(INVITE_REMINDER_KEY);
+                } catch (e) {}
+            },
+            onRelogin: function() {
+                try {
+                    sessionStorage.removeItem(INVITE_REMINDER_KEY);
+                } catch (e) {}
+                fetch('/v1/auth/logout', { method: 'POST', credentials: 'same-origin' }).finally(function() {
+                    try {
+                        var k = window.main_auth_token_key || 'main_auth_token';
+                        localStorage.removeItem(k);
+                    } catch (e) {}
+                    window.location.href = '/';
+                });
+            }
+        });
+    })();
+
     var el = document.getElementById('app-main');
     if (!el) return;
 
