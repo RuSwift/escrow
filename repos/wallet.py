@@ -41,18 +41,46 @@ class WalletResource(BaseResource):
             None,
             description="Encrypted mnemonic phrase",
         )
-        tron_address: str = Field(..., max_length=34, description="TRON address")
-        ethereum_address: str = Field(..., max_length=42, description="Ethereum address")
+        tron_address: Optional[str] = Field(
+            None,
+            max_length=34,
+            description="TRON address; optional for external if ethereum is set; empty for multisig",
+        )
+        ethereum_address: Optional[str] = Field(
+            None,
+            max_length=42,
+            description="Ethereum address; optional for external (TRC20-only); empty for multisig",
+        )
         owner_did: Optional[str] = Field(None, max_length=255, description="Owner node DID")
 
         @model_validator(mode="after")
-        def validate_encrypted_mnemonic_for_role(self) -> Self:
+        def validate_wallet_create(self) -> Self:
+            t = (self.tron_address or "").strip()
+            e = (self.ethereum_address or "").strip()
+
             if self.role == "external":
+                if not t and not e:
+                    raise ValueError(
+                        "external wallet requires at least one of tron_address or "
+                        "ethereum_address",
+                    )
                 return self
+
+            if self.role == "multisig":
+                if t or e:
+                    raise ValueError(
+                        "multisig wallet requires empty tron_address and ethereum_address",
+                    )
+                if not _mnemonic_non_empty(self.encrypted_mnemonic):
+                    raise ValueError("encrypted_mnemonic is required for multisig")
+                return self
+
             if not _mnemonic_non_empty(self.encrypted_mnemonic):
-                raise ValueError(
-                    "encrypted_mnemonic is required unless role is 'external'",
-                )
+                raise ValueError("encrypted_mnemonic is required")
+            if not t:
+                raise ValueError("tron_address is required")
+            if not e:
+                raise ValueError("ethereum_address is required")
             return self
 
     class Patch(BaseResource.Patch):
@@ -82,8 +110,8 @@ class WalletResource(BaseResource):
     class Get(BaseResource.Get):
         id: int
         name: str
-        tron_address: str
-        ethereum_address: str
+        tron_address: Optional[str] = None
+        ethereum_address: Optional[str] = None
         owner_did: Optional[str] = None
         account_permissions: Optional[Dict[str, Any]] = None
         created_at: datetime
@@ -96,8 +124,8 @@ class ExchangeWalletResource(BaseResource):
     class Get(BaseResource.Get):
         id: int
         name: str
-        tron_address: str
-        ethereum_address: str
+        tron_address: Optional[str] = None
+        ethereum_address: Optional[str] = None
         role: str
         owner_did: Optional[str] = None
         account_permissions: Optional[Dict[str, Any]] = None
@@ -163,11 +191,13 @@ class WalletRepository(BaseRepository):
 
     async def create(self, data: WalletResource.Create) -> WalletResource.Get:
         """Создать кошелёк; role из data (None = операционный)."""
+        t = (data.tron_address or "").strip() or None
+        e = (data.ethereum_address or "").strip() or None
         model = Wallet(
             name=data.name,
             encrypted_mnemonic=data.encrypted_mnemonic,
-            tron_address=data.tron_address,
-            ethereum_address=data.ethereum_address,
+            tron_address=t,
+            ethereum_address=e,
             role=data.role,
             owner_did=data.owner_did,
         )
@@ -185,11 +215,23 @@ class WalletRepository(BaseRepository):
         if data.role not in _EXCHANGE_ROLES:
             raise ValueError("role must be 'external' or 'multisig'")
         merged = data.model_copy(update={"owner_did": owner_did})
+        if merged.role == "multisig":
+            if not _mnemonic_non_empty(merged.encrypted_mnemonic):
+                raise ValueError("encrypted_mnemonic is required for multisig")
+            plain = self.decrypt_data(merged.encrypted_mnemonic)
+            from services.wallet import WalletService
+
+            addrs = WalletService._addresses_from_mnemonic(plain)
+            tron_s = addrs["tron_address"]
+            eth_s = addrs["ethereum_address"]
+        else:
+            tron_s = (merged.tron_address or "").strip() or None
+            eth_s = (merged.ethereum_address or "").strip() or None
         model = Wallet(
             name=merged.name,
             encrypted_mnemonic=merged.encrypted_mnemonic,
-            tron_address=merged.tron_address,
-            ethereum_address=merged.ethereum_address,
+            tron_address=tron_s,
+            ethereum_address=eth_s,
             role=merged.role,
             owner_did=merged.owner_did,
         )
@@ -272,6 +314,37 @@ class WalletRepository(BaseRepository):
         if role is not None:
             stmt = stmt.where(Wallet.role == role)
         stmt = stmt.limit(1)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
+    async def exists_exchange_wallet_with_name(
+        self,
+        owner_did: str,
+        name: str,
+        exclude_wallet_id: Optional[int] = None,
+    ) -> bool:
+        stmt = (
+            select(Wallet.id)
+            .where(self._exchange_scope(owner_did))
+            .where(Wallet.name == name.strip())
+        )
+        if exclude_wallet_id is not None:
+            stmt = stmt.where(Wallet.id != exclude_wallet_id)
+        stmt = stmt.limit(1)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
+    async def exists_exchange_wallet_with_tron(
+        self,
+        owner_did: str,
+        tron_address: str,
+    ) -> bool:
+        stmt = (
+            select(Wallet.id)
+            .where(self._exchange_scope(owner_did))
+            .where(Wallet.tron_address == tron_address.strip())
+            .limit(1)
+        )
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
 

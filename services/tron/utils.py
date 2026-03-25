@@ -4,9 +4,23 @@ Utility functions for TRON blockchain (address from mnemonic).
 """
 from typing import Tuple
 
+from bip32 import BIP32
 from mnemonic import Mnemonic
 from tronpy.keys import PrivateKey as TronPrivateKey
-from bip32 import BIP32
+from tronpy.keys import is_base58check_address
+
+
+def is_valid_tron_address(address: str) -> bool:
+    """Проверка TRON base58check-адреса (основная сеть)."""
+    if not address or not isinstance(address, str):
+        return False
+    s = address.strip()
+    if len(s) != 34:
+        return False
+    try:
+        return bool(is_base58check_address(s))
+    except ValueError:
+        return False
 
 
 def address_from_private_key(private_key_hex: str) -> str:

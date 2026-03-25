@@ -42,11 +42,17 @@
                 rampForm: {
                     name: '',
                     role: 'external',
+                    blockchain: 'tron',
                     tron_address: '',
                     ethereum_address: '',
-                    mnemonic: ''
+                    mnemonic: '',
+                    participant_sub_id: null
                 },
-                rampSaving: false
+                rampSaving: false,
+                rampParticipants: [],
+                rampAddrOpen: false,
+                rampAddrBlurTimer: null,
+                rampExternalCustom: false
             };
         },
         mounted: function() {
@@ -59,7 +65,44 @@
                 return FIAT_OPTIONS.filter(function(f) { return f.toLowerCase().indexOf(q) !== -1; });
             },
             onRampCount: function() { return this.services.filter(function(s) { return s.type === 'onRamp'; }).length; },
-            offRampCount: function() { return this.services.filter(function(s) { return s.type === 'offRamp'; }).length; }
+            offRampCount: function() { return this.services.filter(function(s) { return s.type === 'offRamp'; }).length; },
+            rampParticipantCandidates: function() {
+                var taken = {};
+                (this.rampWallets || []).forEach(function(w) {
+                    var a = (w.tron_address || '').trim();
+                    if (a) taken[a] = true;
+                });
+                return (this.rampParticipants || []).filter(function(p) {
+                    if ((p.blockchain || '').toLowerCase() !== 'tron') return false;
+                    var addr = (p.wallet_address || '').trim();
+                    return addr && !taken[addr];
+                });
+            },
+            rampAddressPickerParticipants: function() {
+                var list = (this.rampParticipantCandidates || []).slice();
+                var sid = this.rampForm.participant_sub_id;
+                if (sid == null) return list;
+                var found = list.some(function(p) { return p.id === sid; });
+                if (found) return list;
+                (this.rampParticipants || []).forEach(function(p) {
+                    if (p.id === sid) list.unshift(p);
+                });
+                return list;
+            },
+            rampSaveAddDisabled: function() {
+                if (this.rampEditingId) return false;
+                if (this.rampForm.role === 'multisig') {
+                    return !(this.rampForm.name || '').trim();
+                }
+                if (this.rampForm.participant_sub_id != null) return false;
+                if (!this.rampExternalCustom) return true;
+                return !(this.rampForm.name || '').trim() || !(this.rampForm.tron_address || '').trim();
+            },
+            rampSaveEditDisabled: function() {
+                if (!this.rampEditingId) return false;
+                return !(this.rampForm.name || '').trim()
+                    || !(this.rampForm.tron_address || '').trim();
+            }
         },
         methods: {
             selectFiat: function(fiat) { this.newService.fiatCurrency = fiat; },
@@ -104,6 +147,105 @@
                 if (!space) return '';
                 return '/v1/spaces/' + encodeURIComponent(space) + '/exchange-wallets';
             },
+            rampSpaceParticipantsUrl: function() {
+                var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__)
+                    ? String(window.__CURRENT_SPACE__).trim()
+                    : '';
+                if (!space) return '';
+                return '/v1/spaces/' + encodeURIComponent(space) + '/participants';
+            },
+            fetchRampParticipants: function() {
+                var self = this;
+                var url = this.rampSpaceParticipantsUrl();
+                if (!url) {
+                    this.rampParticipants = [];
+                    return;
+                }
+                fetch(url, { method: 'GET', headers: this.rampAuthHeaders(), credentials: 'include' })
+                    .then(function(r) {
+                        if (!r.ok) return [];
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        self.rampParticipants = Array.isArray(data) ? data : [];
+                    })
+                    .catch(function() {
+                        self.rampParticipants = [];
+                    });
+            },
+            clearRampAddrBlurTimer: function() {
+                if (this.rampAddrBlurTimer) {
+                    clearTimeout(this.rampAddrBlurTimer);
+                    this.rampAddrBlurTimer = null;
+                }
+            },
+            openRampAddrDropdown: function() {
+                if (this.rampEditingId || this.rampForm.role !== 'external') return;
+                this.clearRampAddrBlurTimer();
+                this.rampAddrOpen = true;
+            },
+            onRampAddrFocus: function() {
+                this.openRampAddrDropdown();
+            },
+            onRampAddrInputClick: function() {
+                this.openRampAddrDropdown();
+            },
+            onRampTronAddressInput: function() {
+                // Пользователь вручную вводит/вставляет внешний TRON-адрес.
+                // Если participant_sub_id не выбран — включаем режим custom, чтобы кнопка сохранения стала доступна.
+                if (this.rampForm.participant_sub_id != null) return;
+                this.rampExternalCustom = true;
+                var tr = (this.rampForm.tron_address || '').trim();
+                // Для custom-address backend требует name, поэтому подставим имя из адреса при пустом поле.
+                if (!(this.rampForm.name || '').trim() && tr) {
+                    this.rampForm.name = tr;
+                }
+            },
+            onRampAddrFocusOut: function(e) {
+                var self = this;
+                if (this.rampEditingId) return;
+                var rel = e.relatedTarget;
+                if (rel && e.currentTarget.contains(rel)) {
+                    return;
+                }
+                this.clearRampAddrBlurTimer();
+                this.rampAddrBlurTimer = setTimeout(function() {
+                    self.rampAddrOpen = false;
+                    self.rampAddrBlurTimer = null;
+                }, 200);
+            },
+            toggleRampAddrDropdown: function() {
+                if (this.rampEditingId || this.rampForm.role !== 'external') return;
+                this.clearRampAddrBlurTimer();
+                this.rampAddrOpen = !this.rampAddrOpen;
+            },
+            pickRampCustomAddress: function() {
+                this.clearRampAddrBlurTimer();
+                this.rampForm.participant_sub_id = null;
+                this.rampExternalCustom = true;
+                this.rampForm.tron_address = '';
+                this.rampForm.name = '';
+                this.rampAddrOpen = false;
+            },
+            pickRampParticipantSub: function(p) {
+                this.clearRampAddrBlurTimer();
+                if (!p || !p.id) return;
+                this.rampForm.participant_sub_id = p.id;
+                this.rampExternalCustom = false;
+                this.rampForm.tron_address = (p.wallet_address || '').trim();
+                this.rampForm.name = ((p.nickname || '').trim()) || this.rampForm.tron_address;
+                this.rampAddrOpen = false;
+            },
+            onRampRoleChange: function() {
+                if (this.rampEditingId) return;
+                this.rampForm.participant_sub_id = null;
+                this.rampExternalCustom = false;
+                this.rampForm.tron_address = '';
+                if (this.rampForm.role === 'multisig') {
+                    this.rampForm.name = '';
+                }
+                this.rampAddrOpen = false;
+            },
             rampAuthHeaders: function() {
                 var token = null;
                 try {
@@ -145,27 +287,38 @@
                     });
             },
             openRampModal: function(editWallet) {
+                this.clearRampAddrBlurTimer();
+                this.rampAddrOpen = false;
                 this.rampEditingId = editWallet ? editWallet.id : null;
                 if (editWallet) {
                     this.rampForm = {
                         name: editWallet.name || '',
                         role: editWallet.role === 'multisig' ? 'multisig' : 'external',
+                        blockchain: 'tron',
                         tron_address: editWallet.tron_address || '',
                         ethereum_address: editWallet.ethereum_address || '',
-                        mnemonic: ''
+                        mnemonic: '',
+                        participant_sub_id: null
                     };
+                    this.rampExternalCustom = false;
                 } else {
                     this.rampForm = {
                         name: '',
                         role: 'external',
+                        blockchain: 'tron',
                         tron_address: '',
                         ethereum_address: '',
-                        mnemonic: ''
+                        mnemonic: '',
+                        participant_sub_id: null
                     };
+                    this.rampExternalCustom = false;
+                    this.fetchRampParticipants();
                 }
                 this.showRampModal = true;
             },
             closeRampModal: function() {
+                this.clearRampAddrBlurTimer();
+                this.rampAddrOpen = false;
                 this.showRampModal = false;
                 this.rampEditingId = null;
             },
@@ -176,27 +329,38 @@
                 var name = (this.rampForm.name || '').trim();
                 var tron = (this.rampForm.tron_address || '').trim();
                 var eth = (this.rampForm.ethereum_address || '').trim();
-                if (!name || !tron || !eth) return;
-                this.rampSaving = true;
-                var body = {
-                    name: name,
-                    role: this.rampForm.role,
-                    tron_address: tron,
-                    ethereum_address: eth
-                };
                 var m = (this.rampForm.mnemonic || '').trim();
-                if (m) body.mnemonic = m;
                 var url = base;
                 var method = 'POST';
+                var body;
+
                 if (this.rampEditingId) {
-                    url = base + '/' + this.rampEditingId;
+                    if (!name || !tron) return;
                     method = 'PATCH';
-                    body = {};
-                    body.name = name;
-                    body.tron_address = tron;
-                    body.ethereum_address = eth;
+                    url = base + '/' + this.rampEditingId;
+                    body = { name: name, tron_address: tron };
+                    if (eth) body.ethereum_address = eth;
                     if (m) body.mnemonic = m;
+                } else {
+                    if (this.rampSaveAddDisabled) return;
+                    if (this.rampForm.role === 'multisig') {
+                        body = {
+                            role: 'multisig',
+                            blockchain: 'tron',
+                            name: name
+                        };
+                    } else {
+                        body = { role: 'external', blockchain: 'tron' };
+                        if (this.rampForm.participant_sub_id != null) {
+                            body.participant_sub_id = this.rampForm.participant_sub_id;
+                        } else {
+                            body.name = name;
+                            body.tron_address = tron;
+                        }
+                    }
                 }
+
+                this.rampSaving = true;
                 fetch(url, {
                     method: method,
                     headers: this.rampAuthHeaders(),
@@ -204,16 +368,42 @@
                     body: JSON.stringify(body)
                 })
                     .then(function(r) {
-                        if (r.status === 403) throw new Error('403');
-                        if (!r.ok) throw new Error(String(r.status));
+                        if (r.status === 403) {
+                            return Promise.reject(new Error('403'));
+                        }
+                        if (!r.ok) {
+                            return r.text().then(function(t) {
+                                var msg = self.$t('main.my_business.ramp_loading_error');
+                                try {
+                                    var j = JSON.parse(t);
+                                    if (j && typeof j.detail === 'string') {
+                                        msg = j.detail;
+                                    } else if (j && Array.isArray(j.detail) && j.detail[0] && j.detail[0].msg) {
+                                        msg = j.detail[0].msg;
+                                    }
+                                } catch (e) { /* ignore */ }
+                                return Promise.reject(new Error(msg));
+                            });
+                        }
                         return r.json();
                     })
                     .then(function() {
                         self.closeRampModal();
                         self.fetchRampWallets();
                     })
-                    .catch(function() {
-                        alert(self.$t('main.my_business.ramp_loading_error'));
+                    .catch(function(err) {
+                        var msg = err && err.message ? err.message : self.$t('main.my_business.ramp_loading_error');
+                        if (msg === '403') {
+                            msg = self.$t('main.my_business.ramp_error_forbidden');
+                        }
+                        if (typeof window.showAlert === 'function') {
+                            window.showAlert({
+                                title: self.$t('main.dialog.error_title'),
+                                message: msg
+                            });
+                        } else {
+                            alert(msg);
+                        }
                     })
                     .finally(function() {
                         self.rampSaving = false;
@@ -222,21 +412,45 @@
             deleteRampWallet: function(w) {
                 var self = this;
                 if (!w || !w.id) return;
-                if (!window.confirm(this.$t('main.my_business.ramp_delete_confirm'))) return;
                 var base = this.rampApiBase();
                 if (!base) return;
-                fetch(base + '/' + w.id, {
-                    method: 'DELETE',
-                    headers: this.rampAuthHeaders(),
-                    credentials: 'include'
-                })
-                    .then(function(r) {
-                        if (!r.ok && r.status !== 204) throw new Error();
-                        self.fetchRampWallets();
+
+                function runDelete() {
+                    fetch(base + '/' + w.id, {
+                        method: 'DELETE',
+                        headers: self.rampAuthHeaders(),
+                        credentials: 'include'
                     })
-                    .catch(function() {
-                        alert(self.$t('main.my_business.ramp_loading_error'));
+                        .then(function(r) {
+                            if (!r.ok && r.status !== 204) throw new Error();
+                            self.fetchRampWallets();
+                        })
+                        .catch(function() {
+                            var msg = self.$t('main.my_business.ramp_loading_error');
+                            if (typeof window.showAlert === 'function') {
+                                window.showAlert({
+                                    title: self.$t('main.dialog.error_title'),
+                                    message: msg
+                                });
+                            } else {
+                                alert(msg);
+                            }
+                        });
+                }
+
+                var msgConfirm = self.$t('main.my_business.ramp_delete_confirm');
+                if (typeof window.showConfirm === 'function') {
+                    window.showConfirm({
+                        title: self.$t('main.dialog.confirm_title'),
+                        message: msgConfirm,
+                        danger: true,
+                        onConfirm: function() {
+                            runDelete();
+                        }
                     });
+                } else if (window.confirm(msgConfirm)) {
+                    runDelete();
+                }
             },
             copyRampAddress: function(addr) {
                 var a = (addr || '').trim();
@@ -256,18 +470,12 @@
         },
         template: [
             '<div class="max-w-7xl mx-auto px-4 py-8 space-y-8">',
-            '  <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">',
-            '    <div>',
-            '      <h1 class="text-2xl font-bold text-[#191d23] flex items-center gap-3">',
-            '        <svg class="w-8 h-8 text-[#3861fb]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>',
-            '        [[ $t(\'main.my_business.title\') ]]',
-            '      </h1>',
-            '      <p class="text-[#58667e] text-sm mt-1">[[ $t(\'main.my_business.subtitle\') ]]</p>',
-            '    </div>',
-            '    <button type="button" @click="showCreateModal = true" class="cmc-btn-primary flex items-center justify-center gap-2">',
-            '      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>',
-            '      [[ $t(\'main.my_business.create_service\') ]]',
-            '    </button>',
+            '  <div>',
+            '    <h1 class="text-2xl font-bold text-[#191d23] flex items-center gap-3">',
+            '      <svg class="w-8 h-8 text-[#3861fb]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>',
+            '      [[ $t(\'main.my_business.title\') ]]',
+            '    </h1>',
+            '    <p class="text-[#58667e] text-sm mt-1">[[ $t(\'main.my_business.subtitle\') ]]</p>',
             '  </div>',
 
             '  <section class="bg-white rounded-2xl border border-[#eff2f5] p-5 md:p-6 shadow-sm">',
@@ -289,44 +497,50 @@
             '    <p v-if="rampError" class="text-sm text-red-600 mb-4">[[ rampError ]]</p>',
             '    <div v-if="rampLoading" class="text-sm text-[#58667e] py-6 text-center">…</div>',
             '    <div v-else-if="!rampWallets.length" class="text-sm text-[#58667e] py-6 text-center border border-dashed border-[#eff2f5] rounded-xl">[[ $t(\'main.my_business.ramp_empty\') ]]</div>',
-            '    <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4">',
-            '      <div v-for="rw in rampWallets" :key="rw.id" class="bg-[#fafbfc] rounded-2xl border border-[#eff2f5] p-4 md:p-5 relative">',
-            '        <div class="flex items-start justify-between gap-2 mb-3">',
+            '    <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-3">',
+            '      <div v-for="rw in rampWallets" :key="rw.id" class="bg-[#fafbfc] rounded-2xl border border-[#eff2f5] p-3 md:p-4 relative">',
+            '        <div class="flex items-start justify-between gap-2 mb-2">',
             '          <div class="flex items-center gap-2 min-w-0">',
-            '            <span class="w-8 h-8 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold flex items-center justify-center shrink-0">U</span>',
+            '            <span class="w-7 h-7 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold flex items-center justify-center shrink-0">U</span>',
             '            <div class="min-w-0">',
             '              <div class="font-bold text-[#191d23] truncate">[[ rw.name ]]</div>',
-            '              <span v-if="rw.role === \'external\'" class="inline-block mt-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-100">[[ $t(\'main.my_business.ramp_badge_external\') ]]</span>',
-            '              <span v-else class="inline-block mt-1 text-[10px] font-bold uppercase px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-100">[[ $t(\'main.my_business.ramp_badge_multisig\') ]]</span>',
+            '              <span v-if="rw.role === \'external\'" class="inline-block mt-0.5 text-[10px] font-bold uppercase px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-100">[[ $t(\'main.my_business.ramp_badge_external\') ]]</span>',
+            '              <span v-else class="inline-block mt-0.5 text-[10px] font-bold uppercase px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-100">[[ $t(\'main.my_business.ramp_badge_multisig\') ]]</span>',
             '            </div>',
             '          </div>',
             '          <div class="flex items-center gap-1 shrink-0">',
             '            <button type="button" @click="openRampModal(rw)" :title="$t(\'main.my_business.ramp_edit\')" class="p-1.5 rounded-lg hover:bg-white border border-transparent hover:border-[#eff2f5] text-[#58667e]">',
             '              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>',
             '            </button>',
-            '            <button type="button" @click="copyRampAddress(rw.tron_address)" :title="$t(\'main.my_business.ramp_copy\')" class="p-1.5 rounded-lg hover:bg-white border border-transparent hover:border-[#eff2f5] text-[#58667e]">',
+            '            <button type="button" @click="copyRampAddress(rw.tron_address || \'\')" :title="$t(\'main.my_business.ramp_copy\')" class="p-1.5 rounded-lg hover:bg-white border border-transparent hover:border-[#eff2f5] text-[#58667e]">',
             '              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>',
             '            </button>',
             '          </div>',
             '        </div>',
-            '        <p class="text-xs text-emerald-600 font-medium mb-3">[[ $t(\'main.my_business.ramp_balance_placeholder\') ]]</p>',
-            '        <div class="flex items-center gap-2 bg-white border border-[#eff2f5] rounded-xl px-3 py-2 text-xs font-mono text-[#191d23]">',
-            '          <span class="truncate flex-1 min-w-0 sm:hidden">[[ truncateMiddle(rw.tron_address, 6, 4) ]]</span>',
-            '          <span class="truncate flex-1 min-w-0 hidden sm:inline">[[ rw.tron_address ]]</span>',
-            '          <a :href="tronscanUrl(rw.tron_address)" target="_blank" rel="noopener noreferrer" class="shrink-0 p-1 text-[#3861fb] hover:opacity-80" :title="$t(\'main.my_business.ramp_open_explorer\')">',
+            '        <p class="text-xs text-emerald-600 font-medium mb-2">[[ $t(\'main.my_business.ramp_balance_placeholder\') ]]</p>',
+            '        <div class="flex items-center gap-2 bg-white border border-[#eff2f5] rounded-xl px-2 py-1.5 text-[11px] font-mono text-[#191d23]">',
+            '          <span class="truncate flex-1 min-w-0 sm:hidden">[[ truncateMiddle(rw.tron_address || \'\', 6, 4) ]]</span>',
+            '          <span class="truncate flex-1 min-w-0 hidden sm:inline">[[ rw.tron_address || \'\' ]]</span>',
+            '          <a :href="tronscanUrl(rw.tron_address || \'\')" target="_blank" rel="noopener noreferrer" class="shrink-0 p-1 text-[#3861fb] hover:opacity-80" :title="$t(\'main.my_business.ramp_open_explorer\')">',
             '            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>',
             '          </a>',
             '        </div>',
-            '        <button type="button" @click="deleteRampWallet(rw)" class="mt-3 text-xs font-bold text-[#58667e] hover:text-red-600">[[ $t(\'main.my_business.ramp_delete\') ]]</button>',
+            '        <button type="button" @click="deleteRampWallet(rw)" class="mt-2 text-xs font-bold text-[#58667e] hover:text-red-600">[[ $t(\'main.my_business.ramp_delete\') ]]</button>',
             '      </div>',
             '    </div>',
             '  </section>',
 
             '  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">',
             '    <div class="lg:col-span-2 space-y-6">',
-            '      <div class="flex items-center justify-between">',
-            '        <h2 class="text-lg font-bold text-[#191d23]">[[ $t(\'main.my_business.my_services\') ]]</h2>',
-            '        <div class="flex gap-2">',
+            '      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">',
+            '        <div class="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">',
+            '          <h2 class="text-lg font-bold text-[#191d23]">[[ $t(\'main.my_business.my_services\') ]]</h2>',
+            '          <button type="button" @click="showCreateModal = true" class="cmc-btn-primary inline-flex items-center justify-center gap-2 text-sm py-2 px-3 sm:py-2.5 sm:px-4 shrink-0">',
+            '            <svg class="w-4 h-4 sm:w-5 sm:h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>',
+            '            [[ $t(\'main.my_business.create_service\') ]]',
+            '          </button>',
+            '        </div>',
+            '        <div class="flex flex-wrap gap-2 shrink-0">',
             '          <span class="text-xs font-medium px-2 py-1 rounded-lg bg-blue-50 text-blue-600 border border-blue-100">onRamp: [[ onRampCount ]]</span>',
             '          <span class="text-xs font-medium px-2 py-1 rounded-lg bg-purple-50 text-purple-600 border border-purple-100">offRamp: [[ offRampCount ]]</span>',
             '        </div>',
@@ -504,34 +718,86 @@
             '        <button type="button" @click="closeRampModal" class="p-2 hover:bg-gray-100 rounded-full"><svg class="w-6 h-6 text-[#58667e] rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg></button>',
             '      </div>',
             '      <div class="p-6 space-y-4">',
-            '        <div>',
-            '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.ramp_field_name\') ]]</label>',
-            '          <input type="text" v-model="rampForm.name" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb]" />',
-            '        </div>',
-            '        <div>',
-            '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.ramp_field_role\') ]]</label>',
-            '          <select v-model="rampForm.role" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb]">',
-            '            <option value="external">[[ $t(\'main.my_business.ramp_role_external\') ]]</option>',
-            '            <option value="multisig">[[ $t(\'main.my_business.ramp_role_multisig\') ]]</option>',
-            '          </select>',
-            '        </div>',
-            '        <div>',
-            '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.ramp_field_tron\') ]]</label>',
-            '          <input type="text" v-model="rampForm.tron_address" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm font-mono focus:outline-none focus:border-[#3861fb]" />',
-            '        </div>',
-            '        <div>',
-            '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.ramp_field_eth\') ]]</label>',
-            '          <input type="text" v-model="rampForm.ethereum_address" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm font-mono focus:outline-none focus:border-[#3861fb]" />',
-            '        </div>',
-            '        <div>',
-            '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.ramp_field_mnemonic\') ]]</label>',
-            '          <textarea v-model="rampForm.mnemonic" rows="2" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb]" autocomplete="off"></textarea>',
-            '          <p class="text-[10px] text-[#58667e] mt-1 ml-1">[[ $t(\'main.my_business.ramp_mnemonic_hint\') ]]</p>',
-            '        </div>',
+            '        <template v-if="!rampEditingId">',
+            '          <div class="flex flex-col sm:flex-row gap-3 sm:gap-4">',
+            '            <div class="flex-1 min-w-0">',
+            '              <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.ramp_field_role\') ]]</label>',
+            '              <select v-model="rampForm.role" @change="onRampRoleChange" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb]">',
+            '                <option value="external">[[ $t(\'main.my_business.ramp_role_external\') ]]</option>',
+            '                <option value="multisig">[[ $t(\'main.my_business.ramp_role_multisig\') ]]</option>',
+            '              </select>',
+            '            </div>',
+            '            <div class="flex-1 min-w-0">',
+            '              <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.ramp_field_blockchain\') ]]</label>',
+            '              <select v-model="rampForm.blockchain" disabled class="w-full px-4 py-3 bg-gray-100 border border-[#eff2f5] rounded-xl text-sm text-[#58667e] cursor-not-allowed">',
+            '                <option value="tron">[[ $t(\'main.my_business.ramp_blockchain_tron\') ]]</option>',
+            '              </select>',
+            '            </div>',
+            '          </div>',
+            '          <template v-if="rampForm.role === \'multisig\'">',
+            '            <div>',
+            '              <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.ramp_field_name\') ]]</label>',
+            '              <input type="text" v-model="rampForm.name" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb]" />',
+            '            </div>',
+            '            <div class="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">[[ $t(\'main.my_business.ramp_multisig_warning\') ]]</div>',
+            '          </template>',
+            '          <template v-else>',
+            '            <div class="relative ramp-addr-combo" @focusout="onRampAddrFocusOut">',
+            '              <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.ramp_field_address\') ]]</label>',
+            '              <div class="relative">',
+            '                <input type="text" v-model="rampForm.tron_address" :readonly="rampForm.participant_sub_id != null" autocomplete="off" @focus="onRampAddrFocus" @click="onRampAddrInputClick" @input="onRampTronAddressInput" class="w-full pl-4 pr-11 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm font-mono focus:outline-none focus:border-[#3861fb] read-only:bg-gray-100 read-only:text-[#191d23] read-only:cursor-pointer" :placeholder="$t(\'main.my_business.ramp_address_placeholder\')" />',
+            '                <button type="button" tabindex="-1" :aria-expanded="rampAddrOpen ? \'true\' : \'false\'" :title="$t(\'main.my_business.ramp_address_toggle_list\')" @mousedown.prevent="toggleRampAddrDropdown" class="absolute right-1 top-1/2 -translate-y-1/2 p-2 rounded-lg text-[#58667e] hover:bg-gray-200/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#3861fb]/40">',
+            '                  <svg class="w-4 h-4 transition-transform duration-150" :class="rampAddrOpen ? \'rotate-180\' : \'\'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>',
+            '                </button>',
+            '              </div>',
+            '              <div v-if="rampAddrOpen" class="absolute z-20 left-0 right-0 mt-1 bg-white border border-[#eff2f5] rounded-xl shadow-lg max-h-52 overflow-y-auto">',
+            '                <button type="button" class="w-full text-left px-4 py-3 text-sm hover:bg-blue-50 border-b border-[#eff2f5] font-medium text-[#3861fb]" @mousedown.prevent="pickRampCustomAddress">[[ $t(\'main.my_business.ramp_pick_custom_address\') ]]</button>',
+            '                <button type="button" v-for="p in rampAddressPickerParticipants" :key="p.id" class="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 border-b border-[#eff2f5] last:border-0" @mousedown.prevent="pickRampParticipantSub(p)">',
+            '                  <span class="font-mono text-xs text-[#191d23] block truncate">[[ p.wallet_address ]]</span>',
+            '                  <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1">',
+            '                    <span v-if="p.nickname" class="text-[11px] text-[#58667e]">[[ p.nickname ]]</span>',
+            '                    <span v-if="p.is_verified !== true" class="inline-flex text-[10px] font-bold uppercase tracking-wide text-amber-900 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded-md">[[ $t(\'main.my_business.ramp_participant_not_verified\') ]]</span>',
+            '                  </div>',
+            '                </button>',
+            '              </div>',
+            '            </div>',
+            '            <div>',
+            '              <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.ramp_field_name\') ]]</label>',
+            '              <input type="text" v-model="rampForm.name" :disabled="rampForm.participant_sub_id != null" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb] disabled:bg-gray-100" />',
+            '              <p v-if="rampForm.participant_sub_id != null" class="text-[10px] text-[#58667e] mt-1 ml-1">[[ $t(\'main.my_business.ramp_name_from_manager\') ]]</p>',
+            '            </div>',
+            '          </template>',
+            '        </template>',
+            '        <template v-else>',
+            '          <div>',
+            '            <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.ramp_field_name\') ]]</label>',
+            '            <input type="text" v-model="rampForm.name" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb]" />',
+            '          </div>',
+            '          <div>',
+            '            <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.ramp_field_role\') ]]</label>',
+            '            <select v-model="rampForm.role" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb]">',
+            '              <option value="external">[[ $t(\'main.my_business.ramp_role_external\') ]]</option>',
+            '              <option value="multisig">[[ $t(\'main.my_business.ramp_role_multisig\') ]]</option>',
+            '            </select>',
+            '          </div>',
+            '          <div>',
+            '            <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.ramp_field_tron\') ]]</label>',
+            '            <input type="text" v-model="rampForm.tron_address" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm font-mono focus:outline-none focus:border-[#3861fb]" />',
+            '          </div>',
+            '          <div>',
+            '            <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.ramp_field_eth\') ]]</label>',
+            '            <input type="text" v-model="rampForm.ethereum_address" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm font-mono focus:outline-none focus:border-[#3861fb]" />',
+            '          </div>',
+            '          <div>',
+            '            <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.ramp_field_mnemonic\') ]]</label>',
+            '            <textarea v-model="rampForm.mnemonic" rows="2" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb]" autocomplete="off"></textarea>',
+            '            <p class="text-[10px] text-[#58667e] mt-1 ml-1">[[ $t(\'main.my_business.ramp_mnemonic_hint\') ]]</p>',
+            '          </div>',
+            '        </template>',
             '      </div>',
             '      <div class="p-6 bg-gray-50 border-t border-[#eff2f5] flex gap-3">',
             '        <button type="button" @click="closeRampModal" class="flex-1 py-3 border border-[#eff2f5] rounded-xl text-sm font-bold text-[#58667e] hover:bg-white transition-all">[[ $t(\'main.my_business.cancel\') ]]</button>',
-            '        <button type="button" @click="saveRampWallet" :disabled="rampSaving || !(rampForm.name || \'\').trim() || !(rampForm.tron_address || \'\').trim() || !(rampForm.ethereum_address || \'\').trim()" class="flex-1 py-3 bg-[#3861fb] text-white rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all">[[ $t(\'main.my_business.ramp_save\') ]]</button>',
+            '        <button type="button" @click="saveRampWallet" :disabled="rampSaving || (rampEditingId ? rampSaveEditDisabled : rampSaveAddDisabled)" class="flex-1 py-3 bg-[#3861fb] text-white rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all">[[ $t(\'main.my_business.ramp_save\') ]]</button>',
             '      </div>',
             '    </div>',
             '  </div>',

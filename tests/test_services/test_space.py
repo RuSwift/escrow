@@ -1,5 +1,6 @@
 """
-Тесты SpaceService: get_space_role, list_subs_for_space, add_sub_for_space, patch_sub_for_space, delete_sub_for_space.
+Тесты SpaceService: get_space_role, list_subs_for_space, add_sub_for_space,
+patch_sub_for_space, delete_sub_for_space.
 """
 from unittest.mock import patch
 
@@ -109,6 +110,31 @@ async def test_get_space_role_sub_reader_default(space_service, wallet_user_repo
     await space_service._session.commit()
     role = await space_service.get_space_role(SPACE_NAME, WALLET_SUB1, "tron")
     assert role == WalletUserSubRole.reader
+
+
+@pytest.mark.asyncio
+async def test_get_space_role_sub_with_owner_in_roles(space_service, wallet_user_repo):
+    """Суб с ролью owner в наборе ролей получает итоговую роль owner."""
+    from services.wallet_user import WalletUserService
+
+    wu = WalletUserService(
+        session=space_service._session,
+        redis=space_service._redis,
+        settings=space_service._settings,
+    )
+    owner = await wu.create_user(WALLET_OWNER, "tron", SPACE_NAME)
+    await wallet_user_repo.add_sub(
+        owner.id,
+        WalletUserSubResource.Create(
+            wallet_address=WALLET_SUB1,
+            blockchain="tron",
+            nickname="co_owner",
+            roles=[WalletUserSubRole.owner, WalletUserSubRole.reader],
+        ),
+    )
+    await space_service._session.commit()
+    role = await space_service.get_space_role(SPACE_NAME, WALLET_SUB1, "tron")
+    assert role == WalletUserSubRole.owner
 
 
 # --- list_subs_for_space (only owner) ---

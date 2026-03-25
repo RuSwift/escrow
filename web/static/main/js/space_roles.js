@@ -229,10 +229,12 @@ Vue.component('space-roles', {
             return roles.map(this.roleLabel).join(', ') || '—';
         },
         verifiedBadgeClass: function(isVerified) {
-            return isVerified ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-600';
+            return isVerified
+                ? 'bg-emerald-100 text-emerald-700'
+                : 'bg-amber-50 text-amber-900 border border-amber-300';
         },
         verifiedDotClass: function(isVerified) {
-            return isVerified ? 'bg-emerald-500' : 'bg-gray-400';
+            return isVerified ? 'bg-emerald-500' : 'bg-amber-500';
         },
         blockedBadgeClass: function(isBlocked) {
             return isBlocked ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700';

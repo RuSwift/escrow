@@ -482,8 +482,16 @@ class Wallet(Base):
     encrypted_mnemonic = Column(Text, nullable=True, comment="Encrypted mnemonic phrase")
     
     # Blockchain addresses (unique per role and owner_did, not globally unique)
-    tron_address = Column(String(34), nullable=False, comment="TRON address")
-    ethereum_address = Column(String(42), nullable=False, comment="Ethereum address")
+    tron_address = Column(
+        String(34),
+        nullable=True,
+        comment="TRON address (optional for external Ethereum-only requisites)",
+    )
+    ethereum_address = Column(
+        String(42),
+        nullable=True,
+        comment="Ethereum address (optional for external TRC20-only requisites)",
+    )
     
     # TRON account permissions (from blockchain)
     account_permissions = Column(JSON, nullable=True, comment="TRON account permissions from blockchain")

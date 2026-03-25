@@ -18,8 +18,8 @@
     var SIDEBAR_ITEMS = [
         { page: 'dashboard', labelKey: 'main.sidebar.dashboard', section: 'tools' },
         { page: 'my-trusts', labelKey: 'main.sidebar.my_trusts', section: 'tools' },
-        { page: 'my-business', labelKey: 'main.sidebar.my_business', section: 'tools' },
-        { page: 'guarantor', labelKey: 'main.sidebar.guarantor', section: 'tools' },
+        { page: 'my-business', labelKey: 'main.sidebar.my_business', section: 'tools', ownerOnly: true },
+        { page: 'guarantor', labelKey: 'main.sidebar.guarantor', section: 'tools', ownerOnly: true },
         { page: 'space-roles', labelKey: 'main.sidebar.roles', section: 'tools', ownerOnly: true },
         { page: 'space-profile', labelKey: 'main.sidebar.profile', section: 'tools', ownerOnly: true },
         { page: 'how-it-works', labelKey: 'main.sidebar.how_it_works', section: 'docs' },
@@ -36,6 +36,8 @@
         if (!SIDEBAR_ITEMS.some(function(item) { return item.page === page; })) return 'dashboard';
         if (page === 'space-roles' && spaceRole !== 'owner') return 'dashboard';
         if (page === 'space-profile' && spaceRole !== 'owner') return 'dashboard';
+        if (page === 'my-business' && spaceRole !== 'owner') return 'dashboard';
+        if (page === 'guarantor' && spaceRole !== 'owner') return 'dashboard';
         return page;
     }
 
@@ -109,6 +111,8 @@
             var initial = this._initialPage || 'dashboard';
             if (initial === 'space-roles' && this.spaceRole !== 'owner') initial = 'dashboard';
             if (initial === 'space-profile' && this.spaceRole !== 'owner') initial = 'dashboard';
+            if (initial === 'my-business' && this.spaceRole !== 'owner') initial = 'dashboard';
+            if (initial === 'guarantor' && this.spaceRole !== 'owner') initial = 'dashboard';
             if (SIDEBAR_ITEMS.some(function(item) { return item.page === pageFromUrl; })) {
                 this.currentPage = pageFromUrl;
             } else if (SIDEBAR_ITEMS.some(function(item) { return item.page === initial; })) {
@@ -144,6 +148,8 @@
                     if (page !== 'dashboard' && !SIDEBAR_ITEMS.some(function(item) { return item.page === page; })) page = 'dashboard';
                     if (page === 'space-roles' && self.spaceRole !== 'owner') page = 'dashboard';
                     if (page === 'space-profile' && self.spaceRole !== 'owner') page = 'dashboard';
+                    if (page === 'my-business' && self.spaceRole !== 'owner') page = 'dashboard';
+                    if (page === 'guarantor' && self.spaceRole !== 'owner') page = 'dashboard';
                     self.currentPage = page;
                     if (window.__mainApp) {
                         window.__mainApp.currentPage = page;
@@ -227,11 +233,11 @@
             '      <svg class="w-[18px] h-[18px] mr-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" /></svg>',
             '      <span class="text-[13px] font-medium tracking-tight">[[ $t(\'main.sidebar.my_trusts\') ]]</span>',
             '    </a>',
-            '    <a :href="pageHref(\'my-business\')" data-page="my-business" @click.prevent="go(\'my-business\')" :class="currentPage === \'my-business\' ? \'sidebar-item main-sidebar-item active\' : \'sidebar-item main-sidebar-item\'">',
+            '    <a v-if="spaceRole === \'owner\'" :href="pageHref(\'my-business\')" data-page="my-business" @click.prevent="go(\'my-business\')" :class="currentPage === \'my-business\' ? \'sidebar-item main-sidebar-item active\' : \'sidebar-item main-sidebar-item\'">',
             '      <svg class="w-[18px] h-[18px] mr-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 13.255A23.931 23.931 0 0112 15c-3.183 0-6.22-.62-9-1.745M16 6V4a2 2 0 00-2-2h-4a2 2 0 00-2 2v2m4 6h.01M5 20h14a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>',
             '      <span class="text-[13px] font-medium tracking-tight">[[ $t(\'main.sidebar.my_business\') ]]</span>',
             '    </a>',
-            '    <a :href="pageHref(\'guarantor\')" data-page="guarantor" @click.prevent="go(\'guarantor\')" :class="currentPage === \'guarantor\' ? \'sidebar-item main-sidebar-item active\' : \'sidebar-item main-sidebar-item\'">',
+            '    <a v-if="spaceRole === \'owner\'" :href="pageHref(\'guarantor\')" data-page="guarantor" @click.prevent="go(\'guarantor\')" :class="currentPage === \'guarantor\' ? \'sidebar-item main-sidebar-item active\' : \'sidebar-item main-sidebar-item\'">',
             '      <svg class="w-[18px] h-[18px] mr-3 shrink-0" fill="currentColor" viewBox="0 0 24 24"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>',
             '      <span class="text-[13px] font-medium tracking-tight">[[ $t(\'main.sidebar.guarantor\') ]]</span>',
             '    </a>',

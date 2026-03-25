@@ -167,9 +167,17 @@ def create_app() -> FastAPI:
             space_subs_count = -1
             space_profile_filled = True
 
-        valid = ("dashboard", "my-trusts", "my-business", "guarantor", "how-it-works", "api", "settings", "support", "detail")
+        valid = (
+            "dashboard",
+            "my-trusts",
+            "how-it-works",
+            "api",
+            "settings",
+            "support",
+            "detail",
+        )
         if space_role == WalletUserSubRole.owner:
-            valid = valid + ("space-roles", "space-profile")
+            valid = valid + ("space-roles", "space-profile", "my-business", "guarantor")
         page = initial_page if initial_page in valid else "dashboard"
         if page == "detail" and not escrow_id:
             page = "dashboard"

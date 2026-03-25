@@ -76,14 +76,14 @@ async def create_exchange_wallet(
     svc: ExchangeWalletService = Depends(get_exchange_wallet_service),
 ):
     try:
-        created = await svc.create_wallet_with_plain_mnemonic(
+        created = await svc.create_wallet(
             space,
             wallet_address,
-            name=body.name,
             role=body.role,
+            blockchain=body.blockchain,
+            name=body.name,
             tron_address=body.tron_address,
-            ethereum_address=body.ethereum_address,
-            mnemonic=body.mnemonic,
+            participant_sub_id=body.participant_sub_id,
         )
     except SpacePermissionDenied as e:
         raise HTTPException(

@@ -1,7 +1,10 @@
 /**
- * Переиспользуемый диалог подтверждения (по образцу garantex).
- * API: showConfirm({ title, message, onConfirm, onCancel }).
- * Подключать после vue.min.js. Использует window.__TRANSLATIONS__ для кнопок.
+ * Переиспользуемые модальные диалоги (по образцу garantex).
+ * API:
+ *   showConfirm({ title, message, onConfirm, onCancel, danger? })
+ *   showAlert({ title, message, onOk? }) — одна кнопка «OK».
+ *   Оба оверлея z-[110], чтобы быть поверх внутренних модалок (напр. Ramp).
+ * Подключать после vue.min.js. Использует window.__TRANSLATIONS__ для подписей кнопок.
  */
 (function() {
     function t(key) {
@@ -39,7 +42,7 @@
         container.setAttribute('role', 'dialog');
         container.setAttribute('aria-modal', 'true');
         container.setAttribute('aria-labelledby', 'dialog-title');
-        container.className = 'fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm';
+        container.className = 'fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm';
         container.innerHTML =
             '<div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 border border-[#eff2f5]">' +
             '  <h2 id="dialog-title" class="text-lg font-bold text-[#191d23] mb-2">' + (title.replace(/</g, '&lt;')) + '</h2>' +
@@ -68,6 +71,58 @@
         });
 
         document.body.appendChild(container);
+    }
+
+    function escHtml(s) {
+        return String(s)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    /**
+     * Информация или ошибка: один первичный «OK», без второй кнопки.
+     */
+    function showAlert(options) {
+        var title = (options && options.title) ? String(options.title) : '';
+        var message = (options && options.message) ? String(options.message) : '';
+        var onOk = options && options.onOk;
+        var okLabel = t('main.dialog.ok');
+
+        var el = document.createElement('div');
+        el.setAttribute('role', 'alertdialog');
+        el.setAttribute('aria-modal', 'true');
+        el.setAttribute('aria-labelledby', 'dialog-alert-title');
+        el.className = 'fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm';
+        el.innerHTML =
+            '<div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 border border-[#eff2f5]">' +
+            '  <h2 id="dialog-alert-title" class="text-lg font-bold text-[#191d23] mb-2">' + escHtml(title) + '</h2>' +
+            '  <p class="text-sm text-[#58667e] mb-6 whitespace-pre-wrap break-words">' + escHtml(message) + '</p>' +
+            '  <div class="flex justify-end">' +
+            '    <button type="button" data-dialog-alert-ok class="px-4 py-2 text-[13px] font-semibold text-white bg-main-blue hover:bg-main-blue/90 rounded-lg transition-colors">' + escHtml(okLabel) + '</button>' +
+            '  </div>' +
+            '</div>';
+
+        function hide() {
+            if (el && el.parentNode) {
+                el.parentNode.removeChild(el);
+            }
+        }
+
+        el.addEventListener('click', function(e) {
+            if (e.target === el) {
+                if (typeof onOk === 'function') onOk();
+                hide();
+                return;
+            }
+            if (e.target.closest('[data-dialog-alert-ok]')) {
+                if (typeof onOk === 'function') onOk();
+                hide();
+            }
+        });
+
+        document.body.appendChild(el);
     }
 
     /**
@@ -149,5 +204,6 @@
     }
 
     window.showConfirm = showConfirm;
+    window.showAlert = showAlert;
     window.showInviteWalletReminderModal = showInviteWalletReminderModal;
 })();

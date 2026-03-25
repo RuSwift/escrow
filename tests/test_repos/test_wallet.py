@@ -61,6 +61,18 @@ def test_wallet_resource_create_external_allows_empty_mnemonic():
     assert data.encrypted_mnemonic is None
 
 
+def test_wallet_resource_create_external_allows_no_eth():
+    """role=external: ethereum_address может быть None (TRC20-only)."""
+    data = WalletResource.Create(
+        name="Ext",
+        role="external",
+        encrypted_mnemonic=None,
+        tron_address="TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
+        ethereum_address=None,
+    )
+    assert data.ethereum_address is None
+
+
 def test_wallet_resource_create_multisig_requires_mnemonic():
     """role=multisig: без мнемоники — ValidationError."""
     with pytest.raises(ValidationError):
@@ -68,8 +80,44 @@ def test_wallet_resource_create_multisig_requires_mnemonic():
             name="Ms",
             role="multisig",
             encrypted_mnemonic=None,
+            tron_address=None,
+            ethereum_address=None,
+        )
+
+
+def test_wallet_resource_create_multisig_rejects_prefilled_addresses():
+    """role=multisig: адреса в Create запрещены."""
+    with pytest.raises(ValidationError):
+        WalletResource.Create(
+            name="Ms",
+            role="multisig",
+            encrypted_mnemonic="enc",
             tron_address="TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
-            ethereum_address="0x9858EfFD232B4033E47d90003D41EC34EcaEda94",
+            ethereum_address=None,
+        )
+
+
+def test_wallet_resource_create_multisig_ok_mnemonic_only():
+    """role=multisig: только encrypted_mnemonic, адреса пустые."""
+    data = WalletResource.Create(
+        name="Ms",
+        role="multisig",
+        encrypted_mnemonic="enc",
+        tron_address=None,
+        ethereum_address=None,
+    )
+    assert data.role == "multisig"
+
+
+def test_wallet_resource_create_external_requires_one_address():
+    """external: нужен хотя бы один из адресов."""
+    with pytest.raises(ValidationError):
+        WalletResource.Create(
+            name="X",
+            role="external",
+            encrypted_mnemonic=None,
+            tron_address=None,
+            ethereum_address=None,
         )
 
 
@@ -330,6 +378,73 @@ async def test_create_exchange_wallet_external_list_get_patch_delete(wallet_repo
 
     assert await wallet_repo.delete_exchange_wallet(created.id, owner) is True
     assert await wallet_repo.get_exchange_wallet(created.id, owner) is None
+
+
+@pytest.mark.asyncio
+async def test_create_exchange_wallet_external_null_ethereum(wallet_repo):
+    """external: ethereum_address может быть NULL (TRC20-only)."""
+    owner = "did:example:tron_only"
+    created = await wallet_repo.create_exchange_wallet(
+        WalletResource.Create(
+            name="ExtTron",
+            role="external",
+            encrypted_mnemonic=None,
+            tron_address="TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
+            ethereum_address=None,
+        ),
+        owner_did=owner,
+    )
+    assert created.ethereum_address is None
+    assert created.tron_address.startswith("T")
+
+
+@pytest.mark.asyncio
+async def test_exists_exchange_wallet_name_and_tron(wallet_repo):
+    owner = "did:example:names"
+    await wallet_repo.create_exchange_wallet(
+        WalletResource.Create(
+            name="A1",
+            role="external",
+            encrypted_mnemonic=None,
+            tron_address="TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
+            ethereum_address=None,
+        ),
+        owner_did=owner,
+    )
+    assert await wallet_repo.exists_exchange_wallet_with_name(owner, "A1") is True
+    assert await wallet_repo.exists_exchange_wallet_with_name(owner, "Other") is False
+    assert (
+        await wallet_repo.exists_exchange_wallet_with_tron(
+            owner, "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH"
+        )
+        is True
+    )
+
+
+@pytest.mark.asyncio
+async def test_create_exchange_wallet_multisig_derives_addresses(wallet_repo):
+    """multisig: tron/eth в БД выводятся из encrypted_mnemonic."""
+    from services.wallet import WalletService
+
+    mnemonic = (
+        "abandon abandon abandon abandon abandon abandon "
+        "abandon abandon abandon abandon abandon about"
+    )
+    enc = wallet_repo.encrypt_data(mnemonic)
+    owner = "did:example:ms_derive"
+    created = await wallet_repo.create_exchange_wallet(
+        WalletResource.Create(
+            name="MsDer",
+            role="multisig",
+            encrypted_mnemonic=enc,
+            tron_address=None,
+            ethereum_address=None,
+        ),
+        owner_did=owner,
+    )
+    expected = WalletService._addresses_from_mnemonic(mnemonic)
+    assert created.tron_address == expected["tron_address"]
+    assert created.ethereum_address == expected["ethereum_address"]
 
 
 @pytest.mark.asyncio

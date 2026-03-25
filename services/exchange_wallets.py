@@ -5,10 +5,12 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from didcomm.crypto import EthCrypto
 
 from repos.wallet import (
     ExchangeRole,
@@ -18,9 +20,12 @@ from repos.wallet import (
 )
 from repos.wallet_user import WalletUserRepository
 from services.space import SpaceService
+from services.tron.utils import is_valid_tron_address
 from settings import Settings
 
 logger = logging.getLogger(__name__)
+
+ExchangeBlockchain = Literal["tron"]
 
 
 class ExchangeWalletService:
@@ -65,21 +70,113 @@ class ExchangeWalletService:
         owner_did = await self._owner_did_for_space(space)
         return await self._repo.get_exchange_wallet(wallet_id, owner_did)
 
-    async def create_wallet(
+    async def _commit_exchange_wallet(
         self,
         space: str,
         actor_wallet_address: str,
         data: WalletResource.Create,
     ) -> ExchangeWalletResource.Get:
-        """
-        Создать реквизит. Поля role / encrypted_mnemonic / адреса — как в WalletResource.Create
-        (пустой encrypted_mnemonic только при role=external).
-        """
         await self._space._ensure_owner_and_owner_id(space, actor_wallet_address)
         owner_did = await self._owner_did_for_space(space)
         created = await self._repo.create_exchange_wallet(data, owner_did)
         await self._session.commit()
         return created
+
+    async def create_wallet(
+        self,
+        space: str,
+        actor_wallet_address: str,
+        *,
+        role: ExchangeRole,
+        blockchain: ExchangeBlockchain = "tron",
+        name: Optional[str] = None,
+        tron_address: Optional[str] = None,
+        participant_sub_id: Optional[int] = None,
+    ) -> ExchangeWalletResource.Get:
+        """
+        Создать Ramp-кошелёк: multisig (авто-мнемоника), external по sub или произвольному TRON.
+        Контракт согласован с валидацией CreateExchangeWalletRequest на роутере.
+        """
+        owner_wallet_user_id = await self._space._ensure_owner_and_owner_id(
+            space, actor_wallet_address
+        )
+        owner_did = await self._owner_did_for_space(space)
+
+        if role == "multisig":
+            nm = (name or "").strip()
+            if not nm:
+                raise ValueError("name is required for multisig")
+            if await self._repo.exists_exchange_wallet_with_name(owner_did, nm):
+                raise ValueError("Wallet name already exists")
+            mnemonic = EthCrypto.generate_mnemonic(strength=128)
+            normalized = " ".join(mnemonic.split())
+            enc = self._repo.encrypt_data(normalized)
+            data = WalletResource.Create(
+                name=nm,
+                role="multisig",
+                encrypted_mnemonic=enc,
+                tron_address=None,
+                ethereum_address=None,
+                owner_did=None,
+            )
+            return await self._commit_exchange_wallet(
+                space, actor_wallet_address, data
+            )
+
+        # external
+        if participant_sub_id is not None:
+            sub = await self._users.get_sub(
+                owner_wallet_user_id, participant_sub_id
+            )
+            if not sub:
+                raise ValueError("Participant not found")
+            if sub.blockchain.strip().lower() != blockchain:
+                raise ValueError("Participant blockchain does not match")
+            tron = sub.wallet_address.strip()
+            if not is_valid_tron_address(tron):
+                raise ValueError("Invalid TRON address")
+            if await self._repo.exists_exchange_wallet_with_tron(owner_did, tron):
+                raise ValueError("This address is already a Ramp wallet")
+            display_name = (sub.nickname or "").strip() or tron
+            if await self._repo.exists_exchange_wallet_with_name(
+                owner_did, display_name
+            ):
+                raise ValueError("Wallet name already exists")
+            data = WalletResource.Create(
+                name=display_name,
+                role="external",
+                encrypted_mnemonic=None,
+                tron_address=tron,
+                ethereum_address=None,
+                owner_did=None,
+            )
+            return await self._commit_exchange_wallet(
+                space, actor_wallet_address, data
+            )
+
+        nm = (name or "").strip()
+        tr = (tron_address or "").strip()
+        if not nm:
+            raise ValueError("name is required for external wallet with custom address")
+        if not tr:
+            raise ValueError(
+                "tron_address is required for external wallet without participant_sub_id",
+            )
+        if not is_valid_tron_address(tr):
+            raise ValueError("Invalid TRON address")
+        if await self._repo.exists_exchange_wallet_with_name(owner_did, nm):
+            raise ValueError("Wallet name already exists")
+        if await self._repo.exists_exchange_wallet_with_tron(owner_did, tr):
+            raise ValueError("This address is already a Ramp wallet")
+        data = WalletResource.Create(
+            name=nm,
+            role="external",
+            encrypted_mnemonic=None,
+            tron_address=tr,
+            ethereum_address=None,
+            owner_did=None,
+        )
+        return await self._commit_exchange_wallet(space, actor_wallet_address, data)
 
     async def create_wallet_with_plain_mnemonic(
         self,
@@ -96,15 +193,27 @@ class ExchangeWalletService:
         enc: Optional[str] = None
         if mnemonic and mnemonic.strip():
             enc = self._repo.encrypt_data(" ".join(mnemonic.split()))
-        data = WalletResource.Create(
-            name=name.strip(),
-            role=role,
-            encrypted_mnemonic=enc,
-            tron_address=tron_address.strip(),
-            ethereum_address=ethereum_address.strip(),
-            owner_did=None,
-        )
-        return await self.create_wallet(space, actor_wallet_address, data)
+        if role == "multisig":
+            data = WalletResource.Create(
+                name=name.strip(),
+                role=role,
+                encrypted_mnemonic=enc,
+                tron_address=None,
+                ethereum_address=None,
+                owner_did=None,
+            )
+        else:
+            ts = (tron_address or "").strip() or None
+            es = (ethereum_address or "").strip() or None
+            data = WalletResource.Create(
+                name=name.strip(),
+                role=role,
+                encrypted_mnemonic=enc,
+                tron_address=ts,
+                ethereum_address=es,
+                owner_did=None,
+            )
+        return await self._commit_exchange_wallet(space, actor_wallet_address, data)
 
     async def patch_wallet(
         self,
