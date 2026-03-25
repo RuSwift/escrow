@@ -29,7 +29,13 @@ class SpaceBalanceItemResult(BaseModel):
     blockchain: str
     balances_raw: Dict[str, str] = Field(
         default_factory=dict,
-        description="Адрес контракта → баланс в base-units (строка для uint256)",
+        description="Адрес TRC-20 контракта → баланс в base-units (строка для uint256)",
+    )
+    native_balances: Dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Нативный токен сети в base-units: для TRON ключ TRX — баланс в SUN (1 TRX = 10⁶ SUN)"
+        ),
     )
     error: Optional[str] = Field(
         default=None,

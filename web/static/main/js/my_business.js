@@ -585,19 +585,30 @@
                     .then(function(data) {
                         var meta = self.collateralTronTokens();
                         var itemsOut = (data && data.items) ? data.items : [];
-                        var mapOne = function(row, wid) {
-                            if (wid == null) return;
+                        var rowsFromApiRow = function(row) {
                             var rawMap = row.balances_raw || {};
-                            var rows = meta.map(function(t) {
+                            var nb = row.native_balances || {};
+                            var rows = [];
+                            if (nb.TRX != null && String(nb.TRX).trim() !== '') {
+                                rows.push({
+                                    symbol: 'TRX',
+                                    amount: self.formatRawTokenAmount(String(nb.TRX), 6)
+                                });
+                            }
+                            meta.forEach(function(t) {
                                 var c = (t.contract_address || '').trim();
                                 var raw = rawMap[c] != null ? String(rawMap[c]) : '0';
-                                return {
+                                rows.push({
                                     symbol: (t.symbol || c || '?').toUpperCase(),
                                     amount: self.formatRawTokenAmount(raw, t.decimals)
-                                };
+                                });
                             });
+                            return rows;
+                        };
+                        var mapOne = function(row, wid) {
+                            if (wid == null) return;
                             self.$set(self.rampBalancesByWalletId, wid, {
-                                rows: rows,
+                                rows: rowsFromApiRow(row),
                                 itemError: row.error || null
                             });
                         };
@@ -610,17 +621,8 @@
                             itemsOut.forEach(function(row, i) {
                                 var wid = walletIds[i];
                                 if (wid == null) return;
-                                var rawMap = row.balances_raw || {};
-                                var rows = meta.map(function(t) {
-                                    var c = (t.contract_address || '').trim();
-                                    var raw = rawMap[c] != null ? String(rawMap[c]) : '0';
-                                    return {
-                                        symbol: (t.symbol || c || '?').toUpperCase(),
-                                        amount: self.formatRawTokenAmount(raw, t.decimals)
-                                    };
-                                });
                                 byId[wid] = {
-                                    rows: rows,
+                                    rows: rowsFromApiRow(row),
                                     itemError: row.error || null
                                 };
                             });

@@ -5,7 +5,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from services.balances import collateral_contract_addresses_for_network
+from services.balances import (
+    TRON_NATIVE_SYMBOL,
+    collateral_contract_addresses_for_network,
+)
 from services.exchange_wallets import normalize_balance_blockchain
 from services.wallet_user import WalletUserService
 from web.endpoints.dependencies import (
@@ -65,8 +68,8 @@ async def query_space_token_balances(
     JWT (TRON/Web3) или cookie ``main_auth_token``. Адрес из тела должен быть
     в списке реквизитов спейса (Wallet с owner DID владельца спейса).
 
-    Возвращает ``balances_raw`` для контрактов из ``collateral_stablecoin.tokens``
-    выбранной сети. ETH пока не реализован (поле ``error``).
+    Возвращает ``balances_raw`` для TRC-20 из ``collateral_stablecoin.tokens`` и
+    ``native_balances`` (для TRON — ключ TRX, значение в SUN). ETH пока не реализован (``error``).
     """
     await _ensure_actor_can_use_space(wallet_user_service, wallet_address, space)
 
@@ -133,15 +136,33 @@ async def query_space_token_balances(
                 )
             )
 
+    tron_native: dict[str, int] = {}
+    if tron_refresh:
+        tron_native.update(
+            await balances_svc.list_tron_native_trx_balances_raw(
+                tron_refresh,
+                refresh_cache=True,
+            )
+        )
+    if tron_cached:
+        tron_native.update(
+            await balances_svc.list_tron_native_trx_balances_raw(
+                tron_cached,
+                refresh_cache=False,
+            )
+        )
+
     out_items: list[SpaceBalanceItemResult] = []
     for addr, chain_norm, _force in ordered:
         if chain_norm == "TRON":
             raw = tron_results.get(addr, {})
+            sun = int(tron_native.get(addr, 0))
             out_items.append(
                 SpaceBalanceItemResult(
                     address=addr,
                     blockchain=chain_norm,
                     balances_raw={k: str(v) for k, v in raw.items()},
+                    native_balances={TRON_NATIVE_SYMBOL: str(sun)},
                 )
             )
         else:
@@ -150,6 +171,7 @@ async def query_space_token_balances(
                     address=addr,
                     blockchain=chain_norm,
                     balances_raw={},
+                    native_balances={},
                     error="eth_balances_not_implemented",
                 )
             )

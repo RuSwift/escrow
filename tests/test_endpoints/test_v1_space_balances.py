@@ -80,6 +80,17 @@ async def main_app_space_balances(test_db, test_redis, test_settings, seeded_spa
 
     mock_balances.list_tron_trc20_balances_raw = AsyncMock(side_effect=fake_list)
 
+    async def fake_native(
+        wallet_addresses: list,
+        *,
+        tron_api_key=None,
+        refresh_cache: bool = False,
+    ):
+        tag = 1 if refresh_cache else 0
+        return {a: 5_000_000 + tag for a in wallet_addresses}
+
+    mock_balances.list_tron_native_trx_balances_raw = AsyncMock(side_effect=fake_native)
+
     async def override_get_db():
         yield test_db
 
@@ -137,9 +148,12 @@ async def test_space_balances_success(main_app_space_balances, test_settings):
     assert data[0]["error"] is None
     for c in contracts:
         assert data[0]["balances_raw"][c] == "100"
+    assert data[0]["native_balances"]["TRX"] == "5000000"
     mock_balances.list_tron_trc20_balances_raw.assert_awaited_once()
+    mock_balances.list_tron_native_trx_balances_raw.assert_awaited_once()
     call_kw = mock_balances.list_tron_trc20_balances_raw.await_args
     assert call_kw.kwargs["refresh_cache"] is False
+    assert mock_balances.list_tron_native_trx_balances_raw.await_args.kwargs["refresh_cache"] is False
 
 
 @pytest.mark.asyncio
@@ -157,8 +171,11 @@ async def test_space_balances_force_update(main_app_space_balances, test_setting
         )
     assert r.status_code == 200
     assert r.json()["items"][0]["balances_raw"][contracts[0]] == "101"
+    assert r.json()["items"][0]["native_balances"]["TRX"] == "5000001"
     mock_balances.list_tron_trc20_balances_raw.assert_awaited_once()
     assert mock_balances.list_tron_trc20_balances_raw.await_args.kwargs["refresh_cache"] is True
+    mock_balances.list_tron_native_trx_balances_raw.assert_awaited_once()
+    assert mock_balances.list_tron_native_trx_balances_raw.await_args.kwargs["refresh_cache"] is True
 
 
 @pytest.mark.asyncio
@@ -181,6 +198,7 @@ async def test_space_balances_eth_placeholder(main_app_space_balances):
     item = r.json()["items"][0]
     assert item["blockchain"] == "ETH"
     assert item["balances_raw"] == {}
+    assert item["native_balances"] == {}
     assert item["error"] == "eth_balances_not_implemented"
 
 

@@ -1,11 +1,12 @@
 """
-TRON TRC-20 balances (raw base-units).
+Балансы TRON: TRC-20 (raw base-units) и нативный TRX (SUN).
 
 Сервис:
-1) Делает чтение ``balanceOf(address)`` через TronGrid ``/wallet/triggerconstantcontract``.
-2) Кеширует результат в Redis на 60 секунд.
-3) При любой ошибке API (HTTP >= 400, невалидный JSON, ошибка в теле ответа, сеть) для
-   данного кошелька — fallback из таблицы БД (последние значения) и запись этого снимка в Redis.
+1) TRC-20: ``balanceOf(address)`` через TronGrid ``/wallet/triggerconstantcontract``.
+2) TRX: баланс аккаунта через ``/wallet/getaccount`` (поле balance в SUN).
+3) Кеш в Redis на 60 секунд (отдельные ключи для набора контрактов и для TRX).
+4) При ошибке API для кошелька — fallback из БД ``token_balance_cache`` и запись снимка в Redis.
+   Для TRX в БД используется псевдо-контракт ``NATIVE:TRX``.
 """
 
 from __future__ import annotations
@@ -26,6 +27,9 @@ from services.tron.utils import is_valid_tron_address
 
 _CACHE_TTL_SEC = 60
 _TRON_BLOCKCHAIN_NAME = "TRON"
+"""Ключ в token_balance_cache / ответах API — не контракт, а маркер нативного TRX (SUN)."""
+TRON_NATIVE_TRX_CACHE_KEY = "NATIVE:TRX"
+TRON_NATIVE_SYMBOL = "TRX"
 
 
 def collateral_contract_addresses_for_network(
@@ -61,7 +65,7 @@ def _tron_base_url(network: str) -> str:
 
 
 class BalancesService:
-    """TRC-20 balances raw base-units для набора контрактов."""
+    """TRON: TRC-20 по контрактам и нативный TRX (SUN)."""
 
     def __init__(self, session: AsyncSession, redis: Redis, settings: Settings) -> None:
         self._session = session
@@ -94,6 +98,50 @@ class BalancesService:
     def _cache_key(self, *, wallet_address: str, contracts_hash: str) -> str:
         addr = (wallet_address or "").strip()
         return f"balances:tron:trc20:raw:{contracts_hash}:{addr}"
+
+    def _cache_key_native_trx(self, *, wallet_address: str) -> str:
+        addr = (wallet_address or "").strip()
+        return f"balances:tron:native:trx:{addr}"
+
+    async def _tron_getaccount_balance_sun(
+        self,
+        *,
+        owner_wallet_address: str,
+        tron_api_key: Optional[str],
+        session: aiohttp.ClientSession,
+    ) -> int:
+        """Баланс TRX в SUN (целое с TronGrid ``/wallet/getaccount``)."""
+
+        url = _tron_base_url(self._settings.tron.network) + "/wallet/getaccount"
+        payload: Dict[str, Any] = {"address": owner_wallet_address, "visible": True}
+
+        headers: Dict[str, str] = {"Content-Type": "application/json"}
+        key = (tron_api_key or "").strip()
+        if key:
+            headers["TRON-PRO-API-KEY"] = key
+
+        async with session.post(url, json=payload, headers=headers, timeout=20) as resp:
+            raw_text = await resp.text()
+            if resp.status >= 400:
+                raise RuntimeError(
+                    f"TronGrid getaccount error status={resp.status}: {raw_text[:300]}"
+                )
+            try:
+                data = json.loads(raw_text)
+            except json.JSONDecodeError as e:
+                raise RuntimeError(f"TronGrid getaccount invalid JSON: {e!s}") from e
+
+        tr_err = data.get("Error")
+        if isinstance(tr_err, str) and tr_err.strip():
+            raise RuntimeError(f"TronGrid getaccount error: {tr_err.strip()[:300]}")
+
+        bal = data.get("balance")
+        if bal is None:
+            return 0
+        try:
+            return int(bal)
+        except (TypeError, ValueError):
+            return 0
 
     async def _trigger_constant_balance_of(
         self,
@@ -312,8 +360,87 @@ class BalancesService:
 
         return result
 
+    async def list_tron_native_trx_balances_raw(
+        self,
+        wallet_addresses: List[str],
+        *,
+        tron_api_key: Optional[str] = None,
+        refresh_cache: bool = False,
+    ) -> Dict[str, int]:
+        """
+        Нативный TRX в SUN на кошелёк (не TRC-20).
+
+        Returns:
+            { wallet_address: balance_sun_int, ... }
+        """
+
+        addrs = [(a or "").strip() for a in (wallet_addresses or [])]
+        addrs = [a for a in addrs if a]
+        if not addrs:
+            return {}
+
+        for a in addrs:
+            if not is_valid_tron_address(a):
+                raise ValueError(f"Invalid TRON address: {a}")
+
+        api_key = self._resolve_tron_api_key(tron_api_key)
+        result: Dict[str, int] = {}
+        missing: List[str] = []
+
+        for a in addrs:
+            rkey = self._cache_key_native_trx(wallet_address=a)
+            if not refresh_cache:
+                cached = await self._redis.get(rkey)
+                if cached:
+                    try:
+                        result[a] = int(json.loads(cached))
+                        continue
+                    except Exception:
+                        pass
+            missing.append(a)
+
+        if not missing:
+            return result
+
+        async def _native_db_fallback_to_cache(wallet: str) -> int:
+            rkey = self._cache_key_native_trx(wallet_address=wallet)
+            fb = await self._read_balances_from_db_raw(
+                wallet_address=wallet,
+                contract_addresses=[TRON_NATIVE_TRX_CACHE_KEY],
+            )
+            sun = int(fb.get(TRON_NATIVE_TRX_CACHE_KEY, 0))
+            await self._redis.setex(rkey, _CACHE_TTL_SEC, json.dumps(sun, ensure_ascii=False))
+            return sun
+
+        timeout = aiohttp.ClientTimeout(total=25)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            for a in missing:
+                rkey = self._cache_key_native_trx(wallet_address=a)
+                try:
+                    sun = await self._tron_getaccount_balance_sun(
+                        owner_wallet_address=a,
+                        tron_api_key=api_key,
+                        session=session,
+                    )
+                    await self._upsert_balances_to_db_raw(
+                        wallet_address=a,
+                        balances_raw={TRON_NATIVE_TRX_CACHE_KEY: sun},
+                    )
+                    await self._redis.setex(
+                        rkey,
+                        _CACHE_TTL_SEC,
+                        json.dumps(sun, ensure_ascii=False),
+                    )
+                    result[a] = sun
+                except Exception:
+                    result[a] = await _native_db_fallback_to_cache(a)
+
+        return result
+
 
 __all__ = [
     "BalancesService",
+    "TRON_NATIVE_SYMBOL",
+    "TRON_NATIVE_TRX_CACHE_KEY",
     "collateral_contract_addresses_for_network",
 ]

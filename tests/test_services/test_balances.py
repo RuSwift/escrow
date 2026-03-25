@@ -1,7 +1,7 @@
 import pytest
 from redis.asyncio import Redis
 
-from services.balances import BalancesService
+from services.balances import TRON_NATIVE_TRX_CACHE_KEY, BalancesService
 
 
 WALLET_OWNER = "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH"
@@ -187,4 +187,82 @@ async def test_list_tron_trc20_balances_raw_without_api_key_still_calls_tron(
     )
     assert calls == len(contracts) * len(wallets)
     assert all(v == 777 for v in out[WALLET_OWNER].values())
+
+
+@pytest.mark.asyncio
+async def test_list_tron_native_trx_balances_raw_caches(
+    balances_service: BalancesService,
+    test_redis: Redis,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    calls = 0
+
+    async def fake_getaccount(
+        self: BalancesService,
+        *,
+        owner_wallet_address: str,
+        tron_api_key: str | None,
+        session,
+    ) -> int:
+        nonlocal calls
+        calls += 1
+        assert owner_wallet_address == WALLET_OWNER
+        return 12_345_678
+
+    monkeypatch.setattr(
+        BalancesService,
+        "_tron_getaccount_balance_sun",
+        fake_getaccount,
+        raising=True,
+    )
+
+    wallets = [WALLET_OWNER]
+    out1 = await balances_service.list_tron_native_trx_balances_raw(
+        wallets,
+        tron_api_key="k",
+    )
+    assert out1[WALLET_OWNER] == 12_345_678
+    assert calls == 1
+
+    out2 = await balances_service.list_tron_native_trx_balances_raw(
+        wallets,
+        tron_api_key="k",
+    )
+    assert out2 == out1
+    assert calls == 1
+
+    rkey = balances_service._cache_key_native_trx(wallet_address=WALLET_OWNER)
+    ttl = await test_redis.ttl(rkey)
+    assert ttl is not None
+    assert 0 < ttl <= 60
+
+
+@pytest.mark.asyncio
+async def test_list_tron_native_trx_balances_raw_db_fallback(
+    balances_service: BalancesService,
+    monkeypatch: pytest.MonkeyPatch,
+    test_db,
+    test_redis: Redis,
+):
+    await balances_service._upsert_balances_to_db_raw(
+        wallet_address=WALLET_OWNER,
+        balances_raw={TRON_NATIVE_TRX_CACHE_KEY: 999_000_000},
+    )
+
+    async def fail_getaccount(self, **kwargs):
+        raise RuntimeError("down")
+
+    monkeypatch.setattr(
+        BalancesService,
+        "_tron_getaccount_balance_sun",
+        fail_getaccount,
+        raising=True,
+    )
+
+    out = await balances_service.list_tron_native_trx_balances_raw(
+        [WALLET_OWNER],
+        tron_api_key="k",
+        refresh_cache=True,
+    )
+    assert out[WALLET_OWNER] == 999_000_000
 
