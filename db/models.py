@@ -814,6 +814,80 @@ class DashboardState(Base):
         return f"<DashboardState(id={self.id}, updated_at={self.updated_at})>"
 
 
+class TokenBalanceCache(Base):
+    """
+    Кэш баланса токена в base-units/raw uint256 по сети (blockchain), кошельку и контракту.
+
+    Заполняется на успешных запросах к API сети и используется как fallback,
+    если внешний API временно недоступен.
+    """
+
+    __tablename__ = "token_balance_cache"
+
+    id = Column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+        index=True,
+        comment="Autoincrement primary key",
+    )
+
+    address = Column(
+        String(255),
+        nullable=False,
+        index=True,
+        comment="Wallet address in native encoding for the chain (e.g. TRON base58)",
+    )
+
+    blockchain = Column(
+        String(50),
+        nullable=False,
+        index=True,
+        comment="Chain identifier (e.g. TRON, ETH)",
+    )
+
+    contract_address = Column(
+        String(255),
+        nullable=False,
+        index=True,
+        comment="Token contract address in native encoding for the chain",
+    )
+
+    # Баланс в base-units/raw uint256 (без учёта decimals)
+    balance_raw = Column(
+        Numeric(78, 0),
+        nullable=False,
+        comment="Token balance in base-units/raw uint256",
+    )
+
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+        comment="Time of last update (UTC)",
+    )
+
+    __table_args__ = (
+        UniqueConstraint(
+            "address",
+            "blockchain",
+            "contract_address",
+            name="uq_token_balance_cache_addr_chain_contract",
+        ),
+        Index(
+            "ix_token_balance_cache_updated_at",
+            "updated_at",
+        ),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<TokenBalanceCache(address={self.address}, "
+            f"blockchain={self.blockchain}, contract={self.contract_address})>"
+        )
+
+
 class GuarantorDirection(Base):
     """
     Направление работы гаранта в разрезе space: валюта и платёжный метод из снимка BestChange (cur, payment_code),

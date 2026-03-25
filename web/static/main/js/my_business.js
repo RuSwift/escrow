@@ -52,7 +52,11 @@
                 rampParticipants: [],
                 rampAddrOpen: false,
                 rampAddrBlurTimer: null,
-                rampExternalCustom: false
+                rampExternalCustom: false,
+                rampBalancesByWalletId: {},
+                rampBalancesLoading: false,
+                rampBalancesError: null,
+                rampBalancesRowRefreshingId: null
             };
         },
         mounted: function() {
@@ -284,6 +288,13 @@
                     })
                     .finally(function() {
                         self.rampLoading = false;
+                        if (!self.rampError) {
+                            self.fetchRampBalances();
+                        } else {
+                            self.rampBalancesByWalletId = {};
+                            self.rampBalancesLoading = false;
+                            self.rampBalancesError = null;
+                        }
                     });
             },
             openRampModal: function(editWallet) {
@@ -466,6 +477,188 @@
                 var t = (s || '').trim();
                 if (t.length <= left + right + 3) return t;
                 return t.slice(0, left) + '...' + t.slice(-right);
+            },
+            collateralTronTokens: function() {
+                try {
+                    var raw = (typeof window !== 'undefined' && window.__COLLATERAL_STABLECOIN_TOKENS__)
+                        ? window.__COLLATERAL_STABLECOIN_TOKENS__
+                        : [];
+                    if (!Array.isArray(raw)) return [];
+                    return raw.filter(function(t) {
+                        return (t.network || '').toUpperCase() === 'TRON';
+                    });
+                } catch (e) {
+                    return [];
+                }
+            },
+            formatRawTokenAmount: function(rawStr, decimals) {
+                var d = parseInt(decimals, 10);
+                if (isNaN(d) || d < 0) d = 6;
+                var s = String(rawStr == null ? '0' : rawStr).replace(/\s/g, '');
+                if (!/^\d+$/.test(s)) return '0';
+                try {
+                    var bi = BigInt(s);
+                    var base = BigInt(10) ** BigInt(d);
+                    var whole = bi / base;
+                    var frac = bi % base;
+                    if (frac === BigInt(0)) return whole.toString();
+                    var fs = frac.toString().padStart(d, '0').replace(/0+$/, '');
+                    return fs ? whole.toString() + '.' + fs : whole.toString();
+                } catch (e) {
+                    return s;
+                }
+            },
+            /** Округление до 2 знаков и разделители как 5,240.50 (для UI). */
+            formatCollateralAmountDisplay: function(amountStr) {
+                var n = parseFloat(String(amountStr == null ? '0' : amountStr).replace(/,/g, ''), 10);
+                if (!isFinite(n)) return '0.00';
+                var rounded = Math.round(n * 100) / 100;
+                return rounded.toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                });
+            },
+            collateralStablecoinIconUrl: function(symbol) {
+                var s = String(symbol || '').trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+                if (!s) return '';
+                return '/static/main/img/collateral_stablecoin/' + encodeURIComponent(s) + '.svg';
+            },
+            rampBalancesUrl: function() {
+                var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__)
+                    ? String(window.__CURRENT_SPACE__).trim()
+                    : '';
+                if (!space) return '';
+                return '/v1/spaces/' + encodeURIComponent(space) + '/balances';
+            },
+            fetchRampBalances: function(opts) {
+                var self = this;
+                opts = opts || {};
+                var singleWalletId = opts.walletId;
+                var forceUpdate = !!opts.forceUpdate;
+                var url = this.rampBalancesUrl();
+                if (!url) {
+                    this.rampBalancesByWalletId = {};
+                    this.rampBalancesLoading = false;
+                    this.rampBalancesError = null;
+                    this.rampBalancesRowRefreshingId = null;
+                    return;
+                }
+                var payloadItems = [];
+                var walletIds = [];
+                (this.rampWallets || []).forEach(function(rw) {
+                    var tr = (rw.tron_address || '').trim();
+                    if (!tr) return;
+                    if (singleWalletId != null && rw.id !== singleWalletId) return;
+                    payloadItems.push({
+                        address: tr,
+                        blockchain: 'TRON',
+                        force_update: forceUpdate
+                    });
+                    walletIds.push(rw.id);
+                });
+                if (!payloadItems.length) {
+                    if (singleWalletId == null) {
+                        this.rampBalancesByWalletId = {};
+                        this.rampBalancesLoading = false;
+                        this.rampBalancesError = null;
+                    }
+                    this.rampBalancesRowRefreshingId = null;
+                    return;
+                }
+                if (singleWalletId != null) {
+                    this.rampBalancesRowRefreshingId = singleWalletId;
+                } else {
+                    this.rampBalancesLoading = true;
+                    this.rampBalancesError = null;
+                }
+                fetch(url, {
+                    method: 'POST',
+                    headers: this.rampAuthHeaders(),
+                    credentials: 'include',
+                    body: JSON.stringify({ items: payloadItems })
+                })
+                    .then(function(r) {
+                        if (r.status === 401 || r.status === 403) throw new Error('auth');
+                        if (!r.ok) throw new Error(String(r.status));
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        var meta = self.collateralTronTokens();
+                        var itemsOut = (data && data.items) ? data.items : [];
+                        var mapOne = function(row, wid) {
+                            if (wid == null) return;
+                            var rawMap = row.balances_raw || {};
+                            var rows = meta.map(function(t) {
+                                var c = (t.contract_address || '').trim();
+                                var raw = rawMap[c] != null ? String(rawMap[c]) : '0';
+                                return {
+                                    symbol: (t.symbol || c || '?').toUpperCase(),
+                                    amount: self.formatRawTokenAmount(raw, t.decimals)
+                                };
+                            });
+                            self.$set(self.rampBalancesByWalletId, wid, {
+                                rows: rows,
+                                itemError: row.error || null
+                            });
+                        };
+                        if (singleWalletId != null) {
+                            if (itemsOut.length && itemsOut[0]) {
+                                mapOne(itemsOut[0], walletIds[0]);
+                            }
+                        } else {
+                            var byId = {};
+                            itemsOut.forEach(function(row, i) {
+                                var wid = walletIds[i];
+                                if (wid == null) return;
+                                var rawMap = row.balances_raw || {};
+                                var rows = meta.map(function(t) {
+                                    var c = (t.contract_address || '').trim();
+                                    var raw = rawMap[c] != null ? String(rawMap[c]) : '0';
+                                    return {
+                                        symbol: (t.symbol || c || '?').toUpperCase(),
+                                        amount: self.formatRawTokenAmount(raw, t.decimals)
+                                    };
+                                });
+                                byId[wid] = {
+                                    rows: rows,
+                                    itemError: row.error || null
+                                };
+                            });
+                            self.rampBalancesByWalletId = byId;
+                        }
+                    })
+                    .catch(function() {
+                        if (singleWalletId != null) {
+                            if (typeof window.showAlert === 'function') {
+                                window.showAlert({
+                                    title: self.$t('main.dialog.error_title'),
+                                    message: self.$t('main.my_business.ramp_balances_error')
+                                });
+                            }
+                        } else {
+                            self.rampBalancesError = self.$t('main.my_business.ramp_balances_error');
+                            self.rampBalancesByWalletId = {};
+                        }
+                    })
+                    .finally(function() {
+                        if (singleWalletId != null) {
+                            self.rampBalancesRowRefreshingId = null;
+                        } else {
+                            self.rampBalancesLoading = false;
+                        }
+                    });
+            },
+            refreshRampBalancesForWallet: function(rw) {
+                if (!rw || !rw.id) return;
+                if (this.rampBalancesRowRefreshingId != null) return;
+                this.fetchRampBalances({ walletId: rw.id, forceUpdate: true });
+            },
+            rampBalanceItemErrorMessage: function(entry) {
+                if (!entry || !entry.itemError) return '';
+                if (entry.itemError === 'eth_balances_not_implemented') {
+                    return this.$t('main.my_business.ramp_balances_eth_pending');
+                }
+                return entry.itemError;
             }
         },
         template: [
@@ -517,7 +710,27 @@
             '            </button>',
             '          </div>',
             '        </div>',
-            '        <p class="text-xs text-emerald-600 font-medium mb-2">[[ $t(\'main.my_business.ramp_balance_placeholder\') ]]</p>',
+            '        <div class="mb-2 rounded-xl border border-[#eff2f5] bg-white px-3 py-2.5">',
+            '          <div v-if="rampBalancesLoading" class="text-xs text-[#58667e]">[[ $t(\'main.my_business.ramp_balances_loading\') ]]</div>',
+            '          <p v-else-if="rampBalancesError" class="text-xs text-red-600">[[ rampBalancesError ]]</p>',
+            '          <p v-else-if="(rw.ethereum_address || \'\').trim() && !(rw.tron_address || \'\').trim()" class="text-xs text-[#58667e]">[[ $t(\'main.my_business.ramp_balances_tron_only_hint\') ]]</p>',
+            '          <p v-else-if="!(rw.tron_address || \'\').trim()" class="text-xs text-[#58667e]">[[ $t(\'main.my_business.ramp_balance_no_tron\') ]]</p>',
+            '          <template v-else>',
+            '            <p v-if="rampBalancesByWalletId[rw.id] && rampBalanceItemErrorMessage(rampBalancesByWalletId[rw.id])" class="text-xs text-amber-700 mb-2">[[ rampBalanceItemErrorMessage(rampBalancesByWalletId[rw.id]) ]]</p>',
+            '            <div v-if="rampBalancesByWalletId[rw.id] && rampBalancesByWalletId[rw.id].rows && rampBalancesByWalletId[rw.id].rows.length" class="flex flex-wrap items-center justify-between gap-2">',
+            '              <div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm font-semibold text-emerald-600 min-w-0 flex-1">',
+            '                <span v-for="br in rampBalancesByWalletId[rw.id].rows" :key="rw.id + \'-bal-\' + br.symbol" class="inline-flex items-center gap-1.5 min-w-0">',
+            '                  <img :src="collateralStablecoinIconUrl(br.symbol)" :alt="br.symbol" width="16" height="16" class="w-4 h-4 rounded-full object-contain shrink-0 bg-white ring-1 ring-emerald-100" @error="$event.target.style.display=\'none\'" />',
+            '                  <span class="font-mono tabular-nums tracking-tight">[[ formatCollateralAmountDisplay(br.amount) ]] [[ br.symbol ]]</span>',
+            '                </span>',
+            '              </div>',
+            '              <button type="button" @click="refreshRampBalancesForWallet(rw)" :disabled="rampBalancesRowRefreshingId === rw.id || rampBalancesLoading" :title="$t(\'main.my_business.ramp_balances_refresh\')" :aria-label="$t(\'main.my_business.ramp_balances_refresh\')" class="shrink-0 p-1.5 rounded-lg border border-[#eff2f5] bg-white text-[#58667e] hover:text-[#3861fb] hover:border-[#3861fb]/30 disabled:opacity-50 disabled:pointer-events-none">',
+            '                <svg class="w-4 h-4" :class="{\'animate-spin\': rampBalancesRowRefreshingId === rw.id}" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>',
+            '              </button>',
+            '            </div>',
+            '            <p v-else-if="!rampBalancesLoading && !rampBalancesError" class="text-xs text-[#58667e]">[[ $t(\'main.my_business.ramp_balances_empty\') ]]</p>',
+            '          </template>',
+            '        </div>',
             '        <div class="flex items-center gap-2 bg-white border border-[#eff2f5] rounded-xl px-2 py-1.5 text-[11px] font-mono text-[#191d23]">',
             '          <span class="truncate flex-1 min-w-0 sm:hidden">[[ truncateMiddle(rw.tron_address || \'\', 6, 4) ]]</span>',
             '          <span class="truncate flex-1 min-w-0 hidden sm:inline">[[ rw.tron_address || \'\' ]]</span>',

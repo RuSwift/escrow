@@ -26,7 +26,7 @@ def _normalize_system_currencies(codes: List[str]) -> List[str]:
 
 
 def _stablecoin_symbols(settings: Settings) -> List[str]:
-    """Символы токенов из каталога залоговых стейблкоинов (USDT, A5A7, …)."""
+    """Символы токенов из каталога залоговых стейблкоинов (USDT, A7A5, …)."""
     raw = [(t.symbol or "").strip().upper() for t in settings.collateral_stablecoin.tokens]
     return _normalize_system_currencies(raw)
 

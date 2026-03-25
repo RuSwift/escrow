@@ -129,7 +129,7 @@ async def test_list_ratios_skips_non_spot_engine(test_redis):
     assert len(rows) == 5
     pairs = {(r["base"], r["quote"]) for r in rows}
     assert (("USDT", "RUB") in pairs) ^ (("RUB", "USDT") in pairs)
-    assert ("USDT", "A5A7") not in pairs
+    assert ("USDT", "A7A5") not in pairs
     for r in rows:
         assert "pair" in r
         assert r["pair"] is None or isinstance(r["pair"], dict)
@@ -231,11 +231,11 @@ def test_normalize_and_fiat_involving_pairs():
         ("USDT", "USD"),
         ("USDT", "RUB"),
     ]
-    assert _fiat_involving_pairs(["USD"], ["USDT", "A5A7"]) == [
+    assert _fiat_involving_pairs(["USD"], ["USDT", "A7A5"]) == [
         ("USD", "USDT"),
-        ("USD", "A5A7"),
+        ("USD", "A7A5"),
         ("USDT", "USD"),
-        ("A5A7", "USD"),
+        ("A7A5", "USD"),
     ]
 
 

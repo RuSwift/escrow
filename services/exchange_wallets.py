@@ -27,6 +27,18 @@ logger = logging.getLogger(__name__)
 
 ExchangeBlockchain = Literal["tron"]
 
+BalanceChain = Literal["TRON", "ETH"]
+
+
+def normalize_balance_blockchain(blockchain: str) -> Optional[BalanceChain]:
+    """Нормализация имени сети для запросов баланса (как в token_balance_cache.blockchain)."""
+    b = (blockchain or "").strip().upper()
+    if b == "TRON":
+        return "TRON"
+    if b in ("ETH", "ETHEREUM"):
+        return "ETH"
+    return None
+
 
 class ExchangeWalletService:
     """CRUD реквизитов обмена в разрезе space (только owner спейса)."""
@@ -273,3 +285,27 @@ class ExchangeWalletService:
         if ok:
             await self._session.commit()
         return ok
+
+    async def is_ramp_wallet_address(
+        self,
+        space: str,
+        *,
+        address: str,
+        blockchain: str,
+    ) -> bool:
+        """
+        True, если (address, сеть) совпадает с одной из записей Wallet спейса
+        (role external|multisig, owner_did владельца спейса).
+        """
+        try:
+            owner_did = await self._owner_did_for_space(space)
+        except ValueError:
+            return False
+        chain = normalize_balance_blockchain(blockchain)
+        if chain is None:
+            return False
+        return await self._repo.exchange_wallet_has_address(
+            owner_did,
+            address=address,
+            chain=chain,
+        )

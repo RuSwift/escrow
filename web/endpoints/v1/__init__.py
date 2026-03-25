@@ -12,6 +12,7 @@ from web.endpoints.v1 import (
     invite,
     node,
     profile,
+    space_balances,
     space_participants,
     users,
     wallets,
@@ -29,5 +30,6 @@ router.include_router(profile.router)
 router.include_router(space_participants.router)
 router.include_router(guarantor.router)
 router.include_router(exchange_wallets.router)
+router.include_router(space_balances.router)
 router.include_router(users.router)
 router.include_router(wallets.router)

@@ -344,22 +344,25 @@ class CollateralStablecoinToken(BaseModel):
     network: str = Field(description="Имя сети блокчейна")
     contract_address: str = Field(description="Адрес контракта токена")
     base_currency: str = Field(description="Базовая валюта привязки (например USD, RUB)")
+    decimals: int = Field(default=6, ge=0, le=36, description="Decimals токена для отображения баланса")
 
 
 def _default_collateral_stablecoin_tokens() -> list[CollateralStablecoinToken]:
-    """USDT (TRC-20) и A5A7 — рублёвый стейблкоин A7A5 на TRON (TRC-20)."""
+    """USDT (TRC-20) и A7A5 — рублёвый стейблкоин A7A5 на TRON (TRC-20)."""
     return [
         CollateralStablecoinToken(
             symbol="USDT",
             network="TRON",
             contract_address="TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
             base_currency="USD",
+            decimals=6,
         ),
         CollateralStablecoinToken(
-            symbol="A5A7",
+            symbol="A7A5",
             network="TRON",
             contract_address="TLeVfrdym8RoJreJ23dAGyfJDygRtiWKBZ",
             base_currency="RUB",
+            decimals=6,
         ),
     ]
 

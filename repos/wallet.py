@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional, Self
 
 from pydantic import Field, model_validator
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
 
@@ -345,6 +345,38 @@ class WalletRepository(BaseRepository):
             .where(Wallet.tron_address == tron_address.strip())
             .limit(1)
         )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
+    async def exchange_wallet_has_address(
+        self,
+        owner_did: str,
+        *,
+        address: str,
+        chain: str,
+    ) -> bool:
+        """Проверка: address на указанной сети совпадает с реквизитом (external|multisig) владельца."""
+        addr = (address or "").strip()
+        if not addr:
+            return False
+        scope = self._exchange_scope(owner_did)
+        if chain == "TRON":
+            stmt = (
+                select(Wallet.id)
+                .where(scope)
+                .where(Wallet.tron_address == addr)
+                .limit(1)
+            )
+        elif chain == "ETH":
+            stmt = (
+                select(Wallet.id)
+                .where(scope)
+                .where(Wallet.ethereum_address.isnot(None))
+                .where(func.lower(Wallet.ethereum_address) == addr.lower())
+                .limit(1)
+            )
+        else:
+            return False
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none() is not None
 

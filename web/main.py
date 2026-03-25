@@ -50,6 +50,19 @@ def create_app() -> FastAPI:
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+    def _collateral_stablecoin_tokens_json() -> str:
+        s = Settings()
+        payload = [
+            {
+                "symbol": t.symbol,
+                "contract_address": t.contract_address,
+                "network": t.network,
+                "decimals": t.decimals,
+            }
+            for t in s.collateral_stablecoin.tokens
+        ]
+        return json.dumps(payload, ensure_ascii=False)
+
     app.include_router(health_router, prefix="/health")
     app.include_router(v1_router)
 
@@ -192,6 +205,7 @@ def create_app() -> FastAPI:
                 "space_role": space_role.value,
                 "space_subs_count": space_subs_count,
                 "space_profile_filled": space_profile_filled,
+                "collateral_stablecoin_tokens_json": _collateral_stablecoin_tokens_json(),
             },
         )
 

@@ -20,6 +20,7 @@ from repos.guarantor_direction import GuarantorDirectionRepository
 from repos.node import NodeRepository
 from services.admin import AdminService
 from services.arbiter import ArbiterService
+from services.balances import BalancesService
 from services.billing import BillingService
 from services.node import NodeService
 from services.tron_auth import TronAuth
@@ -172,6 +173,15 @@ def get_exchange_wallet_service(
     return ExchangeWalletService(session=db, redis=redis, settings=settings)
 
 
+def get_balances_service(
+    db: DbSession,
+    redis: RedisClient,
+    settings: AppSettings,
+) -> BalancesService:
+    """Балансы TRC-20 (TronGrid + кеш)."""
+    return BalancesService(session=db, redis=redis, settings=settings)
+
+
 def get_invite_service(
     db: DbSession,
     redis: RedisClient,
@@ -319,6 +329,7 @@ GuarantorServiceDep = Annotated[GuarantorService, Depends(get_guarantor_service)
 ExchangeWalletServiceDep = Annotated[
     ExchangeWalletService, Depends(get_exchange_wallet_service)
 ]
+BalancesServiceDep = Annotated[BalancesService, Depends(get_balances_service)]
 InviteServiceDep = Annotated[InviteService, Depends(get_invite_service)]
 WalletServiceDep = Annotated[WalletService, Depends(get_wallet_service)]
 ArbiterServiceDep = Annotated[ArbiterService, Depends(get_arbiter_service)]
@@ -508,6 +519,8 @@ __all__ = [
     "get_space_service",
     "get_guarantor_service",
     "get_exchange_wallet_service",
+    "get_balances_service",
+    "BalancesServiceDep",
     "get_invite_service",
     "get_billing_service",
     "get_node_service",
