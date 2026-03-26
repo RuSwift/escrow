@@ -225,7 +225,7 @@ class WalletUserService:
         nickname: str,
     ) -> WalletUserResource.Get:
         """
-        Инициация нового пользователя с DID = did:{blockchain}:{nickname}.
+        Инициация нового пользователя (спейса) с DID = `did:web:escrow.ruswift.ru:{nickname}`.
         Вызывается после verify при пустом списке spaces.
         """
         existing = await self._repo.get_by_wallet_address(wallet_address)
@@ -250,7 +250,7 @@ class WalletUserService:
         if existing_nick:
             raise ValueError(f"Nickname '{nickname_clean}' is already taken")
 
-        did = f"did:{blockchain_lower}:{nickname_clean}"
+        did = f"did:web:escrow.ruswift.ru:{nickname_clean}"
         data = WalletUserResource.Create(
             wallet_address=wallet_address.strip(),
             blockchain=blockchain_lower,
