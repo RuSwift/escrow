@@ -4,6 +4,10 @@ import pytest
 from db.models import WalletUserSubRole
 from repos.wallet_user import WalletUserSubResource
 from services.exchange_wallets import ExchangeWalletService
+from services.multisig_wallet.constants import (
+    MULTISIG_STATUS_AWAITING_FUNDING,
+    MULTISIG_STATUS_PENDING_CONFIG,
+)
 from services.wallet_user import WalletUserService
 
 
@@ -55,6 +59,9 @@ async def test_create_multisig_server_mnemonic(
     assert row.role == "multisig"
     assert row.tron_address.startswith("T")
     assert row.ethereum_address and row.ethereum_address.startswith("0x")
+    assert row.multisig_setup_status == MULTISIG_STATUS_PENDING_CONFIG
+    assert row.multisig_setup_meta is not None
+    assert row.multisig_setup_meta.get("min_trx_sun")
 
 
 @pytest.mark.asyncio
@@ -121,3 +128,29 @@ async def test_participant_wrong_id_raises(
             blockchain="tron",
             participant_sub_id=999999,
         )
+
+
+@pytest.mark.asyncio
+async def test_patch_multisig_setup_actors(
+    exchange_space_owner_sub, exchange_wallet_service
+):
+    row = await exchange_wallet_service.create_wallet(
+        SPACE_NAME,
+        OWNER_WALLET,
+        role="multisig",
+        blockchain="tron",
+        name="Patch Msig",
+    )
+    tr = row.tron_address
+    assert tr
+    updated = await exchange_wallet_service.patch_multisig_setup(
+        SPACE_NAME,
+        OWNER_WALLET,
+        row.id,
+        multisig_actors=[tr],
+        multisig_threshold_n=1,
+        multisig_threshold_m=1,
+    )
+    assert updated is not None
+    assert updated.multisig_setup_status == MULTISIG_STATUS_AWAITING_FUNDING
+    assert updated.multisig_setup_meta.get("actors") == [tr]

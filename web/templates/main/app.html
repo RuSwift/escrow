@@ -7,7 +7,8 @@
      data-space="{{ space | default('') }}"
      data-space-role="{{ space_role | default('') }}"
      data-space-subs-count="{{ space_subs_count | default(-1) }}"
-     data-space-profile-filled="{{ 'true' if (space_profile_filled | default(true)) else 'false' }}">
+     data-space-profile-filled="{{ 'true' if (space_profile_filled | default(true)) else 'false' }}"
+     data-space-owner-tron="{{ space_owner_wallet_tron | default('') }}">
   <div class="p-8 bg-[#f8fafd] flex-1 overflow-y-auto flex items-center justify-center">
     <p class="text-[#58667e] text-sm">{{ _('main.loading') }}</p>
   </div>

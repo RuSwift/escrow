@@ -445,6 +445,10 @@ async def test_create_exchange_wallet_multisig_derives_addresses(wallet_repo):
     expected = WalletService._addresses_from_mnemonic(mnemonic)
     assert created.tron_address == expected["tron_address"]
     assert created.ethereum_address == expected["ethereum_address"]
+    from services.multisig_wallet.constants import MULTISIG_STATUS_PENDING_CONFIG
+
+    assert created.multisig_setup_status == MULTISIG_STATUS_PENDING_CONFIG
+    assert created.multisig_setup_meta is not None
 
 
 @pytest.mark.asyncio

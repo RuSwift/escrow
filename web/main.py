@@ -153,8 +153,9 @@ def create_app() -> FastAPI:
             space_clean
         )
         space_role = await space_service.get_space_role(space_clean, wallet_address, "tron")
+        is_owner = space_role == WalletUserSubRole.owner
 
-        if initial_page in ("space-roles", "space-profile") and space_role != WalletUserSubRole.owner:
+        if initial_page in ("space-roles", "space-profile") and not is_owner:
             ctx = {
                 **_main_context(request, "dashboard"),
                 "space": space_clean,
@@ -169,7 +170,7 @@ def create_app() -> FastAPI:
                 status_code=403,
             )
 
-        if space_role == WalletUserSubRole.owner:
+        if is_owner:
             subs = await space_service.list_subs_for_space(
                 space_clean, wallet_address
             )
@@ -189,11 +190,16 @@ def create_app() -> FastAPI:
             "support",
             "detail",
         )
-        if space_role == WalletUserSubRole.owner:
+        if is_owner:
             valid = valid + ("space-roles", "space-profile", "my-business", "guarantor")
         page = initial_page if initial_page in valid else "dashboard"
         if page == "detail" and not escrow_id:
             page = "dashboard"
+        space_owner_wallet_tron = ""
+        if is_owner:
+            space_owner_wallet_tron = (
+                await space_service.get_space_owner_tron_wallet(space_clean) or ""
+            )
         return templates.TemplateResponse(
             "main/app.html",
             {
@@ -205,6 +211,7 @@ def create_app() -> FastAPI:
                 "space_role": space_role.value,
                 "space_subs_count": space_subs_count,
                 "space_profile_filled": space_profile_filled,
+                "space_owner_wallet_tron": space_owner_wallet_tron,
                 "collateral_stablecoin_tokens_json": _collateral_stablecoin_tokens_json(),
             },
         )

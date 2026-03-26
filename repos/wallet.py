@@ -15,6 +15,8 @@ from redis.asyncio import Redis
 from core.entities import BaseResource
 from db.models import Wallet
 from repos.base import BaseRepository
+from services.multisig_wallet.constants import MULTISIG_STATUS_PENDING_CONFIG
+from services.multisig_wallet.meta import default_meta_dict
 from settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -131,6 +133,8 @@ class ExchangeWalletResource(BaseResource):
         account_permissions: Optional[Dict[str, Any]] = None
         created_at: datetime
         updated_at: datetime
+        multisig_setup_status: Optional[str] = None
+        multisig_setup_meta: Optional[Dict[str, Any]] = None
 
 
 def _model_to_get(model: Wallet) -> WalletResource.Get:
@@ -146,6 +150,13 @@ def _model_to_get(model: Wallet) -> WalletResource.Get:
     )
 
 
+def _multisig_fields(model: Wallet) -> Dict[str, Any]:
+    return {
+        "multisig_setup_status": getattr(model, "multisig_setup_status", None),
+        "multisig_setup_meta": getattr(model, "multisig_setup_meta", None),
+    }
+
+
 def _model_to_exchange_get(model: Wallet) -> ExchangeWalletResource.Get:
     return ExchangeWalletResource.Get(
         id=model.id,
@@ -157,6 +168,7 @@ def _model_to_exchange_get(model: Wallet) -> ExchangeWalletResource.Get:
         account_permissions=model.account_permissions,
         created_at=model.created_at,
         updated_at=model.updated_at,
+        **_multisig_fields(model),
     )
 
 
@@ -227,6 +239,11 @@ class WalletRepository(BaseRepository):
         else:
             tron_s = (merged.tron_address or "").strip() or None
             eth_s = (merged.ethereum_address or "").strip() or None
+        ms_status = None
+        ms_meta = None
+        if merged.role == "multisig":
+            ms_status = MULTISIG_STATUS_PENDING_CONFIG
+            ms_meta = default_meta_dict()
         model = Wallet(
             name=merged.name,
             encrypted_mnemonic=merged.encrypted_mnemonic,
@@ -234,6 +251,8 @@ class WalletRepository(BaseRepository):
             ethereum_address=eth_s,
             role=merged.role,
             owner_did=merged.owner_did,
+            multisig_setup_status=ms_status,
+            multisig_setup_meta=ms_meta,
         )
         self._session.add(model)
         await self._session.flush()
@@ -265,6 +284,19 @@ class WalletRepository(BaseRepository):
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
         return _model_to_exchange_get(model) if model else None
+
+    async def get_exchange_wallet_model(
+        self,
+        wallet_id: int,
+        owner_did: str,
+    ) -> Optional[Wallet]:
+        stmt = (
+            select(Wallet)
+            .where(Wallet.id == wallet_id)
+            .where(self._exchange_scope(owner_did))
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
 
     async def patch_exchange_wallet(
         self,

@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from core.exceptions import SpacePermissionDenied
 from repos.wallet import ExchangeWalletResource
 from services.exchange_wallets import ExchangeWalletService
+from services.multisig_wallet.meta import meta_for_api
 from web.endpoints.dependencies import (
     get_exchange_wallet_service,
     get_required_wallet_address_for_space,
@@ -21,9 +22,25 @@ from web.endpoints.v1.schemas.exchange_wallets import (
 
 router = APIRouter(prefix="/spaces", tags=["exchange-wallets"])
 
+_MULTISIG_PATCH_KEYS = frozenset(
+    {
+        "multisig_actors",
+        "multisig_threshold_n",
+        "multisig_threshold_m",
+        "multisig_retry",
+        "multisig_min_trx_sun",
+        "multisig_permission_name",
+    }
+)
+
 
 def _to_item(row: ExchangeWalletResource.Get) -> ExchangeWalletItem:
     r = row.role if row.role in ("external", "multisig") else "external"
+    ms_meta = None
+    ms_st = None
+    if r == "multisig":
+        ms_st = getattr(row, "multisig_setup_status", None)
+        ms_meta = meta_for_api(getattr(row, "multisig_setup_meta", None)) or None
     return ExchangeWalletItem(
         id=row.id,
         name=row.name,
@@ -33,6 +50,8 @@ def _to_item(row: ExchangeWalletResource.Get) -> ExchangeWalletItem:
         owner_did=row.owner_did,
         created_at=row.created_at,
         updated_at=row.updated_at,
+        multisig_setup_status=ms_st,
+        multisig_setup_meta=ms_meta,
     )
 
 
@@ -105,9 +124,30 @@ async def patch_exchange_wallet(
     svc: ExchangeWalletService = Depends(get_exchange_wallet_service),
 ):
     raw = body.model_dump(exclude_unset=True)
+    ms_kw = {k: raw[k] for k in _MULTISIG_PATCH_KEYS if k in raw}
+    if ms_kw:
+        try:
+            ms_out = await svc.patch_multisig_setup(
+                space,
+                wallet_address,
+                wallet_id,
+                **ms_kw,
+            )
+            if ms_out is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Not found"
+                )
+        except SpacePermissionDenied as e:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail=str(e)
+            ) from e
+        except ValueError as e:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+            ) from e
     kwargs = {}
     for key in ("name", "tron_address", "ethereum_address", "mnemonic"):
-        if key in raw:
+        if key in raw and key not in _MULTISIG_PATCH_KEYS:
             kwargs[key] = raw[key]
     try:
         updated = await svc.patch_wallet_with_plain_fields(
@@ -149,3 +189,31 @@ async def delete_exchange_wallet(
     if not ok:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     return None
+
+
+@router.post(
+    "/{space}/exchange-wallets/{wallet_id}/multisig-maintenance",
+    response_model=ExchangeWalletItem,
+)
+async def post_multisig_maintenance(
+    space: str,
+    wallet_id: int,
+    wallet_address: str = Depends(get_required_wallet_address_for_space),
+    svc: ExchangeWalletService = Depends(get_exchange_wallet_service),
+):
+    """Немедленный тик обслуживания multisig (баланс TRX, broadcast, проверка tx)."""
+    try:
+        updated = await svc.refresh_multisig_maintenance(
+            space, wallet_address, wallet_id
+        )
+    except SpacePermissionDenied as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=str(e)
+        ) from e
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return _to_item(updated)

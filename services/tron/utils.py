@@ -1,8 +1,8 @@
 """
-Utility functions for TRON blockchain (address from mnemonic).
+Utility functions for TRON blockchain (address from mnemonic, permission helpers).
 По аналогии с https://github.com/RuSwift/garantex/blob/main/services/tron/utils.py
 """
-from typing import Tuple
+from typing import Any, Dict, Tuple
 
 from bip32 import BIP32
 from mnemonic import Mnemonic
@@ -48,3 +48,46 @@ def keypair_from_mnemonic(
     private_key = private_key_from_mnemonic(mnemonic, passphrase, account_index)
     address = address_from_private_key(private_key)
     return address, private_key
+
+
+# ---------------------------------------------------------------------------
+# Account permission helpers (pure functions, no I/O)
+# ---------------------------------------------------------------------------
+
+def is_custom_multisig_active_permission(account: Dict[str, Any]) -> bool:
+    """
+    True, если active_permission выглядит как не дефолтный одиночный ключ
+    (порог >1, несколько ключей или имя не 'active').
+    """
+    perms = account.get("active_permission")
+    if not isinstance(perms, list):
+        return False
+    for perm in perms:
+        if not isinstance(perm, dict):
+            continue
+        threshold = int(perm.get("threshold", 1) or 1)
+        keys = perm.get("keys") or []
+        if not isinstance(keys, list):
+            keys = []
+        permission_name = str(perm.get("permission_name", "") or "").strip()
+        is_custom = (
+            threshold > 1
+            or len(keys) > 1
+            or (permission_name not in ("active", "") and permission_name)
+        )
+        if is_custom:
+            return True
+    return False
+
+
+def account_permissions_snapshot(account: Dict[str, Any]) -> Dict[str, Any]:
+    """Снимок для Wallet.account_permissions (обрезка лишнего не обязательна)."""
+    keys = (
+        "address",
+        "balance",
+        "owner_permission",
+        "active_permission",
+        "witness_permission",
+        "account_type",
+    )
+    return {k: account.get(k) for k in keys if k in account}

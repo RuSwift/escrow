@@ -30,6 +30,7 @@ from redis.asyncio import Redis
 import db as db_module
 from repos.dashboard import DashboardStateRepository
 from services.dashboard import DashboardService
+from services.multisig_wallet.maintenance import MultisigWalletMaintenanceService
 from services.ratios.cbr import CbrEngine
 from services.ratios.forex import ForexEngine
 from services.ratios.rapira import RapiraEngine
@@ -39,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 FOREX_RAPIRA_SEC = 60.0
 CBR_SEC = 3600.0
+MULTISIG_WALLET_SEC = 90.0
 
 
 async def _merge_ratios_after_tick(
@@ -158,6 +160,37 @@ async def _loop_cbr(redis: Redis, settings: Settings) -> None:
         await asyncio.sleep(CBR_SEC)
 
 
+async def _loop_multisig_wallets(redis: Redis, settings: Settings) -> None:
+    task = "multisig_wallets"
+    while True:
+        logger.info(
+            "cron task=%s: tick start (interval=%ss)",
+            task,
+            int(MULTISIG_WALLET_SEC),
+        )
+        t0 = time.perf_counter()
+        try:
+            session_factory = db_module.SessionLocal
+            if session_factory is None:
+                logger.warning("cron task=%s: SessionLocal missing", task)
+            else:
+                async with session_factory() as session:
+                    ms = MultisigWalletMaintenanceService(
+                        session, redis, settings
+                    )
+                    n = await ms.process_batch()
+                    elapsed_ms = (time.perf_counter() - t0) * 1000
+                    logger.info(
+                        "cron task=%s: processed %s wallet(s) in %.0fms",
+                        task,
+                        n,
+                        elapsed_ms,
+                    )
+        except Exception:
+            logger.exception("cron task=%s: tick raised", task)
+        await asyncio.sleep(MULTISIG_WALLET_SEC)
+
+
 async def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -167,14 +200,16 @@ async def main() -> None:
     db_module.init_db(settings.database)
     redis = Redis.from_url(settings.redis.url, decode_responses=True)
     logger.info(
-        "cron: tasks started — task=forex_rapira every %ss, task=cbr every %ss",
+        "cron: tasks started — forex_rapira every %ss, cbr every %ss, multisig every %ss",
         int(FOREX_RAPIRA_SEC),
         int(CBR_SEC),
+        int(MULTISIG_WALLET_SEC),
     )
     try:
         await asyncio.gather(
             _loop_forex_rapira(redis, settings),
             _loop_cbr(redis, settings),
+            _loop_multisig_wallets(redis, settings),
         )
     finally:
         await redis.aclose()

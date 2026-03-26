@@ -19,6 +19,12 @@ from repos.wallet import (
     WalletResource,
 )
 from repos.wallet_user import WalletUserRepository
+from services.multisig_wallet.constants import (
+    MULTISIG_STATUS_ACTIVE,
+    MULTISIG_STATUS_AWAITING_FUNDING,
+)
+from services.multisig_wallet.maintenance import MultisigWalletMaintenanceService
+from services.multisig_wallet.meta import merge_meta, validate_actors_threshold
 from services.space import SpaceService
 from services.tron.utils import is_valid_tron_address
 from settings import Settings
@@ -309,3 +315,95 @@ class ExchangeWalletService:
             address=address,
             chain=chain,
         )
+
+    async def patch_multisig_setup(
+        self,
+        space: str,
+        actor_wallet_address: str,
+        wallet_id: int,
+        *,
+        multisig_actors: Optional[List[str]] = None,
+        multisig_threshold_n: Optional[int] = None,
+        multisig_threshold_m: Optional[int] = None,
+        multisig_retry: Optional[bool] = None,
+        multisig_min_trx_sun: Optional[int] = None,
+        multisig_permission_name: Optional[str] = None,
+    ) -> Optional[ExchangeWalletResource.Get]:
+        """PATCH полей настройки Ramp multisig (только owner спейса)."""
+        await self._space._ensure_owner_and_owner_id(space, actor_wallet_address)
+        owner_did = await self._owner_did_for_space(space)
+        model = await self._repo.get_exchange_wallet_model(wallet_id, owner_did)
+        if model is None:
+            return None
+        if model.role != "multisig":
+            raise ValueError("Not a multisig wallet")
+        if model.multisig_setup_status is None:
+            raise ValueError("Legacy multisig wallet has no setup flow in the app")
+        if model.multisig_setup_status == MULTISIG_STATUS_ACTIVE:
+            raise ValueError("Multisig wallet is already active")
+
+        meta = merge_meta(model.multisig_setup_meta, {})
+        touched = False
+
+        if multisig_min_trx_sun is not None:
+            meta["min_trx_sun"] = int(multisig_min_trx_sun)
+            touched = True
+        if multisig_permission_name is not None:
+            pn = (multisig_permission_name or "").strip()[:32]
+            if pn:
+                meta["permission_name"] = pn
+                touched = True
+        if multisig_retry is True:
+            meta["retry_desired"] = True
+            touched = True
+
+        if multisig_actors is not None:
+            if multisig_threshold_n is None or multisig_threshold_m is None:
+                raise ValueError(
+                    "multisig_threshold_n and multisig_threshold_m are required with multisig_actors",
+                )
+            tr = (model.tron_address or "").strip()
+            if not tr:
+                raise ValueError("Multisig wallet has no TRON address yet")
+            validate_actors_threshold(
+                list(multisig_actors),
+                int(multisig_threshold_n),
+                int(multisig_threshold_m),
+                main_tron_address=tr,
+            )
+            meta["actors"] = [a.strip() for a in multisig_actors]
+            meta["threshold_n"] = int(multisig_threshold_n)
+            meta["threshold_m"] = int(multisig_threshold_m)
+            meta["permission_tx_id"] = None
+            meta["broadcast_at"] = None
+            meta["last_error"] = None
+            meta["retry_desired"] = False
+            model.multisig_setup_status = MULTISIG_STATUS_AWAITING_FUNDING
+            model.multisig_setup_meta = meta
+            touched = True
+
+        if not touched:
+            return await self.get_wallet(space, actor_wallet_address, wallet_id)
+
+        model.multisig_setup_meta = meta
+        await self._session.commit()
+        return await self.get_wallet(space, actor_wallet_address, wallet_id)
+
+    async def refresh_multisig_maintenance(
+        self,
+        space: str,
+        actor_wallet_address: str,
+        wallet_id: int,
+    ) -> Optional[ExchangeWalletResource.Get]:
+        """Немедленный прогон state machine для multisig (баланс, broadcast, проверка tx)."""
+        await self._space._ensure_owner_and_owner_id(space, actor_wallet_address)
+        owner_did = await self._owner_did_for_space(space)
+        ms = MultisigWalletMaintenanceService(
+            self._session, self._redis, self._settings
+        )
+        changed = await ms.process_wallet_by_id(
+            wallet_id, owner_did, force_balance_refresh=True
+        )
+        if changed:
+            await self._session.commit()
+        return await self.get_wallet(space, actor_wallet_address, wallet_id)

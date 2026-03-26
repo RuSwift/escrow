@@ -56,13 +56,64 @@
                 rampBalancesByWalletId: {},
                 rampBalancesLoading: false,
                 rampBalancesError: null,
-                rampBalancesRowRefreshingId: null
+                rampBalancesRowRefreshingId: null,
+                showRampMultisigWizard: false,
+                rampMultisigWizardWallet: null,
+                rampMultisigWizardSelectedAddresses: [],
+                rampMultisigWizardParticipantsLoading: false,
+                rampMultisigWizardN: 2,
+                rampMultisigWizardM: 2,
+                rampMultisigWizardSaving: false,
+                rampMultisigWizardError: null
             };
         },
         mounted: function() {
             this.fetchRampWallets();
         },
         computed: {
+            /**
+             * Участники спейса (operator/owner, TRON) для мастера multisig: верифицирован — можно выбрать.
+             */
+            multisigWizardManagerSignerRows: function() {
+                var self = this;
+                var rw = this.rampMultisigWizardWallet;
+                var main = rw && rw.tron_address ? String(rw.tron_address).trim() : '';
+                var ownerTron = (typeof window !== 'undefined' && window.__SPACE_OWNER_TRON__)
+                    ? String(window.__SPACE_OWNER_TRON__).trim() : '';
+                var managers = [];
+                (this.rampParticipants || []).forEach(function(p) {
+                    if ((p.blockchain || '').toLowerCase() !== 'tron') return;
+                    if (p.is_blocked) return;
+                    if (!self.isParticipantMultisigManager(p)) return;
+                    var addr = (p.wallet_address || '').trim();
+                    if (!addr || addr === main) return;
+                    if (ownerTron && addr === ownerTron) return;
+                    managers.push({
+                        kind: 'participant',
+                        address: addr,
+                        nickname: (p.nickname || '').trim(),
+                        roles: Array.isArray(p.roles) ? p.roles : (p.roles ? [p.roles] : []),
+                        is_verified: !!p.is_verified,
+                        selectable: !!p.is_verified
+                    });
+                });
+                managers.sort(function(a, b) {
+                    if (a.selectable !== b.selectable) return a.selectable ? -1 : 1;
+                    return (a.nickname || a.address).localeCompare(b.nickname || b.address, undefined, { sensitivity: 'base' });
+                });
+                var out = [];
+                if (ownerTron && ownerTron !== main) {
+                    out.push({
+                        kind: 'space_owner',
+                        address: ownerTron,
+                        nickname: '',
+                        roles: [],
+                        is_verified: true,
+                        selectable: true
+                    });
+                }
+                return out.concat(managers);
+            },
             filteredFiats: function() {
                 var q = (this.newService.fiatCurrency || '').toLowerCase();
                 if (!q) return [];
@@ -661,6 +712,241 @@
                     return this.$t('main.my_business.ramp_balances_eth_pending');
                 }
                 return entry.itemError;
+            },
+            multisigStatusLabel: function(rw) {
+                var st = (rw && rw.multisig_setup_status) ? String(rw.multisig_setup_status) : '';
+                if (!st) return '';
+                var k = 'main.my_business.multisig_status_' + st;
+                var t = this.$t(k);
+                return (t && t !== k) ? t : st;
+            },
+            formatSunAsTrx: function(sun) {
+                var n = Number(sun);
+                if (!isFinite(n)) return '—';
+                return (n / 1e6).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+            },
+            /** Менеджеры спейса: участник с ролью operator или owner (не только reader). */
+            isParticipantMultisigManager: function(p) {
+                var roles = p && p.roles ? p.roles : [];
+                if (!Array.isArray(roles)) roles = [roles];
+                return roles.some(function(r) {
+                    return r === 'operator' || r === 'owner';
+                });
+            },
+            multisigWizardSelectableManagerAddressSet: function() {
+                var map = {};
+                (this.multisigWizardManagerSignerRows || []).forEach(function(row) {
+                    if (row.selectable && row.address) map[row.address] = true;
+                });
+                return map;
+            },
+            applyMultisigWizardSelectionPolicy: function() {
+                var rw = this.rampMultisigWizardWallet;
+                if (!rw) return;
+                var main = (rw.tron_address || '').trim();
+                var allowed = this.multisigWizardSelectableManagerAddressSet();
+                var sel = (this.rampMultisigWizardSelectedAddresses || []).slice();
+                sel = sel.map(function(a) { return (a || '').trim(); }).filter(Boolean);
+                sel = sel.filter(function(a) { return a !== main && allowed[a]; });
+                var seen = {};
+                sel = sel.filter(function(a) {
+                    if (seen[a]) return false;
+                    seen[a] = true;
+                    return true;
+                });
+                this.rampMultisigWizardSelectedAddresses = sel;
+            },
+            isMultisigManagerSignerSelected: function(addr) {
+                var a = (addr || '').trim();
+                if (!a) return false;
+                return (this.rampMultisigWizardSelectedAddresses || []).indexOf(a) !== -1;
+            },
+            toggleMultisigManagerSignerRowClick: function(row) {
+                if (!row || !row.selectable) return;
+                var addr = (row.address || '').trim();
+                if (!addr) return;
+                var arr = (this.rampMultisigWizardSelectedAddresses || []).slice();
+                var i = arr.indexOf(addr);
+                if (i === -1) arr.push(addr);
+                else arr.splice(i, 1);
+                this.rampMultisigWizardSelectedAddresses = arr;
+            },
+            multisigWizardRolesLabel: function(roles) {
+                var r = Array.isArray(roles) ? roles : (roles ? [roles] : []);
+                return r.map(function(x) {
+                    var k = 'main.space.role_' + String(x);
+                    var t = this.$t(k);
+                    return t && t !== k ? t : x;
+                }, this).join(', ');
+            },
+            openMultisigWizard: function(rw) {
+                if (!rw) return;
+                this.rampMultisigWizardWallet = rw;
+                var m = rw.multisig_setup_meta || {};
+                var actors = Array.isArray(m.actors) ? m.actors : [];
+                var main = (rw.tron_address || '').trim();
+                var withoutMain = actors
+                    .map(function(a) { return (a || '').trim(); })
+                    .filter(function(a) { return a && a !== main; });
+                this.rampMultisigWizardSelectedAddresses = withoutMain.slice();
+                this.rampMultisigWizardN = m.threshold_n != null ? Number(m.threshold_n) : 2;
+                this.rampMultisigWizardM = m.threshold_m != null ? Number(m.threshold_m) : 2;
+                this.rampMultisigWizardError = null;
+                this.rampMultisigWizardSaving = false;
+                this.showRampMultisigWizard = true;
+                var self = this;
+                this.rampMultisigWizardParticipantsLoading = true;
+                var url = this.rampSpaceParticipantsUrl();
+                if (!url) {
+                    this.rampMultisigWizardParticipantsLoading = false;
+                    this.applyMultisigWizardSelectionPolicy();
+                    return;
+                }
+                fetch(url, { method: 'GET', headers: this.rampAuthHeaders(), credentials: 'include' })
+                    .then(function(r) {
+                        if (!r.ok) throw new Error('load');
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        self.rampParticipants = Array.isArray(data) ? data : [];
+                    })
+                    .catch(function() {
+                        self.rampMultisigWizardError = self.$t('main.my_business.multisig_signers_load_error');
+                    })
+                    .finally(function() {
+                        self.rampMultisigWizardParticipantsLoading = false;
+                        self.applyMultisigWizardSelectionPolicy();
+                    });
+            },
+            closeMultisigWizard: function() {
+                this.showRampMultisigWizard = false;
+                this.rampMultisigWizardWallet = null;
+                this.rampMultisigWizardParticipantsLoading = false;
+                this.rampMultisigWizardSelectedAddresses = [];
+            },
+            saveMultisigWizard: function() {
+                var self = this;
+                var rw = this.rampMultisigWizardWallet;
+                var base = this.rampApiBase();
+                if (!rw || !rw.id || !base) return;
+                var main = (rw.tron_address || '').trim();
+                if (!main) {
+                    this.rampMultisigWizardError = this.$t('main.dialog.error_title');
+                    return;
+                }
+                var allowed = this.multisigWizardSelectableManagerAddressSet();
+                var extra = (this.rampMultisigWizardSelectedAddresses || [])
+                    .map(function(a) { return (a || '').trim(); })
+                    .filter(Boolean);
+                var i;
+                for (i = 0; i < extra.length; i++) {
+                    if (!allowed[extra[i]]) {
+                        this.rampMultisigWizardError = this.$t('main.my_business.multisig_signers_invalid');
+                        return;
+                    }
+                }
+                var actors = [main].concat(extra);
+                var seen = {};
+                actors = actors.filter(function(a) {
+                    if (seen[a]) return false;
+                    seen[a] = true;
+                    return true;
+                });
+                var n = parseInt(this.rampMultisigWizardN, 10);
+                var m = parseInt(this.rampMultisigWizardM, 10);
+                if (actors.length < 1 || isNaN(n) || isNaN(m)) {
+                    this.rampMultisigWizardError = this.$t('main.dialog.error_title');
+                    return;
+                }
+                this.rampMultisigWizardSaving = true;
+                this.rampMultisigWizardError = null;
+                fetch(base + '/' + rw.id, {
+                    method: 'PATCH',
+                    headers: this.rampAuthHeaders(),
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        multisig_actors: actors,
+                        multisig_threshold_n: n,
+                        multisig_threshold_m: m
+                    })
+                })
+                    .then(function(r) {
+                        if (!r.ok) return r.json().then(function(j) { throw new Error((j && j.detail) || String(r.status)); });
+                        return r.json();
+                    })
+                    .then(function() {
+                        self.closeMultisigWizard();
+                        self.fetchRampWallets();
+                    })
+                    .catch(function(e) {
+                        self.rampMultisigWizardError = (e && e.message) ? e.message : 'Error';
+                    })
+                    .finally(function() {
+                        self.rampMultisigWizardSaving = false;
+                    });
+            },
+            refreshMultisigWizard: function() {
+                var self = this;
+                var rw = this.rampMultisigWizardWallet;
+                var base = this.rampApiBase();
+                if (!rw || !rw.id || !base) return;
+                this.rampMultisigWizardSaving = true;
+                this.rampMultisigWizardError = null;
+                fetch(base + '/' + rw.id + '/multisig-maintenance', {
+                    method: 'POST',
+                    headers: this.rampAuthHeaders(),
+                    credentials: 'include'
+                })
+                    .then(function(r) {
+                        if (!r.ok) throw new Error(String(r.status));
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        self.rampMultisigWizardWallet = data;
+                        var meta = data.multisig_setup_meta || {};
+                        var actors = Array.isArray(meta.actors) ? meta.actors : [];
+                        var main = (data.tron_address || '').trim();
+                        self.rampMultisigWizardSelectedAddresses = actors
+                            .map(function(a) { return (a || '').trim(); })
+                            .filter(function(a) { return a && a !== main; });
+                        self.applyMultisigWizardSelectionPolicy();
+                        self.rampMultisigWizardN = meta.threshold_n != null ? Number(meta.threshold_n) : self.rampMultisigWizardN;
+                        self.rampMultisigWizardM = meta.threshold_m != null ? Number(meta.threshold_m) : self.rampMultisigWizardM;
+                        self.fetchRampWallets();
+                    })
+                    .catch(function(e) {
+                        self.rampMultisigWizardError = (e && e.message) ? e.message : 'Error';
+                    })
+                    .finally(function() {
+                        self.rampMultisigWizardSaving = false;
+                    });
+            },
+            retryMultisigWizard: function() {
+                var self = this;
+                var rw = this.rampMultisigWizardWallet;
+                var base = this.rampApiBase();
+                if (!rw || !rw.id || !base) return;
+                this.rampMultisigWizardSaving = true;
+                this.rampMultisigWizardError = null;
+                fetch(base + '/' + rw.id, {
+                    method: 'PATCH',
+                    headers: this.rampAuthHeaders(),
+                    credentials: 'include',
+                    body: JSON.stringify({ multisig_retry: true })
+                })
+                    .then(function(r) {
+                        if (!r.ok) throw new Error(String(r.status));
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        self.rampMultisigWizardWallet = data;
+                        self.fetchRampWallets();
+                        self.refreshMultisigWizard();
+                    })
+                    .catch(function(e) {
+                        self.rampMultisigWizardError = (e && e.message) ? e.message : 'Error';
+                        self.rampMultisigWizardSaving = false;
+                    });
             }
         },
         template: [
@@ -711,6 +997,10 @@
             '              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>',
             '            </button>',
             '          </div>',
+            '        </div>',
+            '        <div v-if="rw.role === \'multisig\' && rw.multisig_setup_status && rw.multisig_setup_status !== \'active\'" class="mb-2 flex flex-wrap items-center gap-2">',
+            '          <span class="text-[10px] font-bold uppercase px-2 py-0.5 rounded-md bg-amber-50 text-amber-900 border border-amber-100 max-w-full truncate">[[ multisigStatusLabel(rw) ]]</span>',
+            '          <button type="button" @click="openMultisigWizard(rw)" class="text-xs font-bold text-[#3861fb] hover:underline shrink-0">[[ $t(\'main.my_business.multisig_wizard_open\') ]]</button>',
             '        </div>',
             '        <div class="mb-2 rounded-xl border border-[#eff2f5] bg-white px-3 py-2.5">',
             '          <div v-if="rampBalancesLoading" class="text-xs text-[#58667e]">[[ $t(\'main.my_business.ramp_balances_loading\') ]]</div>',
@@ -1013,6 +1303,61 @@
             '      <div class="p-6 bg-gray-50 border-t border-[#eff2f5] flex gap-3">',
             '        <button type="button" @click="closeRampModal" class="flex-1 py-3 border border-[#eff2f5] rounded-xl text-sm font-bold text-[#58667e] hover:bg-white transition-all">[[ $t(\'main.my_business.cancel\') ]]</button>',
             '        <button type="button" @click="saveRampWallet" :disabled="rampSaving || (rampEditingId ? rampSaveEditDisabled : rampSaveAddDisabled)" class="flex-1 py-3 bg-[#3861fb] text-white rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all">[[ $t(\'main.my_business.ramp_save\') ]]</button>',
+            '      </div>',
+            '    </div>',
+            '  </div>',
+
+            '  <div v-if="showRampMultisigWizard && rampMultisigWizardWallet" class="fixed inset-0 z-[110] flex items-center justify-center p-4">',
+            '    <div class="absolute inset-0 bg-black/60" @click="closeMultisigWizard"></div>',
+            '    <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl relative overflow-hidden max-h-[90vh] overflow-y-auto">',
+            '      <div class="p-5 sm:p-6 border-b border-[#eff2f5] flex items-center justify-between gap-2">',
+            '        <h3 class="text-lg sm:text-xl font-bold text-[#191d23]">[[ $t(\'main.my_business.multisig_wizard_title\') ]]</h3>',
+            '        <button type="button" @click="closeMultisigWizard" class="p-2 hover:bg-gray-100 rounded-full shrink-0"><svg class="w-6 h-6 text-[#58667e] rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg></button>',
+            '      </div>',
+            '      <div class="p-5 sm:p-6 space-y-4">',
+            '        <p class="text-xs text-[#58667e]"><span class="font-mono break-all">[[ rampMultisigWizardWallet.tron_address ]]</span></p>',
+            '        <p class="text-xs text-[#58667e]">[[ $t(\'main.my_business.multisig_include_main_hint\') ]]</p>',
+            '        <div class="grid grid-cols-2 gap-3 text-sm">',
+            '          <div><span class="text-[10px] font-bold text-[#58667e] uppercase">[[ $t(\'main.my_business.multisig_min_trx\') ]]</span><div class="font-mono font-semibold text-[#191d23]">[[ formatSunAsTrx((rampMultisigWizardWallet.multisig_setup_meta || {}).min_trx_sun) ]]</div></div>',
+            '          <div><span class="text-[10px] font-bold text-[#58667e] uppercase">[[ $t(\'main.my_business.multisig_balance_current\') ]]</span><div class="font-mono font-semibold text-emerald-600">[[ formatSunAsTrx((rampMultisigWizardWallet.multisig_setup_meta || {}).last_trx_balance_sun) ]]</div></div>',
+            '        </div>',
+            '        <div v-if="(rampMultisigWizardWallet.multisig_setup_meta || {}).last_error" class="text-xs text-red-600 rounded-xl bg-red-50 border border-red-100 px-3 py-2">[[ $t(\'main.my_business.multisig_last_error\') ]]: [[ (rampMultisigWizardWallet.multisig_setup_meta || {}).last_error ]]</div>',
+            '        <div v-if="(rampMultisigWizardWallet.multisig_setup_meta || {}).permission_tx_id" class="text-xs text-[#58667e]">',
+            '          <span class="font-bold">[[ $t(\'main.my_business.multisig_tx\') ]]:</span> ',
+            '          <a :href="\'https://tronscan.org/#/transaction/\' + encodeURIComponent((rampMultisigWizardWallet.multisig_setup_meta || {}).permission_tx_id)" target="_blank" rel="noopener noreferrer" class="text-[#3861fb] font-mono break-all hover:underline">[[ (rampMultisigWizardWallet.multisig_setup_meta || {}).permission_tx_id ]]</a>',
+            '        </div>',
+            '        <div>',
+            '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5">[[ $t(\'main.my_business.multisig_actors_label\') ]]</label>',
+            '          <p class="text-xs text-[#58667e] mb-2">[[ $t(\'main.my_business.multisig_signers_roles_hint\') ]]</p>',
+            '          <div class="rounded-xl border border-[#eff2f5] bg-gray-50/80 px-3 py-2.5 mb-3">',
+            '            <div class="text-[10px] font-bold text-[#58667e] uppercase">[[ $t(\'main.my_business.multisig_signers_main_row\') ]]</div>',
+            '            <div class="font-mono text-sm text-[#191d23] break-all mt-1">[[ rampMultisigWizardWallet.tron_address ]]</div>',
+            '          </div>',
+            '          <div v-if="rampMultisigWizardParticipantsLoading" class="text-sm text-[#58667e] py-4 text-center rounded-xl border border-dashed border-[#eff2f5]">…</div>',
+            '          <div v-else class="max-h-52 overflow-y-auto rounded-xl border border-[#eff2f5] bg-white divide-y divide-[#eff2f5]">',
+            '            <div v-for="row in multisigWizardManagerSignerRows" :key="(row.kind || \'participant\') + \'-\' + row.address" class="flex items-start gap-3 p-3 transition-colors" :class="row.selectable ? \'cursor-pointer hover:bg-[#fafbfd]\' : \'opacity-65 cursor-default\'" @click="toggleMultisigManagerSignerRowClick(row)">',
+            '              <input type="checkbox" class="mt-1 shrink-0 rounded border-[#cfd6e4] text-[#3861fb] pointer-events-none" tabindex="-1" :disabled="!row.selectable" :checked="isMultisigManagerSignerSelected(row.address)" />',
+            '              <div class="min-w-0 flex-1 pointer-events-none">',
+            '                <div class="text-sm font-semibold text-[#191d23]">[[ row.kind === \'space_owner\' ? $t(\'main.my_business.multisig_signers_space_owner\') : (row.nickname || row.address) ]]</div>',
+            '                <div class="font-mono text-[11px] text-[#58667e] break-all mt-0.5">[[ row.address ]]</div>',
+            '                <div v-if="row.kind !== \'space_owner\' && row.roles && row.roles.length" class="text-[10px] text-[#58667e] mt-1">[[ multisigWizardRolesLabel(row.roles) ]]</div>',
+            '                <div v-if="row.kind !== \'space_owner\' && !row.is_verified" class="text-[11px] text-amber-800 mt-1">[[ $t(\'main.my_business.multisig_signers_not_verified\') ]]</div>',
+            '              </div>',
+            '            </div>',
+            '            <div v-if="!multisigWizardManagerSignerRows.length" class="p-4 text-xs text-[#58667e] text-center">[[ $t(\'main.my_business.multisig_signers_no_managers\') ]]</div>',
+            '          </div>',
+            '        </div>',
+            '        <div class="grid grid-cols-2 gap-3">',
+            '          <div><label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5">[[ $t(\'main.my_business.multisig_threshold_n\') ]]</label><input type="number" min="1" v-model.number="rampMultisigWizardN" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm" /></div>',
+            '          <div><label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5">[[ $t(\'main.my_business.multisig_threshold_m\') ]]</label><input type="number" min="1" v-model.number="rampMultisigWizardM" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm" /></div>',
+            '        </div>',
+            '        <p v-if="rampMultisigWizardError" class="text-xs text-red-600">[[ rampMultisigWizardError ]]</p>',
+            '      </div>',
+            '      <div class="p-5 sm:p-6 bg-gray-50 border-t border-[#eff2f5] flex flex-col sm:flex-row gap-2 sm:gap-3">',
+            '        <button type="button" @click="closeMultisigWizard" class="flex-1 py-3 border border-[#eff2f5] rounded-xl text-sm font-bold text-[#58667e] hover:bg-white transition-all order-last sm:order-none">[[ $t(\'main.my_business.cancel\') ]]</button>',
+            '        <button type="button" @click="saveMultisigWizard" :disabled="rampMultisigWizardSaving" class="flex-1 py-3 bg-[#3861fb] text-white rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50">[[ $t(\'main.my_business.multisig_save_config\') ]]</button>',
+            '        <button type="button" @click="refreshMultisigWizard" :disabled="rampMultisigWizardSaving" class="flex-1 py-3 border border-[#eff2f5] rounded-xl text-sm font-bold text-[#3861fb] bg-white hover:bg-blue-50/50 disabled:opacity-50">[[ $t(\'main.my_business.multisig_refresh\') ]]</button>',
+            '        <button v-if="rampMultisigWizardWallet.multisig_setup_status === \'failed\'" type="button" @click="retryMultisigWizard" :disabled="rampMultisigWizardSaving" class="flex-1 py-3 border border-amber-200 rounded-xl text-sm font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 disabled:opacity-50">[[ $t(\'main.my_business.multisig_retry\') ]]</button>',
             '      </div>',
             '    </div>',
             '  </div>',

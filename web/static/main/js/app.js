@@ -74,6 +74,7 @@
     window.__SPACE_ROLE__ = spaceRole;
     window.__SPACE_SUBS_COUNT__ = spaceSubsCount;
     window.__SPACE_PROFILE_FILLED__ = spaceProfileFilled;
+    window.__SPACE_OWNER_TRON__ = (el.getAttribute('data-space-owner-tron') || '').trim();
 
     var initialPage = (el.getAttribute('data-initial-page') || 'dashboard').trim();
     var validPages = [

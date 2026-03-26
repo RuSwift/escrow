@@ -495,7 +495,19 @@ class Wallet(Base):
     
     # TRON account permissions (from blockchain)
     account_permissions = Column(JSON, nullable=True, comment="TRON account permissions from blockchain")
-    
+
+    # Ramp multisig (role=multisig): lifecycle until on-chain permissions are active
+    multisig_setup_status = Column(
+        String(32),
+        nullable=True,
+        comment="pending_config|awaiting_funding|ready_for_permissions|permissions_submitted|active|failed; NULL=legacy active",
+    )
+    multisig_setup_meta = Column(
+        JSONB,
+        nullable=True,
+        comment="actors, threshold_n/m, min_trx_sun, last_trx_balance_sun, errors, tx ids",
+    )
+
     # Wallet role
     role = Column(String(255), nullable=True, comment="Wallet role")
     

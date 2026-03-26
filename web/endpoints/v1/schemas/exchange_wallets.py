@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -16,6 +16,8 @@ class ExchangeWalletItem(BaseModel):
     owner_did: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    multisig_setup_status: Optional[str] = None
+    multisig_setup_meta: Optional[Dict[str, Any]] = None
 
 
 class ExchangeWalletListResponse(BaseModel):
@@ -83,4 +85,32 @@ class PatchExchangeWalletRequest(BaseModel):
     mnemonic: Optional[str] = Field(
         default=None,
         description="Новая мнемоника или пустая строка для сброса (только вместе с переходом на external).",
+    )
+    multisig_actors: Optional[List[str]] = Field(
+        default=None,
+        description="TRON base58 адреса подписантов active permission (включая адрес кошелька)",
+    )
+    multisig_threshold_n: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Порог N из M",
+    )
+    multisig_threshold_m: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Должно совпадать с len(multisig_actors)",
+    )
+    multisig_retry: Optional[bool] = Field(
+        default=None,
+        description="После failed — запросить повтор в cron",
+    )
+    multisig_min_trx_sun: Optional[int] = Field(
+        default=None,
+        ge=1,
+        description="Минимальный баланс TRX (SUN) перед transaction permissions",
+    )
+    multisig_permission_name: Optional[str] = Field(
+        default=None,
+        max_length=32,
+        description="Имя custom active permission на цепи",
     )

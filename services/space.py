@@ -118,6 +118,16 @@ class SpaceService:
             session=session, redis=redis, settings=settings
         )
 
+    async def get_space_owner_tron_wallet(self, space: str) -> Optional[str]:
+        """Base58 TRON-адрес владельца спейса (WalletUser с nickname=space), если учётка на TRON."""
+        owner = await self._repo.get_by_nickname((space or "").strip())
+        if not owner:
+            return None
+        if (owner.blockchain or "").lower() != "tron":
+            return None
+        addr = (owner.wallet_address or "").strip()
+        return addr if addr else None
+
     async def get_space_role(
         self,
         space: str,
