@@ -18,6 +18,9 @@ from services.multisig_wallet.constants import (
 from services.multisig_wallet.maintenance import MultisigWalletMaintenanceService
 from services.multisig_wallet.meta import default_meta_dict
 
+# Адрес подписанта, отличный от tron_address тестового multisig-кошелька
+_MSIG_SIGNER_TRON = "TV6ZVcKH24NzWxwdRbCvVD5gqAwaypdkRi"
+
 
 @pytest.fixture
 def multisig_maintenance(test_db, test_redis: Redis, test_settings):
@@ -90,7 +93,7 @@ async def test_process_wallet_awaiting_funding_updates_balance_below_min(
         multisig_setup_status=MULTISIG_STATUS_AWAITING_FUNDING,
         multisig_setup_meta={
             **default_meta_dict(),
-            "actors": ["TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH"],
+            "actors": [_MSIG_SIGNER_TRON],
             "threshold_n": 1,
             "threshold_m": 1,
             "min_trx_sun": 999_999_999,
@@ -139,7 +142,7 @@ async def test_ready_for_permissions_precheck_recalculates_min_and_waits_funding
         multisig_setup_status=MULTISIG_STATUS_READY_FOR_PERMISSIONS,
         multisig_setup_meta={
             **default_meta_dict(),
-            "actors": ["TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH"],
+            "actors": [_MSIG_SIGNER_TRON],
             "threshold_n": 1,
             "threshold_m": 1,
             "last_trx_balance_sun": 120_000,

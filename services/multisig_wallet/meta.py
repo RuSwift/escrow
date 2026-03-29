@@ -41,7 +41,7 @@ def validate_actors_threshold(
     *,
     main_tron_address: str,
 ) -> None:
-    """N-of-M: уникальные base58 адреса; main-адрес кошелька должен быть среди actors."""
+    """N-of-M по подписантам active permission. Адрес multisig-кошелька в actors не входит."""
 
     if threshold_m < 1 or threshold_n < 1 or threshold_n > threshold_m:
         raise ValueError("Invalid threshold: need 1 <= n <= m")
@@ -60,8 +60,10 @@ def validate_actors_threshold(
     if len(cleaned) != threshold_m:
         raise ValueError(f"Need exactly threshold_m={threshold_m} actors, got {len(cleaned)}")
     main = (main_tron_address or "").strip()
-    if main not in seen:
-        raise ValueError("Multisig account address (from mnemonic) must be included in actors")
+    if main and main in seen:
+        raise ValueError(
+            "Multisig wallet address must not be listed in signers (multisig_actors)"
+        )
 
 
 def meta_for_api(meta: Optional[Dict[str, Any]]) -> Dict[str, Any]:

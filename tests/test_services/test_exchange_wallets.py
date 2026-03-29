@@ -143,14 +143,16 @@ async def test_patch_multisig_setup_actors(
     )
     tr = row.tron_address
     assert tr
+    signer = SUB_VALID_TRON
+    assert signer != tr
     updated = await exchange_wallet_service.patch_multisig_setup(
         SPACE_NAME,
         OWNER_WALLET,
         row.id,
-        multisig_actors=[tr],
+        multisig_actors=[signer],
         multisig_threshold_n=1,
         multisig_threshold_m=1,
     )
     assert updated is not None
     assert updated.multisig_setup_status == MULTISIG_STATUS_AWAITING_FUNDING
-    assert updated.multisig_setup_meta.get("actors") == [tr]
+    assert updated.multisig_setup_meta.get("actors") == [signer]

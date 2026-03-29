@@ -88,7 +88,7 @@ class PatchExchangeWalletRequest(BaseModel):
     )
     multisig_actors: Optional[List[str]] = Field(
         default=None,
-        description="TRON base58 адреса подписантов active permission (включая адрес кошелька)",
+        description="TRON base58 адреса подписантов active permission (без адреса multisig-кошелька)",
     )
     multisig_threshold_n: Optional[int] = Field(
         default=None,
