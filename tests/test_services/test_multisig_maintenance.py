@@ -9,11 +9,12 @@ from unittest.mock import AsyncMock
 import pytest
 from redis.asyncio import Redis
 
-from db.models import Wallet
+from db.models import Wallet, WalletUser
 from services.multisig_wallet.constants import (
     MULTISIG_DEFAULT_PERMISSION_NAME,
     MULTISIG_STATUS_ACTIVE,
     MULTISIG_STATUS_AWAITING_FUNDING,
+    MULTISIG_STATUS_FAILED,
     MULTISIG_STATUS_PENDING_CONFIG,
     MULTISIG_STATUS_READY_FOR_PERMISSIONS,
 )
@@ -22,6 +23,8 @@ from services.multisig_wallet.meta import default_meta_dict
 
 # Адрес подписанта, отличный от tron_address тестового multisig-кошелька
 _MSIG_SIGNER_TRON = "TV6ZVcKH24NzWxwdRbCvVD5gqAwaypdkRi"
+# TRON владельца спейса (WalletUser) для list_tron_owner_addresses
+_SPACE_OWNER_TRON = "TLrJJkGK4puQGZLFbrPxK2icPgADaNTq5A"
 
 
 @pytest.fixture
@@ -128,6 +131,13 @@ async def test_ready_for_permissions_precheck_recalculates_min_and_waits_funding
     test_db,
     monkeypatch: pytest.MonkeyPatch,
 ):
+    owner_wu = WalletUser(
+        wallet_address=_SPACE_OWNER_TRON,
+        blockchain="tron",
+        did="did:t",
+        nickname="ms_maint_ready_fp",
+    )
+    test_db.add(owner_wu)
     w = Wallet(
         name="m3",
         encrypted_mnemonic="enc",
@@ -150,10 +160,24 @@ async def test_ready_for_permissions_precheck_recalculates_min_and_waits_funding
     await test_db.refresh(w)
 
     # estimate_sun=200_000 > last_trx_balance_sun=120_000 → ожидаем переход в AWAITING_FUNDING
+    # owner_permission: на цепи владелец ещё multisig (подпись возможна); Active — пусто
     monkeypatch.setattr(
         "services.multisig_wallet.maintenance.TronGridClient",
         _make_fake_client(
-            account_data={"active_permission": [], "balance": 120_000},
+            account_data={
+                "active_permission": [],
+                "balance": 120_000,
+                "owner_permission": {
+                    "permission_name": "owner",
+                    "threshold": 1,
+                    "keys": [
+                        {
+                            "address": "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
+                            "weight": 1,
+                        }
+                    ],
+                },
+            },
             estimate_sun=200_000,
         ),
     )
@@ -277,3 +301,106 @@ async def test_early_chain_active_syncs_without_notify(
     await test_db.commit()
     await test_db.refresh(w)
     assert w.multisig_setup_status == MULTISIG_STATUS_ACTIVE
+
+
+@pytest.mark.asyncio
+async def test_ready_for_permissions_fails_without_tron_space_owner(
+    multisig_maintenance: MultisigWalletMaintenanceService,
+    test_db,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Нет TRON owner в спейсе — FAILED, без broadcast."""
+    w = Wallet(
+        name="m_no_owner",
+        encrypted_mnemonic="enc",
+        tron_address="TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
+        ethereum_address="0x6666666666666666666666666666666666666666",
+        role="multisig",
+        owner_did="did:no_wallet_user",
+        multisig_setup_status=MULTISIG_STATUS_READY_FOR_PERMISSIONS,
+        multisig_setup_meta={
+            **default_meta_dict(),
+            "actors": [_MSIG_SIGNER_TRON],
+            "threshold_n": 1,
+            "threshold_m": 1,
+            "last_trx_balance_sun": 500_000,
+            "min_trx_sun": 1,
+        },
+    )
+    test_db.add(w)
+    await test_db.commit()
+    await test_db.refresh(w)
+
+    monkeypatch.setattr(
+        "services.multisig_wallet.maintenance.TronGridClient",
+        _make_fake_client(
+            account_data={"active_permission": [], "balance": 500_000_000},
+        ),
+    )
+
+    changed = await multisig_maintenance.process_wallet(w, force_balance_refresh=False)
+    assert changed is True
+    await test_db.commit()
+    await test_db.refresh(w)
+    assert w.multisig_setup_status == MULTISIG_STATUS_FAILED
+    err = (w.multisig_setup_meta or {}).get("last_error") or ""
+    assert "no TRON owner" in err.lower() or "tron owner" in err.lower()
+
+
+@pytest.mark.asyncio
+async def test_ready_for_permissions_fails_when_chain_owner_not_multisig(
+    multisig_maintenance: MultisigWalletMaintenanceService,
+    test_db,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Owner на цепи уже без ключа multisig — подпись с мнемоники невозможна."""
+    owner_wu = WalletUser(
+        wallet_address=_SPACE_OWNER_TRON,
+        blockchain="tron",
+        did="did:guard_t",
+        nickname="ms_maint_guard_u",
+    )
+    test_db.add(owner_wu)
+    w = Wallet(
+        name="m_guard",
+        encrypted_mnemonic="enc",
+        tron_address="TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH",
+        ethereum_address="0x7777777777777777777777777777777777777777",
+        role="multisig",
+        owner_did="did:guard_t",
+        multisig_setup_status=MULTISIG_STATUS_READY_FOR_PERMISSIONS,
+        multisig_setup_meta={
+            **default_meta_dict(),
+            "actors": [_MSIG_SIGNER_TRON],
+            "threshold_n": 1,
+            "threshold_m": 1,
+            "last_trx_balance_sun": 500_000,
+            "min_trx_sun": 1,
+        },
+    )
+    test_db.add(w)
+    await test_db.commit()
+    await test_db.refresh(w)
+
+    monkeypatch.setattr(
+        "services.multisig_wallet.maintenance.TronGridClient",
+        _make_fake_client(
+            account_data={
+                "active_permission": [],
+                "balance": 500_000_000,
+                "owner_permission": {
+                    "keys": [
+                        {"address": "TONLYOTHER111111111111111111111111111111", "weight": 1}
+                    ],
+                },
+            },
+        ),
+    )
+
+    changed = await multisig_maintenance.process_wallet(w, force_balance_refresh=False)
+    assert changed is True
+    await test_db.commit()
+    await test_db.refresh(w)
+    assert w.multisig_setup_status == MULTISIG_STATUS_FAILED
+    err = (w.multisig_setup_meta or {}).get("last_error") or ""
+    assert "on-chain owner" in err.lower() or "outside the app" in err.lower()

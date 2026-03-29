@@ -34,6 +34,7 @@ from services.tron.utils import (
     account_permissions_snapshot,
     is_custom_multisig_active_permission,
     keypair_from_mnemonic,
+    owner_permission_allows_signer,
 )
 from settings import Settings
 
@@ -68,6 +69,16 @@ class MultisigWalletMaintenanceService:
             return None
         nick = (owner.nickname or "").strip()
         return nick or None
+
+    async def _tron_owner_addresses_for_ramp_wallet(self, wallet: Wallet) -> list[str]:
+        """TRON-адреса owner-ролей спейса (родитель + субы owner на TRON)."""
+        odid = (wallet.owner_did or "").strip()
+        if not odid:
+            return []
+        wu = await self._wallet_users.get_by_did(odid)
+        if not wu:
+            return []
+        return await self._wallet_users.list_tron_owner_addresses_for_wallet_user(wu.id)
 
     def _ramp_notify_payload(self, wallet: Wallet) -> Dict[str, Any]:
         return {
@@ -291,10 +302,48 @@ class MultisigWalletMaintenanceService:
                 meta.get("permission_name") or MULTISIG_DEFAULT_PERMISSION_NAME
             )[:32]
 
+            owner_tron_addrs = await self._tron_owner_addresses_for_ramp_wallet(wallet)
+            if not owner_tron_addrs:
+                wallet.multisig_setup_meta = merge_meta(
+                    meta,
+                    {
+                        "last_error": (
+                            "no TRON owner addresses for space: "
+                            "space owner must use TRON and/or add participants with "
+                            "owner role on TRON"
+                        ),
+                        "last_chain_check_at": _utc_iso(),
+                    },
+                )
+                wallet.multisig_setup_status = MULTISIG_STATUS_FAILED
+                return True
+
+            try:
+                acc_guard = await client.get_account(tron)
+            except Exception as e:
+                logger.warning("multisig id=%s get_account guard: %s", wallet.id, e)
+                acc_guard = {}
+
+            if not owner_permission_allows_signer(acc_guard, tron):
+                wallet.multisig_setup_meta = merge_meta(
+                    meta,
+                    {
+                        "last_error": (
+                            "on-chain owner permission no longer includes this multisig "
+                            "address; update permissions outside the app (sign with "
+                            "space owner keys)"
+                        ),
+                        "last_chain_check_at": _utc_iso(),
+                    },
+                )
+                wallet.multisig_setup_status = MULTISIG_STATUS_FAILED
+                return True
+
             # Precheck: оцениваем стоимость tx (+10% margin) и обновляем min_trx_sun
             try:
                 estimated_sun = await client.estimate_permission_update_sun(
                     owner_address=tron,
+                    owner_tron_addresses=owner_tron_addrs,
                     actor_addresses=list(actors),
                     threshold=int(tn),
                     permission_name=perm_name,
@@ -333,6 +382,7 @@ class MultisigWalletMaintenanceService:
             try:
                 txid, bout = await client.permission_update_sign_and_broadcast(
                     owner_address=tron,
+                    owner_tron_addresses=owner_tron_addrs,
                     actor_addresses=list(actors),
                     threshold=int(tn),
                     permission_name=perm_name,

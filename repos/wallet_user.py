@@ -313,6 +313,40 @@ class WalletUserRepository(BaseRepository):
         result = await self._session.execute(stmt)
         return [_sub_model_to_get(m) for m in result.scalars().all()]
 
+    async def list_tron_owner_addresses_for_wallet_user(
+        self, wallet_user_id: int
+    ) -> List[str]:
+        """
+        TRON-адреса с ролью owner в спейсе: родитель на TRON + субы с ролью owner на TRON.
+        Уникальные, порядок: сначала родитель, затем субы (как в list_subs).
+        """
+        parent = await self.get(wallet_user_id)
+        if not parent:
+            return []
+        seen: set[str] = set()
+        ordered: List[str] = []
+
+        def add(addr: str) -> None:
+            a = (addr or "").strip()
+            if not a or a in seen:
+                return
+            seen.add(a)
+            ordered.append(a)
+
+        if (parent.blockchain or "").strip().lower() == "tron":
+            add(parent.wallet_address)
+
+        for sub in await self.list_subs(wallet_user_id):
+            if sub.is_blocked:
+                continue
+            if (sub.blockchain or "").strip().lower() != "tron":
+                continue
+            if WalletUserSubRole.owner not in sub.roles:
+                continue
+            add(sub.wallet_address)
+
+        return ordered
+
     async def get_sub(
         self, wallet_user_id: int, sub_id: int
     ) -> Optional[WalletUserSubResource.Get]:

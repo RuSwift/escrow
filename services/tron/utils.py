@@ -80,6 +80,34 @@ def is_custom_multisig_active_permission(account: Dict[str, Any]) -> bool:
     return False
 
 
+def owner_permission_allows_signer(
+    account: Dict[str, Any], signer_tron_address: str
+) -> bool:
+    """
+    True, если текущий owner_permission на цепи допускает подпись с адреса signer_tron_address
+    (для AccountPermissionUpdate нужен ключ из owner).
+
+    Если owner_permission отсутствует или без keys — считаем дефолт (владелец = сам аккаунт),
+    подпись адреса кошелька допустима.
+    """
+    want = (signer_tron_address or "").strip()
+    if not want:
+        return False
+    op = account.get("owner_permission")
+    if not isinstance(op, dict):
+        return True
+    keys = op.get("keys") or []
+    if not isinstance(keys, list) or not keys:
+        return True
+    for k in keys:
+        if not isinstance(k, dict):
+            continue
+        addr = (k.get("address") or "").strip()
+        if addr == want:
+            return True
+    return False
+
+
 def account_permissions_snapshot(account: Dict[str, Any]) -> Dict[str, Any]:
     """Снимок для Wallet.account_permissions (обрезка лишнего не обязательна)."""
     keys = (

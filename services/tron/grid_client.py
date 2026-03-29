@@ -12,6 +12,9 @@ from settings import Settings
 
 from services.multisig_wallet.constants import DEFAULT_ACTIVE_OPERATIONS_HEX
 
+# Tron owner permission: 1-of-N по ключам спейса (см. AccountPermissionUpdate).
+OWNER_PERMISSION_THRESHOLD = 1
+
 
 class TronGridClient:
     """
@@ -94,13 +97,23 @@ class TronGridClient:
     def build_permission_body(
         *,
         owner_address: str,
+        owner_tron_addresses: List[str],
         actor_addresses: List[str],
         threshold: int,
         permission_name: str,
     ) -> Dict[str, Any]:
-        """Тело для /wallet/accountpermissionupdate."""
-        keys = [{"address": a.strip(), "weight": 1} for a in actor_addresses]
-        if len(keys) < threshold:
+        """Тело для /wallet/accountpermissionupdate.
+
+        Блок ``owner``: адреса owner-ролей спейса (не адрес multisig), ``threshold`` = 1.
+        """
+        owner_keys_raw = [a.strip() for a in owner_tron_addresses if (a or "").strip()]
+        if not owner_keys_raw:
+            raise ValueError("owner_tron_addresses must be non-empty")
+        owner_keys = [{"address": a, "weight": 1} for a in owner_keys_raw]
+        if len(owner_keys) < OWNER_PERMISSION_THRESHOLD:
+            raise ValueError("owner threshold exceeds number of owner keys")
+        active_keys = [{"address": a.strip(), "weight": 1} for a in actor_addresses]
+        if len(active_keys) < threshold:
             raise ValueError("threshold exceeds number of keys")
         name = (permission_name or "multisig_active")[:32]
         return {
@@ -108,8 +121,8 @@ class TronGridClient:
             "owner": {
                 "type": 0,
                 "permission_name": "owner",
-                "threshold": 1,
-                "keys": [{"address": owner_address.strip(), "weight": 1}],
+                "threshold": OWNER_PERMISSION_THRESHOLD,
+                "keys": owner_keys,
             },
             "actives": [
                 {
@@ -117,7 +130,7 @@ class TronGridClient:
                     "permission_name": name,
                     "threshold": threshold,
                     "operations": DEFAULT_ACTIVE_OPERATIONS_HEX,
-                    "keys": keys,
+                    "keys": active_keys,
                 }
             ],
             "visible": True,
@@ -228,6 +241,7 @@ class TronGridClient:
         self,
         *,
         owner_address: str,
+        owner_tron_addresses: List[str],
         actor_addresses: List[str],
         threshold: int,
         permission_name: str,
@@ -236,6 +250,7 @@ class TronGridClient:
         """Полный цикл: build → create tx → sign → broadcast. Returns (tx_id, broadcast_response)."""
         body = self.build_permission_body(
             owner_address=owner_address,
+            owner_tron_addresses=owner_tron_addresses,
             actor_addresses=actor_addresses,
             threshold=threshold,
             permission_name=permission_name,
@@ -251,6 +266,7 @@ class TronGridClient:
         self,
         *,
         owner_address: str,
+        owner_tron_addresses: List[str],
         actor_addresses: List[str],
         threshold: int,
         permission_name: str,
@@ -266,6 +282,7 @@ class TronGridClient:
         """
         body = self.build_permission_body(
             owner_address=owner_address,
+            owner_tron_addresses=owner_tron_addresses,
             actor_addresses=actor_addresses,
             threshold=threshold,
             permission_name=permission_name,
