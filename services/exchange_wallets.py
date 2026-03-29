@@ -5,12 +5,15 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from didcomm.crypto import EthCrypto
+
+from core.exceptions import SpacePermissionDenied
 
 from repos.wallet import (
     ExchangeRole,
@@ -26,6 +29,7 @@ from services.multisig_wallet.chain_config import (
     meta_multisig_snapshot,
 )
 from services.multisig_wallet.constants import (
+    MULTISIG_DEFAULT_PERMISSION_NAME,
     MULTISIG_STATUS_ACTIVE,
     MULTISIG_STATUS_AWAITING_FUNDING,
     MULTISIG_STATUS_FAILED,
@@ -692,4 +696,151 @@ class ExchangeWalletService:
         )
         if changed:
             await self._session.commit()
+        return await self.get_wallet(space, actor_wallet_address, wallet_id)
+
+    async def _ensure_actor_is_tron_owner_key_for_wallet(
+        self,
+        actor_wallet_address: str,
+        row: ExchangeWalletResource.Get,
+    ) -> None:
+        """Только ключи из list_tron_owner_addresses (родитель + субы owner на TRON)."""
+        odid = (row.owner_did or "").strip()
+        if not odid:
+            raise ValueError("Wallet has no owner")
+        wu = await self._users.get_by_did(odid)
+        if not wu:
+            raise ValueError("Wallet owner not found")
+        addrs = await self._users.list_tron_owner_addresses_for_wallet_user(wu.id)
+        want = (actor_wallet_address or "").strip()
+        if want not in {a.strip() for a in addrs}:
+            raise SpacePermissionDenied(
+                "Only a TRON space owner key can sign this multisig permission update"
+            )
+
+    async def multisig_can_sign_permission_tronlink(
+        self,
+        row: ExchangeWalletResource.Get,
+        viewer_wallet_address: str,
+    ) -> bool:
+        meta = row.multisig_setup_meta or {}
+        if row.role != "multisig":
+            return False
+        if not meta.get("permission_sign_via_tronlink"):
+            return False
+        try:
+            await self._ensure_actor_is_tron_owner_key_for_wallet(
+                viewer_wallet_address, row
+            )
+            return True
+        except SpacePermissionDenied:
+            return False
+
+    async def build_multisig_permission_transaction(
+        self,
+        space: str,
+        actor_wallet_address: str,
+        wallet_id: int,
+    ) -> Dict[str, Any]:
+        """Unsigned AccountPermissionUpdate для подписи в TronLink (при permission_sign_via_tronlink)."""
+        await self._space._ensure_owner_and_owner_id(space, actor_wallet_address)
+        owner_did = await self._owner_did_for_space(space)
+        row = await self.get_wallet(space, actor_wallet_address, wallet_id)
+        if row is None:
+            raise ValueError("Wallet not found")
+        if row.role != "multisig":
+            raise ValueError("Not a multisig wallet")
+        meta = row.multisig_setup_meta or {}
+        if row.multisig_setup_status != MULTISIG_STATUS_READY_FOR_PERMISSIONS:
+            raise ValueError("Wallet is not ready for permission update")
+        if not meta.get("permission_sign_via_tronlink"):
+            raise ValueError("TronLink permission signing is not required for this wallet")
+        if (meta.get("permission_tx_id") or "").strip():
+            raise ValueError("Permission transaction already submitted")
+        actors = meta.get("actors") or []
+        tn, tm = meta.get("threshold_n"), meta.get("threshold_m")
+        if not actors or tn is None or tm is None:
+            raise ValueError("Incomplete multisig configuration")
+        tron = (row.tron_address or "").strip()
+        if not tron:
+            raise ValueError("Missing TRON address")
+
+        await self._ensure_actor_is_tron_owner_key_for_wallet(actor_wallet_address, row)
+
+        wu = await self._users.get_by_did((row.owner_did or "").strip())
+        if not wu:
+            raise ValueError("Space owner not found")
+        owner_tron_addrs = await self._users.list_tron_owner_addresses_for_wallet_user(
+            wu.id
+        )
+        if not owner_tron_addrs:
+            raise ValueError("No TRON owner addresses for space")
+
+        perm_name = str(meta.get("permission_name") or MULTISIG_DEFAULT_PERMISSION_NAME)[
+            :32
+        ]
+
+        async with TronGridClient(settings=self._settings) as client:
+            body = TronGridClient.build_permission_body(
+                owner_address=tron,
+                owner_tron_addresses=owner_tron_addrs,
+                actor_addresses=list(actors),
+                threshold=int(tn),
+                permission_name=perm_name,
+            )
+            resp = await client.create_permission_update_tx(body)
+            tx = TronGridClient._unwrap_tx(resp)
+            return {"transaction": tx}
+
+    async def broadcast_multisig_permission_transaction(
+        self,
+        space: str,
+        actor_wallet_address: str,
+        wallet_id: int,
+        signed: Dict[str, Any],
+    ) -> Optional[ExchangeWalletResource.Get]:
+        """Broadcast подписанной AccountPermissionUpdate с клиента (TronLink)."""
+        await self._space._ensure_owner_and_owner_id(space, actor_wallet_address)
+        owner_did = await self._owner_did_for_space(space)
+        row = await self.get_wallet(space, actor_wallet_address, wallet_id)
+        if row is None:
+            raise ValueError("Wallet not found")
+        if row.role != "multisig":
+            raise ValueError("Not a multisig wallet")
+        meta = row.multisig_setup_meta or {}
+        if row.multisig_setup_status != MULTISIG_STATUS_READY_FOR_PERMISSIONS:
+            raise ValueError("Wallet is not ready for permission update")
+        if not meta.get("permission_sign_via_tronlink"):
+            raise ValueError("TronLink permission signing is not required for this wallet")
+        if (meta.get("permission_tx_id") or "").strip():
+            raise ValueError("Permission transaction already submitted")
+
+        await self._ensure_actor_is_tron_owner_key_for_wallet(actor_wallet_address, row)
+
+        model = await self._repo.get_exchange_wallet_model(wallet_id, owner_did)
+        if model is None:
+            raise ValueError("Wallet not found")
+
+        async with TronGridClient(settings=self._settings) as client:
+            out = await client.broadcast_transaction(signed)
+            if not out.get("result"):
+                raise ValueError(
+                    str(out.get("message") or out.get("code") or out)[:500]
+                )
+
+        txid = str(signed.get("txID") or signed.get("txid") or "").strip()
+        if not txid:
+            raise ValueError("Signed transaction missing txID")
+
+        meta_m = merge_meta(
+            model.multisig_setup_meta or {},
+            {
+                "permission_tx_id": txid,
+                "broadcast_at": datetime.now(timezone.utc).isoformat(),
+                "last_error": None,
+                "permission_sign_via_tronlink": False,
+            },
+        )
+        model.multisig_setup_meta = meta_m
+        model.multisig_setup_status = MULTISIG_STATUS_PERMISSIONS_SUBMITTED
+        await self._session.commit()
         return await self.get_wallet(space, actor_wallet_address, wallet_id)

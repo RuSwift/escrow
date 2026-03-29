@@ -2,6 +2,7 @@ import pytest
 from redis.asyncio import Redis
 
 from services.balances import TRON_NATIVE_TRX_CACHE_KEY, BalancesService
+from services import balances as balances_module
 
 
 WALLET_OWNER = "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH"
@@ -75,7 +76,7 @@ async def test_list_tron_trc20_balances_raw_caches_result(
     )
     ttl = await test_redis.ttl(key)
     assert ttl is not None
-    assert 0 < ttl <= 60
+    assert 0 < ttl <= balances_module._CACHE_TTL_SEC
 
 
 @pytest.mark.asyncio
@@ -234,7 +235,7 @@ async def test_list_tron_native_trx_balances_raw_caches(
     rkey = balances_service._cache_key_native_trx(wallet_address=WALLET_OWNER)
     ttl = await test_redis.ttl(rkey)
     assert ttl is not None
-    assert 0 < ttl <= 60
+    assert 0 < ttl <= balances_module._CACHE_TTL_SEC
 
 
 @pytest.mark.asyncio

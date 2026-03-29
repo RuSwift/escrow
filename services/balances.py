@@ -4,7 +4,7 @@
 Сервис:
 1) TRC-20: ``balanceOf(address)`` через TronGrid ``/wallet/triggerconstantcontract``.
 2) TRX: баланс аккаунта через ``/wallet/getaccount`` (поле balance в SUN).
-3) Кеш в Redis на 60 секунд (отдельные ключи для набора контрактов и для TRX).
+3) Кеш в Redis (отдельные ключи для набора контрактов и для TRX), TTL см. ``_CACHE_TTL_SEC``.
 4) При ошибке API для кошелька — fallback из БД ``token_balance_cache`` и запись снимка в Redis.
    Для TRX в БД используется псевдо-контракт ``NATIVE:TRX``.
 """
@@ -25,7 +25,7 @@ from settings import Settings
 from services.tron.utils import is_valid_tron_address
 
 
-_CACHE_TTL_SEC = 60
+_CACHE_TTL_SEC = 300  # 5 мин — реже дергать TronGrid при повторных запросах балансов
 _TRON_BLOCKCHAIN_NAME = "TRON"
 """Ключ в token_balance_cache / ответах API — не контракт, а маркер нативного TRX (SUN)."""
 TRON_NATIVE_TRX_CACHE_KEY = "NATIVE:TRX"

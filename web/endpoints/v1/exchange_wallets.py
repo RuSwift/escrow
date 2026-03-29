@@ -18,6 +18,8 @@ from web.endpoints.v1.schemas.exchange_wallets import (
     CreateExchangeWalletRequest,
     ExchangeWalletItem,
     ExchangeWalletListResponse,
+    MultisigPermissionBroadcastRequest,
+    MultisigPermissionTransactionResponse,
     PatchExchangeWalletRequest,
 )
 
@@ -38,13 +40,19 @@ _MULTISIG_PATCH_KEYS = frozenset(
 )
 
 
-def _to_item(row: ExchangeWalletResource.Get) -> ExchangeWalletItem:
+def _to_item(
+    row: ExchangeWalletResource.Get,
+    *,
+    multisig_can_sign_permission_tronlink: Optional[bool] = None,
+) -> ExchangeWalletItem:
     r = row.role if row.role in ("external", "multisig") else "external"
     ms_meta = None
     ms_st = None
+    can_tron = None
     if r == "multisig":
         ms_st = getattr(row, "multisig_setup_status", None)
         ms_meta = meta_for_api(getattr(row, "multisig_setup_meta", None)) or None
+        can_tron = multisig_can_sign_permission_tronlink
     return ExchangeWalletItem(
         id=row.id,
         name=row.name,
@@ -56,7 +64,19 @@ def _to_item(row: ExchangeWalletResource.Get) -> ExchangeWalletItem:
         updated_at=row.updated_at,
         multisig_setup_status=ms_st,
         multisig_setup_meta=ms_meta,
+        multisig_can_sign_permission_tronlink=can_tron,
     )
+
+
+async def _to_item_with_tronlink_flag(
+    svc: ExchangeWalletService,
+    row: ExchangeWalletResource.Get,
+    viewer_wallet_address: str,
+) -> ExchangeWalletItem:
+    can = None
+    if row.role == "multisig":
+        can = await svc.multisig_can_sign_permission_tronlink(row, viewer_wallet_address)
+    return _to_item(row, multisig_can_sign_permission_tronlink=can)
 
 
 @router.get("/{space}/exchange-wallets", response_model=ExchangeWalletListResponse)
@@ -84,7 +104,10 @@ async def list_exchange_wallets(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
         ) from e
-    return ExchangeWalletListResponse(items=[_to_item(x) for x in rows])
+    out: List[ExchangeWalletItem] = []
+    for x in rows:
+        out.append(await _to_item_with_tronlink_flag(svc, x, wallet_address))
+    return ExchangeWalletListResponse(items=out)
 
 
 @router.post(
@@ -116,7 +139,7 @@ async def create_exchange_wallet(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
         ) from e
-    return _to_item(created)
+    return await _to_item_with_tronlink_flag(svc, created, wallet_address)
 
 
 @router.patch("/{space}/exchange-wallets/{wallet_id}", response_model=ExchangeWalletItem)
@@ -170,7 +193,7 @@ async def patch_exchange_wallet(
         ) from e
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    return _to_item(updated)
+    return await _to_item_with_tronlink_flag(svc, updated, wallet_address)
 
 
 @router.delete("/{space}/exchange-wallets/{wallet_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -225,4 +248,57 @@ async def post_multisig_maintenance(
         ) from e
     if updated is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
-    return _to_item(updated)
+    return await _to_item_with_tronlink_flag(svc, updated, wallet_address)
+
+
+@router.post(
+    "/{space}/exchange-wallets/{wallet_id}/multisig-permission-transaction",
+    response_model=MultisigPermissionTransactionResponse,
+)
+async def post_multisig_permission_transaction(
+    space: str,
+    wallet_id: int,
+    wallet_address: str = Depends(get_required_wallet_address_for_space),
+    svc: ExchangeWalletService = Depends(get_exchange_wallet_service),
+):
+    try:
+        data = await svc.build_multisig_permission_transaction(
+            space, wallet_address, wallet_id
+        )
+    except SpacePermissionDenied as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=str(e)
+        ) from e
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    return MultisigPermissionTransactionResponse(transaction=data["transaction"])
+
+
+@router.post(
+    "/{space}/exchange-wallets/{wallet_id}/multisig-permission-broadcast",
+    response_model=ExchangeWalletItem,
+)
+async def post_multisig_permission_broadcast(
+    space: str,
+    wallet_id: int,
+    body: MultisigPermissionBroadcastRequest,
+    wallet_address: str = Depends(get_required_wallet_address_for_space),
+    svc: ExchangeWalletService = Depends(get_exchange_wallet_service),
+):
+    try:
+        updated = await svc.broadcast_multisig_permission_transaction(
+            space, wallet_address, wallet_id, body.signed
+        )
+    except SpacePermissionDenied as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail=str(e)
+        ) from e
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)
+        ) from e
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    return await _to_item_with_tronlink_flag(svc, updated, wallet_address)

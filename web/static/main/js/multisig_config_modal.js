@@ -26,6 +26,8 @@
                 multisigPollTimerId: null,
                 tronLinkFundingBusy: false,
                 tronLinkFundError: null,
+                tronLinkPermissionBusy: false,
+                tronLinkPermissionError: null,
                 multisigFundingAddressCopied: false,
                 multisigFundingAddressCopyTimerId: null
             };
@@ -75,7 +77,19 @@
                 if (!this.localWallet) return 1;
                 if (this.localWallet.multisig_setup_status === 'active') return 3;
                 if (this.wizardUiForceStep === 1) return 1;
+                // TronLink AccountPermissionUpdate: funding + подпись на одном экране (шаг 2), не на шаге 3.
+                if (this.multisigTronLinkPermissionSetupIncomplete) return 2;
                 return this.multisigWizardBackendStep;
+            },
+            /** ready_for_permissions + permission_sign_via_tronlink, tx ещё не отправлена */
+            multisigTronLinkPermissionSetupIncomplete: function() {
+                var rw = this.localWallet;
+                if (!rw) return false;
+                if (String(rw.multisig_setup_status || '') !== 'ready_for_permissions') return false;
+                var m = rw.multisig_setup_meta || {};
+                if (!m.permission_sign_via_tronlink) return false;
+                if (String(m.permission_tx_id || '').trim()) return false;
+                return true;
             },
             multisigWizardStepCaption: function() {
                 var n = this.multisigWizardDisplayStep;
@@ -216,6 +230,39 @@
                     if (isNaN(n) || isNaN(m) || n < 1 || m < 1 || m !== Lfull || n > m) return true;
                 }
                 return false;
+            },
+            multisigShowTronLinkPermissionBlock: function() {
+                var rw = this.localWallet;
+                if (!rw) return false;
+                var m = rw.multisig_setup_meta || {};
+                if (!m.permission_sign_via_tronlink) return false;
+                if (rw.multisig_can_sign_permission_tronlink !== true) return false;
+                var minSun = parseInt(m.min_trx_sun, 10);
+                var bal = parseInt(m.last_trx_balance_sun, 10);
+                if (!isFinite(minSun)) minSun = 0;
+                if (!isFinite(bal)) bal = 0;
+                return bal >= minSun;
+            },
+            multisigTronLinkPermissionNeedsOwnerHint: function() {
+                var rw = this.localWallet;
+                if (!rw) return false;
+                var m = rw.multisig_setup_meta || {};
+                if (!m.permission_sign_via_tronlink) return false;
+                if (rw.multisig_can_sign_permission_tronlink === true) return false;
+                return true;
+            },
+            /** Подпись появится после пополнения до min TRX */
+            multisigTronLinkPermissionFundThenSignHint: function() {
+                var rw = this.localWallet;
+                if (!rw) return false;
+                var m = rw.multisig_setup_meta || {};
+                if (!m.permission_sign_via_tronlink) return false;
+                if (rw.multisig_can_sign_permission_tronlink !== true) return false;
+                var minSun = parseInt(m.min_trx_sun, 10);
+                var bal = parseInt(m.last_trx_balance_sun, 10);
+                if (!isFinite(minSun)) minSun = 0;
+                if (!isFinite(bal)) bal = 0;
+                return bal < minSun;
             }
         },
         methods: {
@@ -271,6 +318,8 @@
                 this.wizardUiForceStep = null;
                 this.tronLinkFundingBusy = false;
                 this.tronLinkFundError = null;
+                this.tronLinkPermissionBusy = false;
+                this.tronLinkPermissionError = null;
                 this.multisigFundingAddressCopied = false;
                 if (this.multisigFundingAddressCopyTimerId != null) {
                     clearTimeout(this.multisigFundingAddressCopyTimerId);
@@ -414,6 +463,72 @@
                     })
                     .finally(function() {
                         self.tronLinkFundingBusy = false;
+                    });
+            },
+            signMultisigPermissionViaTronLink: function() {
+                var self = this;
+                var base = this.rampApiBase();
+                var rw = this.localWallet;
+                if (!base || !rw || !rw.id) return;
+                this.tronLinkPermissionError = null;
+                this.tronLinkPermissionBusy = true;
+                fetch(base + '/' + rw.id + '/multisig-permission-transaction', {
+                    method: 'POST',
+                    headers: this.rampAuthHeaders(),
+                    credentials: 'include',
+                    body: '{}'
+                })
+                    .then(function(r) {
+                        if (!r.ok) {
+                            return r.json().then(function(j) {
+                                var d = j && j.detail;
+                                var msg = typeof d === 'string' ? d : (d ? JSON.stringify(d) : String(r.status));
+                                throw new Error(msg);
+                            });
+                        }
+                        return r.json();
+                    })
+                    .then(function(payload) {
+                        var tx = payload && payload.transaction;
+                        if (!tx) throw new Error('no transaction');
+                        return self.getTronWebForFunding().then(function(tw) {
+                            return tw.trx.sign(tx);
+                        });
+                    })
+                    .then(function(signed) {
+                        return fetch(base + '/' + rw.id + '/multisig-permission-broadcast', {
+                            method: 'POST',
+                            headers: self.rampAuthHeaders(),
+                            credentials: 'include',
+                            body: JSON.stringify({ signed: signed })
+                        });
+                    })
+                    .then(function(r) {
+                        if (!r.ok) {
+                            return r.json().then(function(j) {
+                                var d = j && j.detail;
+                                var msg = typeof d === 'string' ? d : (d ? JSON.stringify(d) : String(r.status));
+                                throw new Error(msg);
+                            });
+                        }
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        self.applyMultisigResponseToLocalState(data);
+                        return self.refreshMultisigWizard({ silent: true });
+                    })
+                    .catch(function(e) {
+                        var code = e && e.message ? e.message : '';
+                        if (code === 'NO_TRONLINK') {
+                            self.tronLinkPermissionError = self.$t('main.tron.install_tronlink');
+                        } else if (code === 'USER_REJECTED') {
+                            self.tronLinkPermissionError = self.$t('main.tron.unlock_try_again');
+                        } else {
+                            self.tronLinkPermissionError = code || self.$t('main.dialog.error_title');
+                        }
+                    })
+                    .finally(function() {
+                        self.tronLinkPermissionBusy = false;
                     });
             },
             copyMultisigFundingAddress: function() {
@@ -926,6 +1041,15 @@
             '        <p class="text-[11px] text-[#58667e] leading-snug">[[ $t(\'main.my_business.multisig_funding_polling_hint\') ]]</p>',
             '        <p v-if="tronLinkFundError" class="text-xs text-red-600 leading-snug">[[ tronLinkFundError ]]</p>',
             '        <button type="button" @click="fundMultisigViaTronLink" :disabled="tronLinkFundingBusy || saving" class="w-full py-3 rounded-xl text-sm font-bold text-white bg-[#ef8a2e] hover:opacity-95 disabled:opacity-50 shadow-sm">[[ tronLinkFundingBusy ? $t(\'main.my_business.multisig_funding_tronlink_busy\') : $t(\'main.my_business.multisig_funding_send_tronlink\') ]]</button>',
+            '        <p v-if="multisigTronLinkPermissionFundThenSignHint" class="text-[11px] text-[#1e3a5f] leading-snug rounded-lg bg-blue-50/80 border border-blue-100/80 px-3 py-2">[[ $t(\'main.my_business.multisig_permission_tronlink_fund_then_sign\') ]]</p>',
+            '        <div v-if="multisigShowTronLinkPermissionBlock" class="border-t border-amber-100/80 pt-3 space-y-2">',
+            '          <p class="text-[11px] text-[#58667e] leading-snug">[[ $t(\'main.my_business.multisig_permission_tronlink_sign_hint\') ]]</p>',
+            '          <p v-if="tronLinkPermissionError" class="text-xs text-red-600 leading-snug">[[ tronLinkPermissionError ]]</p>',
+            '          <button type="button" @click="signMultisigPermissionViaTronLink" :disabled="tronLinkPermissionBusy || tronLinkFundingBusy || saving" class="w-full py-3 rounded-xl text-sm font-bold text-white bg-[#3861fb] hover:opacity-95 disabled:opacity-50 shadow-sm">[[ tronLinkPermissionBusy ? $t(\'main.my_business.multisig_permission_tronlink_signing\') : $t(\'main.my_business.multisig_permission_tronlink_sign\') ]]</button>',
+            '        </div>',
+            '        <div v-if="multisigTronLinkPermissionNeedsOwnerHint" class="border-t border-amber-100/80 pt-3">',
+            '          <p class="text-[11px] text-amber-950/90 leading-snug">[[ $t(\'main.my_business.multisig_permission_tronlink_owner_only\') ]]</p>',
+            '        </div>',
             '        <button type="button" @click="copyMultisigFundingAddress" :disabled="!localWallet.tron_address" class="w-full py-2.5 rounded-xl text-sm font-bold text-[#3861fb] border border-[#cfd6e4] bg-white hover:bg-blue-50/60 disabled:opacity-45">[[ multisigFundingAddressCopied ? $t(\'main.copied\') : $t(\'main.my_business.multisig_funding_copy_address\') ]]</button>',
             '        <button type="button" @click="backToMultisigConfigStep" class="text-xs font-bold text-[#3861fb] hover:underline">[[ $t(\'main.my_business.multisig_wizard_back_config\') ]]</button>',
             '      </div>',
@@ -939,7 +1063,7 @@
             '        <div v-else-if="localWallet.multisig_setup_status === \'permissions_submitted\'" role="status" class="rounded-xl bg-blue-50/90 border border-blue-100 px-3 py-2.5">',
             '          <p class="text-[11px] text-[#1e3a5f] leading-snug font-semibold">[[ $t(\'main.my_business.multisig_wizard_step3_tx_pending_hint\') ]]</p>',
             '        </div>',
-            '        <div v-else-if="localWallet.multisig_setup_status === \'ready_for_permissions\'" role="status" class="rounded-xl bg-[#f0f4ff] border border-[#dbe4ff] px-3 py-2.5">',
+            '        <div v-else-if="localWallet.multisig_setup_status === \'ready_for_permissions\' && !multisigTronLinkPermissionSetupIncomplete" role="status" class="rounded-xl bg-[#f0f4ff] border border-[#dbe4ff] px-3 py-2.5">',
             '          <p class="text-[11px] text-[#30384a] leading-snug">[[ $t(\'main.my_business.multisig_wizard_step3_ready_hint\') ]]</p>',
             '        </div>',
             '        <div v-else-if="localWallet.multisig_setup_status === \'failed\'" role="alert" class="rounded-xl bg-amber-50/90 border border-amber-100 px-3 py-2.5">',

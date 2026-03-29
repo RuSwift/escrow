@@ -7,6 +7,7 @@ from repos.wallet_user import WalletUserSubResource
 from services.exchange_wallets import (
     ExchangeWalletService,
     MultisigDeleteBlockedError,
+    SpacePermissionDenied,
 )
 from services.notify import NotifyService, RampNotifyEvent
 from services.multisig_wallet.constants import (
@@ -15,10 +16,13 @@ from services.multisig_wallet.constants import (
     MULTISIG_STATUS_AWAITING_FUNDING,
     MULTISIG_STATUS_FAILED,
     MULTISIG_STATUS_PENDING_CONFIG,
+    MULTISIG_STATUS_PERMISSIONS_SUBMITTED,
+    MULTISIG_STATUS_READY_FOR_PERMISSIONS,
     MULTISIG_STATUS_RECONFIGURE,
 )
 from services.multisig_wallet.meta import merge_meta
 from services.wallet_user import WalletUserService
+from services.tron.grid_client import TronGridClient
 
 
 SPACE_NAME = "exch_wallet_test_space"
@@ -41,6 +45,35 @@ def _mock_tron_grid_getaccount(monkeypatch: pytest.MonkeyPatch, account: dict) -
     monkeypatch.setattr(
         "services.exchange_wallets.TronGridClient",
         lambda **kwargs: Client(),
+    )
+
+
+def _mock_tron_grid_permission_tx(
+    monkeypatch: pytest.MonkeyPatch, tx_id: str = "perm_txid_abc"
+) -> None:
+    """Подмена HTTP TronGrid: сохраняем TronGridClient.build_permission_body (classmethod)."""
+
+    class _TronGridClientForTest(TronGridClient):
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def create_permission_update_tx(self, body):
+            return {
+                "transaction": {
+                    "txID": tx_id,
+                    "raw_data": {"contract": []},
+                }
+            }
+
+        async def broadcast_transaction(self, signed):
+            return {"result": True}
+
+    monkeypatch.setattr(
+        "services.exchange_wallets.TronGridClient",
+        _TronGridClientForTest,
     )
 
 
@@ -592,3 +625,108 @@ async def test_patch_cancel_reconfigure_from_awaiting_funding(
     assert out.multisig_setup_status == MULTISIG_STATUS_ACTIVE
     assert "reconfigure_previous_status" not in (out.multisig_setup_meta or {})
     assert out.multisig_setup_meta.get("actors") == [SUB_VALID_TRON]
+
+
+@pytest.mark.asyncio
+async def test_build_multisig_permission_transaction_ok(
+    exchange_space_owner_sub, exchange_wallet_service, test_db, monkeypatch
+):
+    _mock_tron_grid_permission_tx(monkeypatch, tx_id="tx_perm_1")
+    row = await exchange_wallet_service.create_wallet(
+        SPACE_NAME,
+        OWNER_WALLET,
+        role="multisig",
+        blockchain="tron",
+        name="TronLink perm",
+    )
+    res = await test_db.execute(select(Wallet).where(Wallet.id == row.id))
+    w = res.scalar_one()
+    w.multisig_setup_status = MULTISIG_STATUS_READY_FOR_PERMISSIONS
+    w.multisig_setup_meta = merge_meta(
+        w.multisig_setup_meta or {},
+        {
+            "permission_sign_via_tronlink": True,
+            "actors": [OWNER_WALLET],
+            "threshold_n": 1,
+            "threshold_m": 1,
+            "permission_name": MULTISIG_DEFAULT_PERMISSION_NAME,
+        },
+    )
+    await test_db.commit()
+
+    out = await exchange_wallet_service.build_multisig_permission_transaction(
+        SPACE_NAME, OWNER_WALLET, row.id
+    )
+    assert out["transaction"]["txID"] == "tx_perm_1"
+
+
+@pytest.mark.asyncio
+async def test_build_multisig_permission_transaction_rejects_non_owner(
+    exchange_space_owner_sub, exchange_wallet_service, test_db, monkeypatch
+):
+    _mock_tron_grid_permission_tx(monkeypatch)
+    row = await exchange_wallet_service.create_wallet(
+        SPACE_NAME,
+        OWNER_WALLET,
+        role="multisig",
+        blockchain="tron",
+        name="TronLink perm deny",
+    )
+    res = await test_db.execute(select(Wallet).where(Wallet.id == row.id))
+    w = res.scalar_one()
+    w.multisig_setup_status = MULTISIG_STATUS_READY_FOR_PERMISSIONS
+    w.multisig_setup_meta = merge_meta(
+        w.multisig_setup_meta or {},
+        {
+            "permission_sign_via_tronlink": True,
+            "actors": [OWNER_WALLET],
+            "threshold_n": 1,
+            "threshold_m": 1,
+            "permission_name": MULTISIG_DEFAULT_PERMISSION_NAME,
+        },
+    )
+    await test_db.commit()
+
+    with pytest.raises(SpacePermissionDenied):
+        await exchange_wallet_service.build_multisig_permission_transaction(
+            SPACE_NAME, SUB_VALID_TRON, row.id
+        )
+
+
+@pytest.mark.asyncio
+async def test_broadcast_multisig_permission_transaction_ok(
+    exchange_space_owner_sub, exchange_wallet_service, test_db, monkeypatch
+):
+    _mock_tron_grid_permission_tx(monkeypatch, tx_id="tx_perm_broadcast")
+    row = await exchange_wallet_service.create_wallet(
+        SPACE_NAME,
+        OWNER_WALLET,
+        role="multisig",
+        blockchain="tron",
+        name="TronLink broadcast",
+    )
+    res = await test_db.execute(select(Wallet).where(Wallet.id == row.id))
+    w = res.scalar_one()
+    w.multisig_setup_status = MULTISIG_STATUS_READY_FOR_PERMISSIONS
+    w.multisig_setup_meta = merge_meta(
+        w.multisig_setup_meta or {},
+        {
+            "permission_sign_via_tronlink": True,
+            "actors": [OWNER_WALLET],
+            "threshold_n": 1,
+            "threshold_m": 1,
+            "permission_name": MULTISIG_DEFAULT_PERMISSION_NAME,
+        },
+    )
+    await test_db.commit()
+
+    out = await exchange_wallet_service.broadcast_multisig_permission_transaction(
+        SPACE_NAME,
+        OWNER_WALLET,
+        row.id,
+        {"txID": "tx_perm_broadcast", "visible": True},
+    )
+    assert out is not None
+    assert out.multisig_setup_status == MULTISIG_STATUS_PERMISSIONS_SUBMITTED
+    assert (out.multisig_setup_meta or {}).get("permission_tx_id") == "tx_perm_broadcast"
+    assert not (out.multisig_setup_meta or {}).get("permission_sign_via_tronlink")

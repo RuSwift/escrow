@@ -18,6 +18,7 @@ class ExchangeWalletItem(BaseModel):
     updated_at: datetime
     multisig_setup_status: Optional[str] = None
     multisig_setup_meta: Optional[Dict[str, Any]] = None
+    multisig_can_sign_permission_tronlink: Optional[bool] = None
 
 
 class ExchangeWalletListResponse(BaseModel):
@@ -125,4 +126,15 @@ class PatchExchangeWalletRequest(BaseModel):
     multisig_cancel_reconfigure: Optional[bool] = Field(
         default=None,
         description="Отменить перенастройку и вернуть статус до multisig_begin_reconfigure",
+    )
+
+
+class MultisigPermissionTransactionResponse(BaseModel):
+    transaction: Dict[str, Any]
+
+
+class MultisigPermissionBroadcastRequest(BaseModel):
+    signed: Dict[str, Any] = Field(
+        ...,
+        description="Подписанная транзакция для POST /wallet/broadcasttransaction",
     )

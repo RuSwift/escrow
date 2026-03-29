@@ -11,6 +11,7 @@ from redis.asyncio import Redis
 
 from db.models import Wallet, WalletUser
 from services.multisig_wallet.constants import (
+    MULTISIG_DEFAULT_MIN_TRX_SUN,
     MULTISIG_DEFAULT_PERMISSION_NAME,
     MULTISIG_STATUS_ACTIVE,
     MULTISIG_STATUS_AWAITING_FUNDING,
@@ -159,7 +160,7 @@ async def test_ready_for_permissions_precheck_recalculates_min_and_waits_funding
     await test_db.commit()
     await test_db.refresh(w)
 
-    # estimate_sun=200_000 > last_trx_balance_sun=120_000 → ожидаем переход в AWAITING_FUNDING
+    # estimate_sun=200_000 → min_trx_sun = max(200_000, DEFAULT)=150 TRX; баланс 120_000 < min → AWAITING_FUNDING
     # owner_permission: на цепи владелец ещё multisig (подпись возможна); Active — пусто
     monkeypatch.setattr(
         "services.multisig_wallet.maintenance.TronGridClient",
@@ -187,7 +188,7 @@ async def test_ready_for_permissions_precheck_recalculates_min_and_waits_funding
     await test_db.commit()
     await test_db.refresh(w)
     assert w.multisig_setup_status == MULTISIG_STATUS_AWAITING_FUNDING
-    assert int(w.multisig_setup_meta.get("min_trx_sun") or 0) == 200_000
+    assert int(w.multisig_setup_meta.get("min_trx_sun") or 0) == MULTISIG_DEFAULT_MIN_TRX_SUN
 
 
 @pytest.mark.asyncio
@@ -348,12 +349,12 @@ async def test_ready_for_permissions_fails_without_tron_space_owner(
 
 
 @pytest.mark.asyncio
-async def test_ready_for_permissions_fails_when_chain_owner_not_multisig(
+async def test_ready_for_permissions_defers_tronlink_when_chain_owner_not_multisig(
     multisig_maintenance: MultisigWalletMaintenanceService,
     test_db,
     monkeypatch: pytest.MonkeyPatch,
 ):
-    """Owner на цепи уже без ключа multisig — подпись с мнемоники невозможна."""
+    """Owner на цепи без ключа multisig — откладываем подпись на TronLink, не FAILED."""
     owner_wu = WalletUser(
         wallet_address=_SPACE_OWNER_TRON,
         blockchain="tron",
@@ -401,6 +402,6 @@ async def test_ready_for_permissions_fails_when_chain_owner_not_multisig(
     assert changed is True
     await test_db.commit()
     await test_db.refresh(w)
-    assert w.multisig_setup_status == MULTISIG_STATUS_FAILED
-    err = (w.multisig_setup_meta or {}).get("last_error") or ""
-    assert "on-chain owner" in err.lower() or "outside the app" in err.lower()
+    assert w.multisig_setup_status == MULTISIG_STATUS_READY_FOR_PERMISSIONS
+    assert (w.multisig_setup_meta or {}).get("permission_sign_via_tronlink") is True
+    assert (w.multisig_setup_meta or {}).get("last_error") in (None, "")

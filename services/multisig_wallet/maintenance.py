@@ -292,6 +292,7 @@ class MultisigWalletMaintenanceService:
             meta = wallet.multisig_setup_meta or {}
 
         if wallet.multisig_setup_status == MULTISIG_STATUS_READY_FOR_PERMISSIONS:
+            meta = dict(wallet.multisig_setup_meta or {})
             tx_existing = (meta.get("permission_tx_id") or "").strip()
             if tx_existing:
                 wallet.multisig_setup_status = MULTISIG_STATUS_PERMISSIONS_SUBMITTED
@@ -333,26 +334,26 @@ class MultisigWalletMaintenanceService:
                 wallet.multisig_setup_status = MULTISIG_STATUS_FAILED
                 return True
 
-            try:
-                acc_guard = await client.get_account(tron)
-            except Exception as e:
-                logger.warning("multisig id=%s get_account guard: %s", wallet.id, e)
-                acc_guard = {}
+            tronlink_mode = bool(meta.get("permission_sign_via_tronlink"))
 
-            if not owner_permission_allows_signer(acc_guard, tron):
-                wallet.multisig_setup_meta = merge_meta(
-                    meta,
-                    {
-                        "last_error": (
-                            "on-chain owner permission no longer includes this multisig "
-                            "address; update permissions outside the app (sign with "
-                            "space owner keys)"
-                        ),
-                        "last_chain_check_at": _utc_iso(),
-                    },
-                )
-                wallet.multisig_setup_status = MULTISIG_STATUS_FAILED
-                return True
+            if not tronlink_mode:
+                try:
+                    acc_guard = await client.get_account(tron)
+                except Exception as e:
+                    logger.warning("multisig id=%s get_account guard: %s", wallet.id, e)
+                    acc_guard = {}
+
+                if not owner_permission_allows_signer(acc_guard, tron):
+                    meta = merge_meta(
+                        meta,
+                        {
+                            "permission_sign_via_tronlink": True,
+                            "last_error": None,
+                            "last_chain_check_at": _utc_iso(),
+                        },
+                    )
+                    wallet.multisig_setup_meta = meta
+                    tronlink_mode = True
 
             # Precheck: оцениваем стоимость tx (+10% margin) и обновляем min_trx_sun
             try:
@@ -369,7 +370,11 @@ class MultisigWalletMaintenanceService:
                 estimated_sun = MULTISIG_DEFAULT_MIN_TRX_SUN
 
             current_sun = int((wallet.multisig_setup_meta or {}).get("last_trx_balance_sun") or 0)
-            recalculated_min_sun = max(1, int(estimated_sun))
+            # Узкая оценка (bandwidth × fee/byte) занижает порог относительно energy в TronLink;
+            # не опускаем ниже консервативного запаса.
+            recalculated_min_sun = max(
+                MULTISIG_DEFAULT_MIN_TRX_SUN, max(1, int(estimated_sun))
+            )
             wallet.multisig_setup_meta = merge_meta(
                 wallet.multisig_setup_meta or {},
                 {
@@ -380,6 +385,9 @@ class MultisigWalletMaintenanceService:
             meta = wallet.multisig_setup_meta or {}
             if current_sun < recalculated_min_sun:
                 wallet.multisig_setup_status = MULTISIG_STATUS_AWAITING_FUNDING
+                return True
+
+            if tronlink_mode:
                 return True
 
             if not _mnemonic_ok(wallet):
