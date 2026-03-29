@@ -34,8 +34,15 @@ from services.multisig_wallet.constants import (
     MULTISIG_STATUS_RECONFIGURE,
 )
 from services.multisig_wallet.maintenance import MultisigWalletMaintenanceService
-from services.multisig_wallet.meta import merge_meta, validate_actors_threshold
+from services.multisig_wallet.meta import (
+    merge_meta,
+    validate_actors_threshold,
+    validate_owners_list,
+)
+from services.balances import BalancesService, collateral_contract_addresses_for_network
 from services.notify import NotifyService, RampNotifyEvent
+from services.ratios.cache import RatioCacheAdapter
+from services.ratios.forex import ForexEngine
 from services.space import SpaceService
 from services.tron.grid_client import TronGridClient
 from services.tron.utils import account_permissions_snapshot, is_valid_tron_address
@@ -46,6 +53,19 @@ logger = logging.getLogger(__name__)
 ExchangeBlockchain = Literal["tron"]
 
 BalanceChain = Literal["TRON", "ETH"]
+
+# Лимиты перед удалением multisig (корпоративный кошелёк)
+MULTISIG_DELETE_MAX_STABLE_USD = 5.0
+MULTISIG_DELETE_MAX_TRX_SUN = 10 * 1_000_000
+
+
+class MultisigDeleteBlockedError(Exception):
+    """Нельзя удалить multisig: остаток стейблов (экв. USD) или TRX выше порога."""
+
+    def __init__(self, code: str, **extra: Any):
+        self.code = code
+        self.extra = extra
+        super().__init__(code)
 
 
 def normalize_balance_blockchain(blockchain: str) -> Optional[BalanceChain]:
@@ -316,6 +336,72 @@ class ExchangeWalletService:
         data = WalletResource.Patch(**payload)
         return await self.patch_wallet(space, actor_wallet_address, wallet_id, data)
 
+    async def _assert_multisig_balances_allow_delete(self, tron_address: str) -> None:
+        """
+        USDT + A7A5 в эквиваленте USD (A7A5 → USD через Forex USD/RUB).
+        TRX — не более 10 TRX (нативный баланс в SUN).
+        """
+        addr = (tron_address or "").strip()
+        if not addr:
+            return
+
+        balances_svc = BalancesService(self._session, self._redis, self._settings)
+        contracts = collateral_contract_addresses_for_network(
+            self._settings, network_label="TRON"
+        )
+        if not contracts:
+            return
+
+        trc20_map = await balances_svc.list_tron_trc20_balances_raw(
+            [addr], contracts, refresh_cache=True
+        )
+        native_map = await balances_svc.list_tron_native_trx_balances_raw(
+            [addr], refresh_cache=True
+        )
+        raw_by_contract = trc20_map.get(addr, {})
+        trx_sun = int(native_map.get(addr, 0))
+
+        rub_to_usd: Optional[float] = None
+        total_usd = 0.0
+
+        for t in self._settings.collateral_stablecoin.tokens:
+            if (t.network or "").strip().upper() != "TRON":
+                continue
+            sym = (t.symbol or "").strip().upper()
+            if sym not in ("USDT", "A7A5"):
+                continue
+            c = (t.contract_address or "").strip()
+            if not c:
+                continue
+            raw = int(raw_by_contract.get(c, 0))
+            dec = int(t.decimals) if t.decimals is not None else 6
+            human = raw / (10**dec)
+            base = (t.base_currency or "").strip().upper()
+            if base == "USD":
+                total_usd += human
+            elif base == "RUB":
+                if rub_to_usd is None:
+                    cache = RatioCacheAdapter(self._redis, "ForexEngine")
+                    forex = ForexEngine(
+                        cache, self._settings.ratios.forex, refresh_cache=False
+                    )
+                    pair = await forex.ratio("USD", "RUB")
+                    if pair is None:
+                        raise MultisigDeleteBlockedError("forex_unavailable")
+                    # 1 USD = pair.ratio RUB → 1 RUB = 1/pair.ratio USD
+                    rub_to_usd = 1.0 / float(pair.ratio)
+                total_usd += human * rub_to_usd
+            else:
+                continue
+
+        if total_usd > MULTISIG_DELETE_MAX_STABLE_USD + 1e-9:
+            raise MultisigDeleteBlockedError(
+                "stable_balance_too_high",
+                total_usd_approx=round(total_usd, 4),
+            )
+        if trx_sun > MULTISIG_DELETE_MAX_TRX_SUN:
+            raise MultisigDeleteBlockedError("trx_balance_too_high", trx_sun=trx_sun)
+
     async def delete_wallet(
         self,
         space: str,
@@ -327,6 +413,10 @@ class ExchangeWalletService:
         existing = await self._repo.get_exchange_wallet(wallet_id, owner_did)
         if not existing:
             return False
+        if (existing.role or "") == "multisig":
+            tron = (existing.tron_address or "").strip()
+            if tron:
+                await self._assert_multisig_balances_allow_delete(tron)
         ok = await self._repo.delete_exchange_wallet(wallet_id, owner_did)
         if ok:
             await self._session.commit()
@@ -380,6 +470,7 @@ class ExchangeWalletService:
         multisig_permission_name: Optional[str] = None,
         multisig_begin_reconfigure: Optional[bool] = None,
         multisig_cancel_reconfigure: Optional[bool] = None,
+        multisig_owners: Optional[List[str]] = None,
     ) -> Optional[ExchangeWalletResource.Get]:
         """PATCH полей настройки Ramp multisig (только owner спейса)."""
         await self._space._ensure_owner_and_owner_id(space, actor_wallet_address)
@@ -467,6 +558,11 @@ class ExchangeWalletService:
             meta["retry_desired"] = True
             touched = True
 
+        if multisig_owners is not None:
+            cleaned = validate_owners_list(list(multisig_owners))
+            meta["owners"] = cleaned
+            touched = True
+
         if multisig_actors is not None:
             if multisig_threshold_n is None or multisig_threshold_m is None:
                 raise ValueError(
@@ -481,7 +577,7 @@ class ExchangeWalletService:
                 int(multisig_threshold_m),
                 main_tron_address=tr,
             )
-            meta = merge_meta(model.multisig_setup_meta, {})
+            meta = merge_meta(meta, {})
             submitted = [a.strip() for a in multisig_actors]
             sn = int(multisig_threshold_n)
             sm = int(multisig_threshold_m)

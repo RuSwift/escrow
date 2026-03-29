@@ -4,7 +4,10 @@ from sqlalchemy import select
 
 from db.models import Wallet, WalletUserSubRole
 from repos.wallet_user import WalletUserSubResource
-from services.exchange_wallets import ExchangeWalletService
+from services.exchange_wallets import (
+    ExchangeWalletService,
+    MultisigDeleteBlockedError,
+)
 from services.notify import NotifyService, RampNotifyEvent
 from services.multisig_wallet.constants import (
     MULTISIG_DEFAULT_PERMISSION_NAME,
@@ -162,6 +165,73 @@ async def test_delete_wallet_notifies_owners(
     assert calls[0][3]["wallet_id"] == row.id
     assert calls[0][3]["role"] == "external"
     assert calls[0][3]["tron_address"] == CUSTOM_VALID_TRON
+
+
+@pytest.mark.asyncio
+async def test_delete_multisig_ok_with_balance_guard_skipped(
+    exchange_space_owner_sub, exchange_wallet_service, monkeypatch
+):
+    """Удаление multisig: проверка балансов заменена noop (без TronGrid в тесте)."""
+
+    async def _noop(self, addr):
+        return None
+
+    monkeypatch.setattr(
+        ExchangeWalletService,
+        "_assert_multisig_balances_allow_delete",
+        _noop,
+    )
+    calls = []
+
+    async def _capture(self, scope, roles, event, payload, *, language=None):
+        calls.append((scope, list(roles), event, dict(payload)))
+
+    monkeypatch.setattr(NotifyService, "notify_roles_event", _capture)
+
+    row = await exchange_wallet_service.create_wallet(
+        SPACE_NAME,
+        OWNER_WALLET,
+        role="multisig",
+        blockchain="tron",
+        name="MsigDel",
+    )
+    calls.clear()
+    ok = await exchange_wallet_service.delete_wallet(
+        SPACE_NAME, OWNER_WALLET, row.id
+    )
+    assert ok is True
+    assert len(calls) == 1
+    assert calls[0][2] == RampNotifyEvent.RAMP_WALLET_DELETED
+    assert calls[0][3]["role"] == "multisig"
+
+
+@pytest.mark.asyncio
+async def test_delete_multisig_blocked_by_balance_check(
+    exchange_space_owner_sub, exchange_wallet_service, monkeypatch
+):
+    async def _block(self, addr):
+        raise MultisigDeleteBlockedError(
+            "stable_balance_too_high",
+            total_usd_approx=6.0,
+        )
+
+    monkeypatch.setattr(
+        ExchangeWalletService,
+        "_assert_multisig_balances_allow_delete",
+        _block,
+    )
+    row = await exchange_wallet_service.create_wallet(
+        SPACE_NAME,
+        OWNER_WALLET,
+        role="multisig",
+        blockchain="tron",
+        name="MsigBlock",
+    )
+    with pytest.raises(MultisigDeleteBlockedError) as ei:
+        await exchange_wallet_service.delete_wallet(
+            SPACE_NAME, OWNER_WALLET, row.id
+        )
+    assert ei.value.code == "stable_balance_too_high"
 
 
 @pytest.mark.asyncio

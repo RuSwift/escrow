@@ -90,6 +90,10 @@ class PatchExchangeWalletRequest(BaseModel):
         default=None,
         description="TRON base58 адреса подписантов active permission (без адреса multisig-кошелька)",
     )
+    multisig_owners: Optional[List[str]] = Field(
+        default=None,
+        description="TRON адреса «админов» в meta; сравниваются с owner-адресами спейса (эфемерный drift)",
+    )
     multisig_threshold_n: Optional[int] = Field(
         default=None,
         ge=1,

@@ -38,6 +38,26 @@ def merge_meta(
     return base
 
 
+def validate_owners_list(owners: List[str]) -> List[str]:
+    """
+    Список TRON-адресов «админов» в meta (сравнивается с owner-адресами спейса).
+    Без адреса multisig-кошелька в списке не проверяем здесь — вызывающий контекст.
+    """
+    cleaned: List[str] = []
+    seen: set[str] = set()
+    for a in owners:
+        s = (a or "").strip()
+        if not s:
+            raise ValueError("Empty owner address")
+        if not is_valid_tron_address(s):
+            raise ValueError(f"Invalid TRON address: {s}")
+        if s in seen:
+            raise ValueError(f"Duplicate owner address: {s}")
+        seen.add(s)
+        cleaned.append(s)
+    return cleaned
+
+
 def validate_actors_threshold(
     actors: List[str],
     threshold_n: int,
@@ -76,6 +96,7 @@ def meta_for_api(meta: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         return {}
     keys = (
         "actors",
+        "owners",
         "threshold_n",
         "threshold_m",
         "min_trx_sun",

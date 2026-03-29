@@ -29,6 +29,7 @@ from services.multisig_wallet.constants import (
     MULTISIG_STATUS_RECONFIGURE,
 )
 from services.multisig_wallet.meta import merge_meta, validate_actors_threshold
+from services.order import OrderService
 from services.tron.grid_client import TronGridClient
 from services.tron.utils import (
     account_permissions_snapshot,
@@ -168,6 +169,20 @@ class MultisigWalletMaintenanceService:
                             processed += 1
                 except Exception:
                     logger.exception("multisig maintenance failed for wallet id=%s", wid)
+        try:
+            osvc = OrderService(self._session, self._redis, self._settings)
+            stats = await osvc.refresh_ephemeral()
+            await self._session.commit()
+            logger.debug(
+                "multisig batch: orders ephemeral refresh upserted=%s deleted=%s",
+                stats.get("upserted"),
+                stats.get("deleted"),
+            )
+        except Exception:
+            await self._session.rollback()
+            logger.exception(
+                "OrderService.refresh_ephemeral after multisig batch failed"
+            )
         return processed
 
     async def process_wallet(self, wallet: Wallet, *, force_balance_refresh: bool = True) -> bool:

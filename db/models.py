@@ -510,7 +510,7 @@ class Wallet(Base):
     multisig_setup_meta = Column(
         JSONB,
         nullable=True,
-        comment="actors, threshold_n/m, min_trx_sun, last_trx_balance_sun, errors, tx ids",
+        comment="actors, owners (админы meta vs спейс), threshold_n/m, min_trx_sun, last_trx_balance_sun, errors, tx ids",
     )
 
     # Wallet role
@@ -522,6 +522,63 @@ class Wallet(Base):
     
     def __repr__(self):
         return f"<Wallet(id={self.id}, name={self.name}, role={self.role})>"
+
+
+class Order(Base):
+    """
+    Ордера дашборда: эфемерные подсказки операторам и задел под сделки (Deal).
+    Гибкие атрибуты — в payload (JSONB).
+    """
+
+    __tablename__ = "orders"
+
+    __table_args__ = (
+        Index("ix_orders_category", "category"),
+        Index("ix_orders_space_wallet_id", "space_wallet_id"),
+    )
+
+    id = Column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+        comment="Идентификатор ордера",
+    )
+    category = Column(
+        String(32),
+        nullable=False,
+        comment="ephemeral | deal | …",
+    )
+    dedupe_key = Column(
+        String(255),
+        nullable=False,
+        unique=True,
+        comment="Стабильный ключ для идемпотентного refresh",
+    )
+    space_wallet_id = Column(
+        Integer,
+        ForeignKey("wallets.id", ondelete="CASCADE"),
+        nullable=True,
+        comment="Ramp-кошелёк спейса; связь с space через wallets.owner_did",
+    )
+    payload = Column(
+        JSONB,
+        nullable=True,
+        comment="kind, wallet_id (дубль id для UI), diff, multisig_setup_status, адреса",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<Order(id={self.id}, category={self.category}, dedupe_key={self.dedupe_key!r})>"
 
 
 class BestchangeYamlSnapshot(Base):

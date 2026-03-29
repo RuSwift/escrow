@@ -21,3 +21,8 @@ DEFAULT_ACTIVE_OPERATIONS_HEX = (
 )
 
 TERMINAL_STATUSES = frozenset({MULTISIG_STATUS_ACTIVE})
+
+# Эфемерный multisig_space_drift только после завершения настройки (успех или финальная ошибка).
+SPACE_DRIFT_ELIGIBLE_STATUSES = frozenset(
+    {MULTISIG_STATUS_ACTIVE, MULTISIG_STATUS_FAILED}
+)

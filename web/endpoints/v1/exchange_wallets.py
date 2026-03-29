@@ -7,7 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from core.exceptions import SpacePermissionDenied
 from repos.wallet import ExchangeWalletResource
-from services.exchange_wallets import ExchangeWalletService
+
+from services.exchange_wallets import ExchangeWalletService, MultisigDeleteBlockedError
 from services.multisig_wallet.meta import meta_for_api
 from web.endpoints.dependencies import (
     get_exchange_wallet_service,
@@ -25,6 +26,7 @@ router = APIRouter(prefix="/spaces", tags=["exchange-wallets"])
 _MULTISIG_PATCH_KEYS = frozenset(
     {
         "multisig_actors",
+        "multisig_owners",
         "multisig_threshold_n",
         "multisig_threshold_m",
         "multisig_retry",
@@ -180,6 +182,11 @@ async def delete_exchange_wallet(
 ):
     try:
         ok = await svc.delete_wallet(space, wallet_address, wallet_id)
+    except MultisigDeleteBlockedError as e:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": e.code, **e.extra},
+        ) from e
     except SpacePermissionDenied as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail=str(e)

@@ -27,6 +27,7 @@ from services.tron_auth import TronAuth
 from services.wallet import WalletService
 from services.invite import InviteService
 from services.exchange_wallets import ExchangeWalletService
+from services.order import OrderService
 from services.guarantor import GuarantorService
 from services.space import SpaceService
 from services.dashboard import DashboardService
@@ -171,6 +172,15 @@ def get_exchange_wallet_service(
 ) -> ExchangeWalletService:
     """Реквизиты Ramp (Wallet external | multisig) в разрезе space."""
     return ExchangeWalletService(session=db, redis=redis, settings=settings)
+
+
+def get_order_service(
+    db: DbSession,
+    redis: RedisClient,
+    settings: AppSettings,
+) -> OrderService:
+    """Ордера дашборда (эфемерные и др.)."""
+    return OrderService(session=db, redis=redis, settings=settings)
 
 
 def get_balances_service(
@@ -519,6 +529,7 @@ __all__ = [
     "get_space_service",
     "get_guarantor_service",
     "get_exchange_wallet_service",
+    "get_order_service",
     "get_balances_service",
     "BalancesServiceDep",
     "get_invite_service",

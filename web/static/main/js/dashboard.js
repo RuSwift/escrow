@@ -60,11 +60,20 @@ Vue.component('dashboard', {
                 { id: 'esc-004', title: 'Software license', description: 'Annual enterprise license', amount: 12000, currency: 'USDT', status: 'disputed', buyer_id: '0x22B...4455C', seller_id: '0x77E...6677F', created_at: '2026-03-09T11:20:00' },
                 { id: 'esc-005', title: 'Hardware batch', description: 'Miners delivery', amount: 150000, currency: 'USDT', status: 'funded', buyer_id: '0x71C...8976F', seller_id: '0x42A...1122C', created_at: '2026-03-12T08:45:00' }
             ],
-            loading: false,
+            mockLoading: false,
+            apiOrders: [],
+            ordersLoading: false,
+            ordersError: null,
+            ordersSearch: '',
             ratiosRaw: null,
             ratiosLoading: false,
             ratiosError: null,
-            ratiosModalOpen: false
+            ratiosModalOpen: false,
+            showDashboardMultisigWizard: false,
+            dashboardMultisigWizardWallet: null,
+            dashboardMultisigFetching: false,
+            driftDetailModalOpen: false,
+            driftDetailOrder: null
         };
     },
     computed: {
@@ -84,6 +93,23 @@ Vue.component('dashboard', {
                 var maxVal = vals.length ? Math.max.apply(null, vals) : null;
                 var ratioText = maxVal != null ? String(Number(maxVal).toFixed(2)).replace(/\.?0+$/, '') : '—';
                 return { pair: r.base + '/' + r.quote, ratioText: ratioText };
+            });
+        },
+        filteredApiOrders: function() {
+            var self = this;
+            var q = (this.ordersSearch || '').toLowerCase();
+            var items = this.apiOrders || [];
+            if (!q) return items;
+            return items.filter(function(row) {
+                var p = row.payload || {};
+                var blob = [
+                    String(row.dedupe_key || ''),
+                    String(p.kind || ''),
+                    String(p.wallet_name || ''),
+                    String(p.multisig_setup_status || ''),
+                    String(p.tron_address || '')
+                ].join(' ').toLowerCase();
+                return blob.indexOf(q) !== -1;
             });
         },
         filteredEscrows: function() {
@@ -109,6 +135,7 @@ Vue.component('dashboard', {
     },
     mounted: function() {
         this.fetchRatios();
+        this.fetchOrders();
     },
     methods: {
         fetchRatios: function() {
@@ -138,6 +165,177 @@ Vue.component('dashboard', {
                     self.ratiosLoading = false;
                 });
         },
+        fetchOrders: function() {
+            var self = this;
+            var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__) ? String(window.__CURRENT_SPACE__).trim() : '';
+            if (!space) {
+                self.apiOrders = [];
+                return;
+            }
+            self.ordersLoading = true;
+            self.ordersError = null;
+            fetch('/v1/spaces/' + encodeURIComponent(space) + '/orders', {
+                method: 'GET',
+                headers: authHeadersMain(),
+                credentials: 'include'
+            })
+                .then(function(res) {
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.json();
+                })
+                .then(function(data) {
+                    self.apiOrders = (data && data.items && Array.isArray(data.items)) ? data.items : [];
+                })
+                .catch(function() {
+                    self.ordersError = true;
+                    self.apiOrders = [];
+                })
+                .finally(function() {
+                    self.ordersLoading = false;
+                });
+        },
+        /** Как в my_business.multisigStatusLabel — те же ключи main.my_business.multisig_status_* */
+        ephemeralMultisigStatusLabel: function(order) {
+            var p = (order && order.payload) || {};
+            var st = (p.multisig_setup_status != null) ? String(p.multisig_setup_status) : '';
+            if (!st) return '—';
+            var key = 'main.my_business.multisig_status_' + st;
+            var t = this.$t(key);
+            return (t && t !== key) ? t : st;
+        },
+        ephemeralMultisigBadgeClass: function(order) {
+            var p = (order && order.payload) || {};
+            if (p.kind === 'multisig_space_drift') {
+                return 'bg-violet-50 text-violet-900 border border-violet-100';
+            }
+            return 'bg-amber-50 text-amber-900 border border-amber-100';
+        },
+        ephemeralMultisigSpinnerVisible: function(order) {
+            var p = (order && order.payload) || {};
+            var st = (p.multisig_setup_status != null) ? String(p.multisig_setup_status) : '';
+            if (!st) return false;
+            if (st === 'failed' || st === 'reconfigure') return false;
+            if (st === 'active') return false;
+            return true;
+        },
+        isMultisigEphemeralOrder: function(order) {
+            var k = order && order.payload && order.payload.kind;
+            return k === 'multisig_pipeline' || k === 'multisig_space_drift';
+        },
+        onApiOrderRowClick: function(order) {
+            if (!this.isMultisigEphemeralOrder(order) || this.dashboardMultisigFetching) return;
+            this.openDashboardMultisigWizardFromOrder(order);
+        },
+        openDashboardMultisigWizardFromOrder: function(order) {
+            var p = (order && order.payload) || {};
+            var wid = order.space_wallet_id != null ? order.space_wallet_id : p.wallet_id;
+            if (wid == null) return;
+            var self = this;
+            var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__)
+                ? String(window.__CURRENT_SPACE__).trim()
+                : '';
+            if (!space) return;
+            self.dashboardMultisigFetching = true;
+            fetch(
+                '/v1/spaces/' + encodeURIComponent(space) + '/exchange-wallets?role=multisig',
+                {
+                    method: 'GET',
+                    headers: authHeadersMain(),
+                    credentials: 'include'
+                }
+            )
+                .then(function(res) {
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.json();
+                })
+                .then(function(data) {
+                    var items = (data && data.items) || [];
+                    var rw = null;
+                    for (var i = 0; i < items.length; i++) {
+                        if (items[i].id === wid) {
+                            rw = items[i];
+                            break;
+                        }
+                    }
+                    if (!rw) {
+                        if (typeof window.showAlert === 'function') {
+                            window.showAlert({
+                                title: self.$t('main.dialog.error_title'),
+                                message: self.$t('main.dashboard.multisig_modal_load_error')
+                            });
+                        }
+                        return;
+                    }
+                    self.dashboardMultisigWizardWallet = rw;
+                    self.showDashboardMultisigWizard = true;
+                })
+                .catch(function() {
+                    if (typeof window.showAlert === 'function') {
+                        window.showAlert({
+                            title: self.$t('main.dialog.error_title'),
+                            message: self.$t('main.dashboard.multisig_modal_load_error')
+                        });
+                    }
+                })
+                .finally(function() {
+                    self.dashboardMultisigFetching = false;
+                });
+        },
+        closeDashboardMultisigWizard: function() {
+            this.showDashboardMultisigWizard = false;
+            this.dashboardMultisigWizardWallet = null;
+        },
+        onDashboardMultisigConfigSaved: function() {
+            this.fetchOrders();
+        },
+        isDriftOrder: function(order) {
+            return !!(order && order.payload && order.payload.kind === 'multisig_space_drift');
+        },
+        openDriftDetailModal: function(order) {
+            if (!this.isDriftOrder(order)) return;
+            this.driftDetailOrder = order;
+            this.driftDetailModalOpen = true;
+        },
+        closeDriftDetailModal: function() {
+            this.driftDetailModalOpen = false;
+            this.driftDetailOrder = null;
+        },
+        driftAddrList: function(arr) {
+            if (!arr || !Array.isArray(arr) || !arr.length) return '—';
+            return arr.join(', ');
+        },
+        orderRowTitle: function(order) {
+            var p = (order && order.payload) || {};
+            var wid = order.space_wallet_id != null ? order.space_wallet_id : (p.wallet_id != null ? p.wallet_id : null);
+            return (p.wallet_name || '').trim() || ('#' + (wid != null ? wid : (order.id || '')));
+        },
+        orderRowDesc: function(order) {
+            var p = (order && order.payload) || {};
+            if (p.kind === 'multisig_space_drift') {
+                if (p.owners_drift == null && p.actors_drift == null) {
+                    var om0 = (p.only_in_meta && p.only_in_meta.length) ? p.only_in_meta.join(', ') : '';
+                    var os0 = (p.only_in_space && p.only_in_space.length) ? p.only_in_space.join(', ') : '';
+                    return this.$t('main.dashboard.order_drift_summary', { only_in_meta: om0 || '—', only_in_space: os0 || '—' });
+                }
+                var parts = [];
+                if (p.owners_drift) {
+                    var oim = (p.owners_only_in_meta && p.owners_only_in_meta.length) ? p.owners_only_in_meta.join(', ') : '';
+                    var ois = (p.owners_only_in_space && p.owners_only_in_space.length) ? p.owners_only_in_space.join(', ') : '';
+                    parts.push(this.$t('main.dashboard.order_drift_owners_line', { only_in_meta: oim || '—', only_in_space: ois || '—' }));
+                }
+                if (p.actors_drift) {
+                    var aim = (p.actors_only_in_meta && p.actors_only_in_meta.length) ? p.actors_only_in_meta.join(', ') : '';
+                    var ais = (p.actors_only_in_space && p.actors_only_in_space.length) ? p.actors_only_in_space.join(', ') : '';
+                    parts.push(this.$t('main.dashboard.order_drift_actors_line', { only_in_meta: aim || '—', only_in_space: ais || '—' }));
+                }
+                if (parts.length) return parts.join(' · ');
+                var om = (p.only_in_meta && p.only_in_meta.length) ? p.only_in_meta.join(', ') : '';
+                var os = (p.only_in_space && p.only_in_space.length) ? p.only_in_space.join(', ') : '';
+                return this.$t('main.dashboard.order_drift_summary', { only_in_meta: om || '—', only_in_space: os || '—' });
+            }
+            var tr = (p.tron_address || '').trim();
+            return tr || '';
+        },
         formatRatioCell: function(val) {
             if (val == null || typeof val !== 'number') return '—';
             return String(Number(val).toFixed(2)).replace(/\.?0+$/, '');
@@ -151,6 +349,7 @@ Vue.component('dashboard', {
         formatDate: function(created_at) {
             if (!created_at) return '—';
             var d = new Date(created_at);
+            if (isNaN(d.getTime())) return '—';
             var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
             return months[d.getMonth()] + ' ' + d.getDate() + ', ' + ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
         },
@@ -234,29 +433,32 @@ Vue.component('dashboard', {
         </div>
       </div>
       <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-        <div>
-          <h1 class="text-2xl font-bold mb-1">[[ $t('main.dashboard.title') ]]</h1>
-          <p class="text-sm text-cmc-muted">[[ $t('main.dashboard.subtitle') ]]</p>
+        <div class="flex flex-wrap items-center gap-2 min-w-0">
+          <h1 class="text-2xl font-bold">[[ $t('main.dashboard.title') ]]</h1>
+          <button
+            type="button"
+            @click="fetchOrders"
+            :disabled="ordersLoading"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-[#eff2f5] bg-white px-3 py-1.5 text-xs font-bold text-[#3861fb] hover:bg-[#f8fafd] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
+            :aria-label="$t('main.dashboard.orders_refresh')"
+          >
+            <svg class="w-4 h-4 shrink-0" :class="ordersLoading ? 'animate-spin text-[#3861fb]' : 'text-[#3861fb]'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            <span>[[ $t('main.dashboard.orders_refresh') ]]</span>
+          </button>
         </div>
         <div class="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
           <div class="relative flex-1 md:w-80">
-            <input v-model="searchQuery" type="text" :placeholder="$t('main.dashboard.search_placeholder')" class="w-full pl-10 pr-4 py-2 bg-white border border-[#eff2f5] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-main-blue/20" />
+            <input v-model="ordersSearch" type="text" :placeholder="$t('main.dashboard.orders_search_placeholder')" class="w-full pl-10 pr-4 py-2 bg-white border border-[#eff2f5] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-main-blue/20" />
           </div>
           <button type="button" class="cmc-btn-primary flex items-center justify-center gap-2 whitespace-nowrap py-2 px-4">
             [[ $t('main.dashboard.create_escrow') ]]
           </button>
         </div>
       </div>
-      <div class="flex flex-wrap items-center gap-4 mb-6">
-        <div class="flex items-center gap-2 bg-white border border-[#eff2f5] rounded-lg p-1">
-          <button v-for="s in ['all','pending','funded','released','disputed']" :key="s" type="button" @click="statusFilter = s" :class="['px-3 py-1 rounded-md text-xs font-bold capitalize transition-all', statusFilter === s ? 'bg-main-blue text-white shadow-sm' : 'text-cmc-muted hover:bg-[#f8fafd]']">[[ $t('main.dashboard.filter_' + s) ]]</button>
-        </div>
-        <div class="relative flex-1 max-w-xs">
-          <input v-model="participantFilter" type="text" :placeholder="$t('main.dashboard.filter_participant')" class="w-full pl-9 pr-4 py-1.5 bg-white border border-[#eff2f5] rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-main-blue/20" />
-        </div>
-        <div class="ml-auto text-xs text-cmc-muted font-medium">[[ $t('main.dashboard.showing_orders', { count: filteredEscrows.length, total: escrows.length }) ]]</div>
-      </div>
-      <div class="cmc-card overflow-hidden">
+      <div v-if="ordersError" class="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-800">[[ $t('main.dashboard.orders_load_error') ]]</div>
+      <div class="cmc-card overflow-hidden mb-10">
         <div class="overflow-x-auto">
           <table class="w-full text-left border-collapse">
             <thead>
@@ -271,51 +473,60 @@ Vue.component('dashboard', {
               </tr>
             </thead>
             <tbody>
-              <template v-if="loading">
-                <tr v-for="i in 5" :key="'skeleton-' + i" class="animate-pulse">
+              <template v-if="ordersLoading">
+                <tr v-for="i in 5" :key="'ord-sk-' + i" class="animate-pulse">
                   <td colspan="7" class="cmc-table-cell h-16 bg-gray-50/50"></td>
                 </tr>
               </template>
-              <tr v-else-if="filteredEscrows.length === 0">
-                <td colspan="7" class="cmc-table-cell text-center py-12 text-cmc-muted">[[ $t('main.dashboard.no_orders_match') ]]</td>
+              <tr v-else-if="filteredApiOrders.length === 0">
+                <td colspan="7" class="cmc-table-cell text-center py-12 text-cmc-muted">[[ $t('main.dashboard.ephemeral_no_orders') ]]</td>
               </tr>
-              <tr v-else v-for="(escrow, i) in filteredEscrows" :key="escrow.id" class="hover:bg-[#f8fafd] cursor-pointer transition-all duration-200 group border-b border-[#eff2f5] last:border-0" @click="goToDetail(escrow.id)">
+              <tr v-else v-for="(order, i) in filteredApiOrders" :key="'api-ord-' + order.id"
+                class="border-b border-[#eff2f5] last:border-0 transition-all duration-200"
+                :class="isMultisigEphemeralOrder(order) ? 'hover:bg-[#f0f6ff] cursor-pointer' : 'hover:bg-[#f8fafd]'"
+                :tabindex="isMultisigEphemeralOrder(order) ? 0 : -1"
+                @click="onApiOrderRowClick(order)"
+                @keydown.enter.prevent="onApiOrderRowClick(order)"
+              >
                 <td class="cmc-table-cell text-cmc-muted font-medium">[[ i + 1 ]]</td>
                 <td class="cmc-table-cell">
                   <div class="flex items-center gap-3">
                     <div class="w-8 h-8 rounded-full bg-main-blue/10 flex items-center justify-center text-main-blue shrink-0">
-                      <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                      <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                     </div>
-                    <div>
-                      <div class="font-bold">[[ escrow.title ]]</div>
-                      <div class="text-xs text-cmc-muted truncate max-w-[200px]">[[ escrow.description ]]</div>
+                    <div class="min-w-0">
+                      <div class="font-bold truncate">[[ orderRowTitle(order) ]]</div>
+                      <div class="text-xs text-cmc-muted truncate max-w-[240px] sm:max-w-md">[[ orderRowDesc(order) ]]</div>
                     </div>
                   </div>
                 </td>
+                <td class="cmc-table-cell text-cmc-muted">—</td>
                 <td class="cmc-table-cell">
-                  <div class="font-bold">[[ escrow.amount ]] [[ escrow.currency ]]</div>
-                  <div class="text-xs text-cmc-muted">[[ formatUsd(escrow.amount, escrow.currency) ]]</div>
-                </td>
-                <td class="cmc-table-cell">
-                  <div :class="['inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider', statusClass(escrow.status)]">
-                    <span :class="['w-1.5 h-1.5 rounded-full shrink-0', statusDotClass(escrow.status)]"></span>
-                    [[ escrow.status ]]
+                  <div class="flex items-center gap-1 min-w-0">
+                    <div :class="['inline-flex items-center gap-1.5 min-w-0 max-w-[calc(100%-2rem)] rounded-md pl-2 pr-1.5 py-0.5', ephemeralMultisigBadgeClass(order)]">
+                      <span class="text-[10px] font-bold uppercase truncate">[[ ephemeralMultisigStatusLabel(order) ]]</span>
+                      <svg v-if="ephemeralMultisigSpinnerVisible(order)" class="w-3.5 h-3.5 shrink-0 animate-spin opacity-90" :class="(order.payload && order.payload.kind) === 'multisig_space_drift' ? 'text-violet-800' : 'text-amber-800'" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    </div>
+                    <button
+                      v-if="isDriftOrder(order)"
+                      type="button"
+                      @click.stop="openDriftDetailModal(order)"
+                      class="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-lg border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors"
+                      :title="$t('main.dashboard.drift_info_title')"
+                      :aria-label="$t('main.dashboard.drift_info_aria')"
+                    >
+                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    </button>
                   </div>
                 </td>
-                <td class="cmc-table-cell text-cmc-muted">[[ formatDate(escrow.created_at) ]]</td>
-                <td class="cmc-table-cell">
-                  <div class="flex -space-x-2">
-                    <div class="w-6 h-6 rounded-full bg-indigo-500 border-2 border-white flex items-center justify-center text-[10px] text-white font-bold" title="Buyer">B</div>
-                    <div class="w-6 h-6 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center text-[10px] text-white font-bold" title="Seller">S</div>
-                  </div>
-                </td>
-                <td class="cmc-table-cell text-right">
-                  <span class="text-[10px] font-bold text-main-blue">[[ $t('main.dashboard.view_details') ]]</span>
-                </td>
+                <td class="cmc-table-cell text-cmc-muted">[[ formatDate(order.updated_at) ]]</td>
+                <td class="cmc-table-cell text-cmc-muted">—</td>
+                <td class="cmc-table-cell text-right text-cmc-muted text-[10px]"></td>
               </tr>
             </tbody>
           </table>
         </div>
+        <div class="px-4 py-2 border-t border-[#eff2f5] text-xs text-cmc-muted">[[ $t('main.dashboard.showing_api_orders', { count: filteredApiOrders.length, total: apiOrders.length }) ]]</div>
       </div>
       <div class="mt-12 grid grid-cols-1 md:grid-cols-3 gap-8">
         <div class="flex gap-4">
@@ -343,6 +554,83 @@ Vue.component('dashboard', {
           <div>
             <h3 class="font-bold mb-1">[[ $t('main.dashboard.info_arbitration_title') ]]</h3>
             <p class="text-sm text-cmc-muted leading-relaxed">[[ $t('main.dashboard.info_arbitration') ]]</p>
+          </div>
+        </div>
+      </div>
+      <div class="mt-14">
+        <h2 class="text-lg font-bold text-[#191d23] mb-2">[[ $t('main.dashboard.mocker_orders_title') ]]</h2>
+        <p class="text-xs text-cmc-muted mb-4">[[ $t('main.dashboard.mocker_orders_subtitle') ]]</p>
+        <div class="flex flex-wrap items-center gap-4 mb-6">
+          <div class="flex items-center gap-2 bg-white border border-[#eff2f5] rounded-lg p-1">
+            <button v-for="s in ['all','pending','funded','released','disputed']" :key="'mock-' + s" type="button" @click="statusFilter = s" :class="['px-3 py-1 rounded-md text-xs font-bold capitalize transition-all', statusFilter === s ? 'bg-main-blue text-white shadow-sm' : 'text-cmc-muted hover:bg-[#f8fafd]']">[[ $t('main.dashboard.filter_' + s) ]]</button>
+          </div>
+          <div class="relative flex-1 max-w-xs">
+            <input v-model="searchQuery" type="text" :placeholder="$t('main.dashboard.search_placeholder')" class="w-full pl-9 pr-4 py-1.5 bg-white border border-[#eff2f5] rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-main-blue/20" />
+          </div>
+          <div class="relative flex-1 max-w-xs min-w-[140px]">
+            <input v-model="participantFilter" type="text" :placeholder="$t('main.dashboard.filter_participant')" class="w-full pl-9 pr-4 py-1.5 bg-white border border-[#eff2f5] rounded-lg text-xs focus:outline-none focus:ring-2 focus:ring-main-blue/20" />
+          </div>
+          <div class="ml-auto text-xs text-cmc-muted font-medium">[[ $t('main.dashboard.showing_orders', { count: filteredEscrows.length, total: escrows.length }) ]]</div>
+        </div>
+        <div class="cmc-card overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+              <thead>
+                <tr class="bg-gray-50">
+                  <th class="cmc-table-header w-12">#</th>
+                  <th class="cmc-table-header">[[ $t('main.dashboard.table_col_title') ]]</th>
+                  <th class="cmc-table-header">[[ $t('main.dashboard.table_col_amount') ]]</th>
+                  <th class="cmc-table-header">[[ $t('main.dashboard.table_col_status') ]]</th>
+                  <th class="cmc-table-header">[[ $t('main.dashboard.table_col_created') ]]</th>
+                  <th class="cmc-table-header">[[ $t('main.dashboard.table_col_participants') ]]</th>
+                  <th class="cmc-table-header text-right">[[ $t('main.dashboard.table_col_action') ]]</th>
+                </tr>
+              </thead>
+              <tbody>
+                <template v-if="mockLoading">
+                  <tr v-for="i in 5" :key="'mock-skeleton-' + i" class="animate-pulse">
+                    <td colspan="7" class="cmc-table-cell h-16 bg-gray-50/50"></td>
+                  </tr>
+                </template>
+                <tr v-else-if="filteredEscrows.length === 0">
+                  <td colspan="7" class="cmc-table-cell text-center py-12 text-cmc-muted">[[ $t('main.dashboard.no_orders_match') ]]</td>
+                </tr>
+                <tr v-else v-for="(escrow, i) in filteredEscrows" :key="escrow.id" class="hover:bg-[#f8fafd] cursor-pointer transition-all duration-200 group border-b border-[#eff2f5] last:border-0" @click="goToDetail(escrow.id)">
+                  <td class="cmc-table-cell text-cmc-muted font-medium">[[ i + 1 ]]</td>
+                  <td class="cmc-table-cell">
+                    <div class="flex items-center gap-3">
+                      <div class="w-8 h-8 rounded-full bg-main-blue/10 flex items-center justify-center text-main-blue shrink-0">
+                        <svg class="w-[18px] h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
+                      </div>
+                      <div>
+                        <div class="font-bold">[[ escrow.title ]]</div>
+                        <div class="text-xs text-cmc-muted truncate max-w-[200px]">[[ escrow.description ]]</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td class="cmc-table-cell">
+                    <div class="font-bold">[[ escrow.amount ]] [[ escrow.currency ]]</div>
+                    <div class="text-xs text-cmc-muted">[[ formatUsd(escrow.amount, escrow.currency) ]]</div>
+                  </td>
+                  <td class="cmc-table-cell">
+                    <div :class="['inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider', statusClass(escrow.status)]">
+                      <span :class="['w-1.5 h-1.5 rounded-full shrink-0', statusDotClass(escrow.status)]"></span>
+                      [[ escrow.status ]]
+                    </div>
+                  </td>
+                  <td class="cmc-table-cell text-cmc-muted">[[ formatDate(escrow.created_at) ]]</td>
+                  <td class="cmc-table-cell">
+                    <div class="flex -space-x-2">
+                      <div class="w-6 h-6 rounded-full bg-indigo-500 border-2 border-white flex items-center justify-center text-[10px] text-white font-bold" title="Buyer">B</div>
+                      <div class="w-6 h-6 rounded-full bg-emerald-500 border-2 border-white flex items-center justify-center text-[10px] text-white font-bold" title="Seller">S</div>
+                    </div>
+                  </td>
+                  <td class="cmc-table-cell text-right">
+                    <span class="text-[10px] font-bold text-main-blue">[[ $t('main.dashboard.view_details') ]]</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
@@ -380,6 +668,78 @@ Vue.component('dashboard', {
           </div>
         </div>
       </transition>
+      <transition name="fade">
+        <div v-if="driftDetailModalOpen && driftDetailOrder" class="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" @click.self="closeDriftDetailModal">
+          <div class="bg-white rounded-xl shadow-xl border border-[#eff2f5] w-full max-w-lg max-h-[85vh] flex flex-col" role="dialog" aria-modal="true" @click.stop>
+            <div class="flex items-center justify-between gap-4 px-4 py-3 border-b border-[#eff2f5] shrink-0">
+              <h2 class="text-lg font-bold text-[#191d23] pr-2">[[ $t('main.dashboard.drift_modal_title') ]]</h2>
+              <button type="button" class="p-2 rounded-lg text-[#58667e] hover:bg-[#eff2f5] transition-colors shrink-0" @click="closeDriftDetailModal" :aria-label="$t('main.dashboard.drift_modal_close')">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div class="overflow-auto p-4 flex-1 min-h-0 space-y-5">
+              <p class="text-xs text-[#58667e] leading-relaxed">[[ $t('main.dashboard.drift_modal_intro') ]]</p>
+              <div class="text-xs text-[#58667e]">
+                <span class="font-semibold text-[#191d23]">[[ orderRowTitle(driftDetailOrder) ]]</span>
+                <span v-if="driftDetailOrder.payload && driftDetailOrder.payload.tron_address" class="font-mono break-all block mt-1">[[ driftDetailOrder.payload.tron_address ]]</span>
+              </div>
+              <div v-if="driftDetailOrder.payload && driftDetailOrder.payload.owners_drift" class="rounded-xl border border-violet-100 bg-violet-50/90 p-3 space-y-2">
+                <h3 class="text-xs font-bold text-violet-900 uppercase tracking-wide">[[ $t('main.dashboard.drift_modal_section_owners') ]]</h3>
+                <p class="text-xs text-[#58667e] leading-relaxed">[[ $t('main.dashboard.drift_modal_owners_comment') ]]</p>
+                <dl class="mt-2 space-y-2 text-xs">
+                  <div>
+                    <dt class="font-semibold text-[#191d23]">[[ $t('main.dashboard.drift_modal_diff_only_in_meta') ]]</dt>
+                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftDetailOrder.payload.owners_only_in_meta) ]]</dd>
+                  </div>
+                  <div>
+                    <dt class="font-semibold text-[#191d23]">[[ $t('main.dashboard.drift_modal_diff_only_in_space') ]]</dt>
+                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftDetailOrder.payload.owners_only_in_space) ]]</dd>
+                  </div>
+                  <div>
+                    <dt class="font-semibold text-[#58667e]">[[ $t('main.dashboard.drift_modal_snapshot_meta_owners') ]]</dt>
+                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftDetailOrder.payload.meta_owners) ]]</dd>
+                  </div>
+                  <div>
+                    <dt class="font-semibold text-[#58667e]">[[ $t('main.dashboard.drift_modal_snapshot_space_admins') ]]</dt>
+                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftDetailOrder.payload.space_tron_admins) ]]</dd>
+                  </div>
+                </dl>
+              </div>
+              <div v-if="driftDetailOrder.payload && driftDetailOrder.payload.actors_drift" class="rounded-xl border border-violet-100 bg-violet-50/90 p-3 space-y-2">
+                <h3 class="text-xs font-bold text-violet-900 uppercase tracking-wide">[[ $t('main.dashboard.drift_modal_section_actors') ]]</h3>
+                <p class="text-xs text-[#58667e] leading-relaxed">[[ $t('main.dashboard.drift_modal_actors_comment') ]]</p>
+                <dl class="mt-2 space-y-2 text-xs">
+                  <div>
+                    <dt class="font-semibold text-[#191d23]">[[ $t('main.dashboard.drift_modal_diff_only_in_meta') ]]</dt>
+                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftDetailOrder.payload.actors_only_in_meta) ]]</dd>
+                  </div>
+                  <div>
+                    <dt class="font-semibold text-[#191d23]">[[ $t('main.dashboard.drift_modal_diff_only_in_space') ]]</dt>
+                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftDetailOrder.payload.actors_only_in_space) ]]</dd>
+                  </div>
+                  <div>
+                    <dt class="font-semibold text-[#58667e]">[[ $t('main.dashboard.drift_modal_snapshot_meta_actors') ]]</dt>
+                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftDetailOrder.payload.actors) ]]</dd>
+                  </div>
+                  <div>
+                    <dt class="font-semibold text-[#58667e]">[[ $t('main.dashboard.drift_modal_snapshot_space_signers') ]]</dt>
+                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftDetailOrder.payload.space_tron_owner_operator) ]]</dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
+            <div class="px-4 py-3 border-t border-[#eff2f5] flex justify-end shrink-0">
+              <button type="button" class="px-4 py-2 text-sm font-semibold rounded-lg bg-main-blue text-white hover:opacity-90 transition-opacity" @click="closeDriftDetailModal">[[ $t('main.dashboard.drift_modal_close') ]]</button>
+            </div>
+          </div>
+        </div>
+      </transition>
+      <multisig-config-modal
+        :show="showDashboardMultisigWizard"
+        :wallet="dashboardMultisigWizardWallet"
+        @close="closeDashboardMultisigWizard"
+        @saved="onDashboardMultisigConfigSaved"
+      ></multisig-config-modal>
     </div>
     `
 });

@@ -436,11 +436,27 @@
                         credentials: 'include'
                     })
                         .then(function(r) {
+                            if (r.status === 409) {
+                                return r.json().then(function(body) {
+                                    var d = body && body.detail;
+                                    var code = typeof d === 'object' && d !== null ? d.code : null;
+                                    var key = 'main.my_business.ramp_delete_blocked_stable';
+                                    if (code === 'trx_balance_too_high') {
+                                        key = 'main.my_business.ramp_delete_blocked_trx';
+                                    } else if (code === 'forex_unavailable') {
+                                        key = 'main.my_business.ramp_delete_blocked_forex';
+                                    }
+                                    throw new Error(self.$t(key));
+                                });
+                            }
                             if (!r.ok && r.status !== 204) throw new Error();
                             self.fetchRampWallets();
                         })
-                        .catch(function() {
-                            var msg = self.$t('main.my_business.ramp_loading_error');
+                        .catch(function(err) {
+                            var msg = err && err.message ? err.message : self.$t('main.my_business.ramp_loading_error');
+                            if (msg === '403') {
+                                msg = self.$t('main.my_business.ramp_error_forbidden');
+                            }
                             if (typeof window.showAlert === 'function') {
                                 window.showAlert({
                                     title: self.$t('main.dialog.error_title'),
