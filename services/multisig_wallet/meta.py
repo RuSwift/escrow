@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from services.multisig_wallet.constants import MULTISIG_DEFAULT_MIN_TRX_SUN
+from services.multisig_wallet.constants import (
+    MULTISIG_DEFAULT_MIN_TRX_SUN,
+    MULTISIG_DEFAULT_PERMISSION_NAME,
+)
 from services.tron.utils import is_valid_tron_address
 
 
@@ -20,6 +23,7 @@ def default_meta_dict() -> Dict[str, Any]:
         "permission_tx_id": None,
         "broadcast_at": None,
         "retry_desired": False,
+        "permission_name": MULTISIG_DEFAULT_PERMISSION_NAME,
     }
 
 

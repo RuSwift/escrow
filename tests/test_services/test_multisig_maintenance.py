@@ -103,13 +103,13 @@ async def test_process_wallet_awaiting_funding_updates_balance_below_min(
     await test_db.commit()
     await test_db.refresh(w)
 
-    async def fake_bal(*args, **kwargs):
+    async def fake_isolated(*args, **kwargs):
         return {w.tron_address: 1_000_000}
 
     monkeypatch.setattr(
-        multisig_maintenance._balances,
-        "list_tron_native_trx_balances_raw",
-        fake_bal,
+        multisig_maintenance,
+        "_list_tron_native_trx_balances_isolated",
+        fake_isolated,
     )
     monkeypatch.setattr(
         "services.multisig_wallet.maintenance.TronGridClient",
@@ -153,13 +153,13 @@ async def test_ready_for_permissions_precheck_recalculates_min_and_waits_funding
     await test_db.commit()
     await test_db.refresh(w)
 
-    async def fake_bal(*args, **kwargs):
+    async def fake_isolated(*args, **kwargs):
         return {w.tron_address: 120_000}
 
     monkeypatch.setattr(
-        multisig_maintenance._balances,
-        "list_tron_native_trx_balances_raw",
-        fake_bal,
+        multisig_maintenance,
+        "_list_tron_native_trx_balances_isolated",
+        fake_isolated,
     )
     # estimate_sun=200_000 > last_trx_balance_sun=120_000 → ожидаем переход в AWAITING_FUNDING
     monkeypatch.setattr(

@@ -11,6 +11,9 @@ MULTISIG_STATUS_FAILED = "failed"
 
 MULTISIG_DEFAULT_MIN_TRX_SUN = 150_000_000  # 150 TRX — запас под fee (как в garantex sample)
 
+# Имя custom active permission на TRON по умолчанию (до 32 символов).
+MULTISIG_DEFAULT_PERMISSION_NAME = "multisig_ruswift"
+
 # Разрешённые операции для custom active permission (как в tests/samples/multisig garantex).
 DEFAULT_ACTIVE_OPERATIONS_HEX = (
     "7fff1fc0033e0000000000000000000000000000000000000000000000000000"

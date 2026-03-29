@@ -10,11 +10,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from redis.asyncio import Redis
 
+import db as db_module
 from db.models import Wallet
 from repos.wallet import WalletRepository
 from services.balances import BalancesService
 from services.multisig_wallet.constants import (
     MULTISIG_DEFAULT_MIN_TRX_SUN,
+    MULTISIG_DEFAULT_PERMISSION_NAME,
     MULTISIG_STATUS_ACTIVE,
     MULTISIG_STATUS_AWAITING_FUNDING,
     MULTISIG_STATUS_FAILED,
@@ -48,8 +50,31 @@ class MultisigWalletMaintenanceService:
         self._session = session
         self._redis = redis
         self._settings = settings
-        self._balances = BalancesService(session=session, redis=redis, settings=settings)
         self._repo = WalletRepository(session=session, redis=redis, settings=settings)
+
+    async def _list_tron_native_trx_balances_isolated(
+        self,
+        wallet_addresses: list[str],
+        *,
+        refresh_cache: bool,
+    ) -> dict[str, int]:
+        """
+        Баланс TRX через отдельную сессию БД: upsert кеша балансов делает commit,
+        его нельзя смешивать с begin()/begin_nested() в process_batch.
+        """
+        session_factory = db_module.SessionLocal
+        if session_factory is None:
+            raise RuntimeError("Database not initialized (SessionLocal is None)")
+        async with session_factory() as balance_session:
+            svc = BalancesService(
+                session=balance_session,
+                redis=self._redis,
+                settings=self._settings,
+            )
+            return await svc.list_tron_native_trx_balances_raw(
+                wallet_addresses,
+                refresh_cache=refresh_cache,
+            )
 
     async def process_batch(self, batch_size: int = 5) -> int:
         """
@@ -161,7 +186,7 @@ class MultisigWalletMaintenanceService:
             MULTISIG_STATUS_READY_FOR_PERMISSIONS,
         ):
             try:
-                bal = await self._balances.list_tron_native_trx_balances_raw(
+                bal = await self._list_tron_native_trx_balances_isolated(
                     [tron],
                     refresh_cache=force_balance_refresh,
                 )
@@ -202,7 +227,9 @@ class MultisigWalletMaintenanceService:
                 wallet.multisig_setup_status = MULTISIG_STATUS_FAILED
                 return True
 
-            perm_name = str(meta.get("permission_name") or f"ms_{wallet.id}")[:32]
+            perm_name = str(
+                meta.get("permission_name") or MULTISIG_DEFAULT_PERMISSION_NAME
+            )[:32]
 
             # Precheck: оцениваем стоимость tx (+10% margin) и обновляем min_trx_sun
             try:

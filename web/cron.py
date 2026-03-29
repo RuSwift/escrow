@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 
 FOREX_RAPIRA_SEC = 60.0
 CBR_SEC = 3600.0
-MULTISIG_WALLET_SEC = 90.0
+MULTISIG_WALLET_SEC = 10.0
 
 
 async def _merge_ratios_after_tick(
