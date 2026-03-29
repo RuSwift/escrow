@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from typing import Any, Dict, Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +14,8 @@ from redis.asyncio import Redis
 import db as db_module
 from db.models import Wallet
 from repos.wallet import WalletRepository
+from repos.wallet_user import WalletUserRepository
+from services.notify import NotifyService, RampNotifyEvent
 from services.balances import BalancesService
 from services.multisig_wallet.constants import (
     MULTISIG_DEFAULT_MIN_TRX_SUN,
@@ -52,6 +55,47 @@ class MultisigWalletMaintenanceService:
         self._redis = redis
         self._settings = settings
         self._repo = WalletRepository(session=session, redis=redis, settings=settings)
+        self._wallet_users = WalletUserRepository(
+            session=session, redis=redis, settings=settings
+        )
+
+    async def _scope_nickname_for_wallet(self, wallet: Wallet) -> Optional[str]:
+        odid = (wallet.owner_did or "").strip()
+        if not odid:
+            return None
+        owner = await self._wallet_users.get_by_did(odid)
+        if not owner:
+            return None
+        nick = (owner.nickname or "").strip()
+        return nick or None
+
+    def _ramp_notify_payload(self, wallet: Wallet) -> Dict[str, Any]:
+        return {
+            "wallet_name": wallet.name,
+            "wallet_id": wallet.id,
+            "role": wallet.role or "multisig",
+            "tron_address": (wallet.tron_address or "").strip(),
+        }
+
+    async def _notify_owners_multisig_event(self, wallet: Wallet, event: str) -> None:
+        scope = await self._scope_nickname_for_wallet(wallet)
+        if not scope:
+            logger.warning(
+                "multisig notify skipped: no scope for wallet id=%s", wallet.id
+            )
+            return
+        try:
+            ns = NotifyService(self._session, self._redis, self._settings)
+            await ns.notify_roles_event(
+                scope,
+                ["owner"],
+                event,
+                self._ramp_notify_payload(wallet),
+            )
+        except Exception:
+            logger.exception(
+                "multisig notify failed wallet id=%s event=%s", wallet.id, event
+            )
 
     async def _list_tron_native_trx_balances_isolated(
         self,
@@ -338,6 +382,9 @@ class MultisigWalletMaintenanceService:
                 wallet.account_permissions = account_permissions_snapshot(acc)
             except Exception:
                 pass
+            pre_meta = dict(wallet.multisig_setup_meta or {})
+            had_reconfigure = bool(pre_meta.get("reconfigure_previous_status"))
+            was_noop = bool(pre_meta.get("reconfigure_unchanged"))
             wallet.multisig_setup_status = MULTISIG_STATUS_ACTIVE
             meta_done = dict(
                 merge_meta(
@@ -348,6 +395,13 @@ class MultisigWalletMaintenanceService:
             meta_done.pop("reconfigure_previous_status", None)
             meta_done.pop("reconfigure_unchanged", None)
             wallet.multisig_setup_meta = meta_done
+            if had_reconfigure and was_noop:
+                evt = RampNotifyEvent.MULTISIG_RECONFIGURED_NOOP
+            elif had_reconfigure:
+                evt = RampNotifyEvent.MULTISIG_RECONFIGURED_ACTIVE
+            else:
+                evt = RampNotifyEvent.MULTISIG_CONFIGURED_ACTIVE
+            await self._notify_owners_multisig_event(wallet, evt)
             return True
 
         return False

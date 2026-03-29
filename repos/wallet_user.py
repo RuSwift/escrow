@@ -21,6 +21,11 @@ class WalletUserProfileSchema(BaseModel):
     description: Optional[str] = None
     company_name: Optional[str] = Field(default=None, max_length=255)
     icon: Optional[str] = None
+    language: Optional[str] = Field(
+        default=None,
+        max_length=16,
+        description="Locale for space notifications (e.g. ru, en); empty = default ru",
+    )
 
 
 class WalletUserResource(BaseResource):

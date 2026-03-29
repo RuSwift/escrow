@@ -765,5 +765,11 @@
   "node.login.invalid_credentials": "Invalid login or password",
   "node.login.error_verify": "Signature verification error",
   "node.login.error_prefix": "Error: ",
-  "node.login.user_rejected": "Connection cancelled"
+  "node.login.user_rejected": "Connection cancelled",
+
+  "notify.ramp_wallet_created": "A corporate wallet «{wallet_name}» (id {wallet_id}, {role}) was added to the space. TRON: {tron_address}",
+  "notify.ramp_wallet_deleted": "Corporate wallet «{wallet_name}» (id {wallet_id}, {role}) was removed from the space. TRON: {tron_address}",
+  "notify.multisig_configured_active": "Multisig wallet «{wallet_name}» (id {wallet_id}) is configured and active on-chain. Address: {tron_address}",
+  "notify.multisig_reconfigured_active": "Multisig «{wallet_name}» (id {wallet_id}): permission reconfiguration completed. Address: {tron_address}",
+  "notify.multisig_reconfigured_noop": "Multisig «{wallet_name}» (id {wallet_id}): configuration already matches the blockchain; no changes were required. Address: {tron_address}"
 }

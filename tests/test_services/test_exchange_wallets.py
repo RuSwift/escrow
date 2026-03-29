@@ -5,6 +5,7 @@ from sqlalchemy import select
 from db.models import Wallet, WalletUserSubRole
 from repos.wallet_user import WalletUserSubResource
 from services.exchange_wallets import ExchangeWalletService
+from services.notify import NotifyService, RampNotifyEvent
 from services.multisig_wallet.constants import (
     MULTISIG_DEFAULT_PERMISSION_NAME,
     MULTISIG_STATUS_ACTIVE,
@@ -70,8 +71,15 @@ async def exchange_space_owner_sub(exchange_wallet_service):
 
 @pytest.mark.asyncio
 async def test_create_multisig_server_mnemonic(
-    exchange_space_owner_sub, exchange_wallet_service
+    exchange_space_owner_sub, exchange_wallet_service, monkeypatch
 ):
+    calls = []
+
+    async def _capture(self, scope, roles, event, payload, *, language=None):
+        calls.append((scope, list(roles), event, dict(payload), language))
+
+    monkeypatch.setattr(NotifyService, "notify_roles_event", _capture)
+
     row = await exchange_wallet_service.create_wallet(
         SPACE_NAME,
         OWNER_WALLET,
@@ -79,6 +87,14 @@ async def test_create_multisig_server_mnemonic(
         blockchain="tron",
         name="Msig A",
     )
+    assert len(calls) == 1
+    assert calls[0][0] == SPACE_NAME
+    assert calls[0][1] == ["owner"]
+    assert calls[0][2] == RampNotifyEvent.RAMP_WALLET_CREATED
+    assert calls[0][3]["wallet_name"] == "Msig A"
+    assert calls[0][3]["role"] == "multisig"
+    assert calls[0][4] is None
+
     assert row.role == "multisig"
     assert row.tron_address.startswith("T")
     assert row.ethereum_address and row.ethereum_address.startswith("0x")
@@ -89,8 +105,15 @@ async def test_create_multisig_server_mnemonic(
 
 @pytest.mark.asyncio
 async def test_create_external_custom_tron_only(
-    exchange_space_owner_sub, exchange_wallet_service
+    exchange_space_owner_sub, exchange_wallet_service, monkeypatch
 ):
+    calls = []
+
+    async def _capture(self, scope, roles, event, payload, *, language="ru"):
+        calls.append(event)
+
+    monkeypatch.setattr(NotifyService, "notify_roles_event", _capture)
+
     row = await exchange_wallet_service.create_wallet(
         SPACE_NAME,
         OWNER_WALLET,
@@ -99,9 +122,46 @@ async def test_create_external_custom_tron_only(
         name="Bank ext",
         tron_address=CUSTOM_VALID_TRON,
     )
+    assert calls == [RampNotifyEvent.RAMP_WALLET_CREATED]
     assert row.role == "external"
     assert row.tron_address == CUSTOM_VALID_TRON
     assert row.ethereum_address is None
+
+
+@pytest.mark.asyncio
+async def test_delete_wallet_notifies_owners(
+    exchange_space_owner_sub, exchange_wallet_service, monkeypatch
+):
+    calls = []
+
+    async def _capture(self, scope, roles, event, payload, *, language=None):
+        calls.append((scope, list(roles), event, dict(payload)))
+
+    monkeypatch.setattr(NotifyService, "notify_roles_event", _capture)
+
+    row = await exchange_wallet_service.create_wallet(
+        SPACE_NAME,
+        OWNER_WALLET,
+        role="external",
+        blockchain="tron",
+        name="ToDelete",
+        tron_address=CUSTOM_VALID_TRON,
+    )
+    assert calls[0][2] == RampNotifyEvent.RAMP_WALLET_CREATED
+    calls.clear()
+
+    ok = await exchange_wallet_service.delete_wallet(
+        SPACE_NAME, OWNER_WALLET, row.id
+    )
+    assert ok is True
+    assert len(calls) == 1
+    assert calls[0][0] == SPACE_NAME
+    assert calls[0][1] == ["owner"]
+    assert calls[0][2] == RampNotifyEvent.RAMP_WALLET_DELETED
+    assert calls[0][3]["wallet_name"] == "ToDelete"
+    assert calls[0][3]["wallet_id"] == row.id
+    assert calls[0][3]["role"] == "external"
+    assert calls[0][3]["tron_address"] == CUSTOM_VALID_TRON
 
 
 @pytest.mark.asyncio
@@ -283,6 +343,13 @@ async def test_patch_multisig_begin_reconfigure_from_failed(
 async def test_patch_reconfigure_actors_matches_chain_noop(
     exchange_space_owner_sub, exchange_wallet_service, test_db, monkeypatch
 ):
+    notify_events = []
+
+    async def _cap_notify(self, scope, roles, event, payload, *, language="ru"):
+        notify_events.append(event)
+
+    monkeypatch.setattr(NotifyService, "notify_roles_event", _cap_notify)
+
     signer = SUB_VALID_TRON
     _mock_tron_grid_getaccount(
         monkeypatch,
@@ -335,6 +402,8 @@ async def test_patch_reconfigure_actors_matches_chain_noop(
     assert out.multisig_setup_status == MULTISIG_STATUS_ACTIVE
     assert out.multisig_setup_meta.get("reconfigure_unchanged") is True
     assert "reconfigure_previous_status" not in (out.multisig_setup_meta or {})
+    assert RampNotifyEvent.RAMP_WALLET_CREATED in notify_events
+    assert notify_events[-1] == RampNotifyEvent.MULTISIG_RECONFIGURED_NOOP
 
 
 @pytest.mark.asyncio

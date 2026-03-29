@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import logging
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,6 +35,7 @@ from services.multisig_wallet.constants import (
 )
 from services.multisig_wallet.maintenance import MultisigWalletMaintenanceService
 from services.multisig_wallet.meta import merge_meta, validate_actors_threshold
+from services.notify import NotifyService, RampNotifyEvent
 from services.space import SpaceService
 from services.tron.grid_client import TronGridClient
 from services.tron.utils import account_permissions_snapshot, is_valid_tron_address
@@ -79,6 +80,20 @@ class ExchangeWalletService:
             raise ValueError("Space not found")
         return owner.did
 
+    async def _notify_owners_event(
+        self, space: str, event: str, payload: Dict[str, Any]
+    ) -> None:
+        try:
+            ns = NotifyService(self._session, self._redis, self._settings)
+            await ns.notify_roles_event((space or "").strip(), ["owner"], event, payload)
+        except Exception:
+            logger.exception(
+                "Ramp notify failed: event=%s space=%s payload_keys=%s",
+                event,
+                space,
+                list(payload.keys()),
+            )
+
     async def list_wallets(
         self,
         space: str,
@@ -109,6 +124,17 @@ class ExchangeWalletService:
         owner_did = await self._owner_did_for_space(space)
         created = await self._repo.create_exchange_wallet(data, owner_did)
         await self._session.commit()
+        if data.role in ("external", "multisig"):
+            await self._notify_owners_event(
+                space,
+                RampNotifyEvent.RAMP_WALLET_CREATED,
+                {
+                    "wallet_name": created.name,
+                    "wallet_id": created.id,
+                    "role": created.role,
+                    "tron_address": (created.tron_address or "").strip(),
+                },
+            )
         return created
 
     async def create_wallet(
@@ -298,9 +324,22 @@ class ExchangeWalletService:
     ) -> bool:
         await self._space._ensure_owner_and_owner_id(space, actor_wallet_address)
         owner_did = await self._owner_did_for_space(space)
+        existing = await self._repo.get_exchange_wallet(wallet_id, owner_did)
+        if not existing:
+            return False
         ok = await self._repo.delete_exchange_wallet(wallet_id, owner_did)
         if ok:
             await self._session.commit()
+            await self._notify_owners_event(
+                space,
+                RampNotifyEvent.RAMP_WALLET_DELETED,
+                {
+                    "wallet_name": existing.name,
+                    "wallet_id": existing.id,
+                    "role": existing.role,
+                    "tron_address": (existing.tron_address or "").strip(),
+                },
+            )
         return ok
 
     async def is_ramp_wallet_address(
@@ -492,6 +531,16 @@ class ExchangeWalletService:
                     model.multisig_setup_meta = merge_meta(meta, {})
                     model.account_permissions = account_permissions_snapshot(raw_acc)
                     await self._session.commit()
+                    await self._notify_owners_event(
+                        space,
+                        RampNotifyEvent.MULTISIG_RECONFIGURED_NOOP,
+                        {
+                            "wallet_name": model.name,
+                            "wallet_id": model.id,
+                            "role": model.role or "multisig",
+                            "tron_address": tr,
+                        },
+                    )
                     return await self.get_wallet(space, actor_wallet_address, wallet_id)
 
                 if chain_cfg is None:

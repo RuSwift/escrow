@@ -765,5 +765,11 @@
   "node.login.invalid_credentials": "Неверный логин или пароль",
   "node.login.error_verify": "Ошибка верификации подписи",
   "node.login.error_prefix": "Ошибка: ",
-  "node.login.user_rejected": "Подключение отменено"
+  "node.login.user_rejected": "Подключение отменено",
+
+  "notify.ramp_wallet_created": "В спейсе добавлен корпоративный кошелёк «{wallet_name}» (id {wallet_id}, {role}). TRON: {tron_address}",
+  "notify.ramp_wallet_deleted": "Из спейса удалён корпоративный кошелёк «{wallet_name}» (id {wallet_id}, {role}). TRON: {tron_address}",
+  "notify.multisig_configured_active": "Multisig-кошелёк «{wallet_name}» (id {wallet_id}) настроен и активен в сети. Адрес: {tron_address}",
+  "notify.multisig_reconfigured_active": "Multisig «{wallet_name}» (id {wallet_id}): реконфигурация прав завершена. Адрес: {tron_address}",
+  "notify.multisig_reconfigured_noop": "Multisig «{wallet_name}» (id {wallet_id}): конфигурация совпадает с блокчейном, изменения не требовались. Адрес: {tron_address}"
 }

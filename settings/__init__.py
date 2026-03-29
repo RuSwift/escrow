@@ -196,7 +196,7 @@ class TronSettings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="TRON_",
         case_sensitive=False,
-        env_file=".env",
+        env_file=(".env", ".env.local"),
         env_file_encoding="utf-8",
         extra="ignore"
     )

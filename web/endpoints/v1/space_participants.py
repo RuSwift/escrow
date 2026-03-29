@@ -12,6 +12,7 @@ from core.exceptions import (
     MissingNickname,
     SpacePermissionDenied,
 )
+from i18n.translations import locale_from_accept_language
 from repos.wallet_user import WalletUserProfileSchema, WalletUserSubResource
 from services.space import SpaceService
 from web.endpoints.dependencies import (
@@ -51,6 +52,7 @@ async def get_space_profile(
     response_model=WalletUserProfileSchema,
 )
 async def patch_space_profile(
+    request: Request,
     space: str,
     data: WalletUserProfileSchema,
     space_service: SpaceServiceDep,
@@ -58,8 +60,14 @@ async def patch_space_profile(
 ):
     """Обновить профиль спейса. Только owner. Лимит иконки 512 КБ."""
     try:
+        accept = locale_from_accept_language(
+            request.headers.get("accept-language")
+        )
         result = await space_service.update_space_profile(
-            space, wallet_address, data.model_dump(exclude_unset=True)
+            space,
+            wallet_address,
+            data,
+            accept_language=accept,
         )
     except SpacePermissionDenied:
         raise HTTPException(

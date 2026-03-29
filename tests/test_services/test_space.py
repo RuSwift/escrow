@@ -437,7 +437,38 @@ async def test_space_profile_only_description(space_with_owner_and_sub, space_se
         "description": "Desc only",
         "company_name": None,
         "icon": None,
+        "language": None,
     }
+
+
+@pytest.mark.asyncio
+async def test_update_space_profile_language_from_accept_when_omitted(
+    space_with_owner_and_sub, space_service
+):
+    """Если language не в теле запроса, подставляется accept_language (ru|en)."""
+    await space_service.update_space_profile(
+        SPACE_NAME,
+        WALLET_OWNER,
+        WalletUserProfileSchema(description="x"),
+        accept_language="en",
+    )
+    profile = await space_service.get_space_profile(SPACE_NAME, WALLET_OWNER)
+    assert profile.get("description") == "x"
+    assert profile.get("language") == "en"
+
+
+@pytest.mark.asyncio
+async def test_update_space_profile_explicit_language_overrides_accept(
+    space_with_owner_and_sub, space_service
+):
+    await space_service.update_space_profile(
+        SPACE_NAME,
+        WALLET_OWNER,
+        WalletUserProfileSchema(description="y", language="ru"),
+        accept_language="en",
+    )
+    profile = await space_service.get_space_profile(SPACE_NAME, WALLET_OWNER)
+    assert profile.get("language") == "ru"
 
 
 @pytest.mark.asyncio

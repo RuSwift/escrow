@@ -239,3 +239,63 @@ async def test_no_early_active_while_reconfigure_branch(
     await test_db.commit()
     await test_db.refresh(w)
     assert w.multisig_setup_status == MULTISIG_STATUS_AWAITING_FUNDING
+
+
+@pytest.mark.asyncio
+async def test_early_chain_active_syncs_without_notify(
+    multisig_maintenance: MultisigWalletMaintenanceService,
+    test_db,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    notify_events: list[str] = []
+
+    async def capture_notify(wallet: Wallet, event: str) -> None:
+        notify_events.append(event)
+
+    monkeypatch.setattr(
+        multisig_maintenance, "_notify_owners_multisig_event", capture_notify
+    )
+
+    tron = "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH"
+    account_data = {
+        "active_permission": [
+            {
+                "type": 2,
+                "permission_name": MULTISIG_DEFAULT_PERMISSION_NAME,
+                "threshold": 1,
+                "keys": [{"address": _MSIG_SIGNER_TRON, "weight": 1}],
+            }
+        ]
+    }
+    w = Wallet(
+        name="m_early_sync",
+        encrypted_mnemonic="enc",
+        tron_address=tron,
+        ethereum_address="0x5555555555555555555555555555555555555555",
+        role="multisig",
+        owner_did="did:owner_early",
+        multisig_setup_status=MULTISIG_STATUS_AWAITING_FUNDING,
+        multisig_setup_meta={
+            **default_meta_dict(),
+            "actors": [_MSIG_SIGNER_TRON],
+            "threshold_n": 1,
+            "threshold_m": 1,
+        },
+    )
+    test_db.add(w)
+    await test_db.commit()
+    await test_db.refresh(w)
+
+    monkeypatch.setattr(
+        "services.multisig_wallet.maintenance.TronGridClient",
+        _make_fake_client(account_data=account_data),
+    )
+
+    changed = await multisig_maintenance.process_wallet(
+        w, force_balance_refresh=False
+    )
+    assert changed is True
+    assert notify_events == []
+    await test_db.commit()
+    await test_db.refresh(w)
+    assert w.multisig_setup_status == MULTISIG_STATUS_ACTIVE

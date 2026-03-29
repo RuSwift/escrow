@@ -274,13 +274,33 @@ class SpaceService:
         space: str,
         actor_wallet_address: str,
         data: Union[WalletUserProfileSchema, Dict[str, Any]],
+        *,
+        accept_language: str | None = None,
     ) -> Dict[str, Any]:
-        """Обновить профиль спейса. Только owner. Лимит иконки 512 КБ."""
+        """Обновить профиль спейса. Только owner. Лимит иконки 512 КБ.
+
+        Частичный PATCH сливается с уже сохранённым профилем. Поле ``language``,
+        если не передано явно в запросе, заполняется из ``accept_language`` (уже
+        нормализованный ru|en из заголовка Accept-Language), если он задан.
+        """
         owner_id = await self._ensure_owner_and_owner_id(space, actor_wallet_address)
+        current = await self._repo.get(owner_id)
+        existing: Dict[str, Any] = {}
+        if current and current.profile:
+            existing = current.profile.model_dump(mode="python")
+
         if isinstance(data, dict):
-            profile = WalletUserProfileSchema(**data)
+            patch = dict(data)
+            explicit_keys = set(patch.keys())
         else:
-            profile = data
+            patch = data.model_dump(mode="python", exclude_unset=True)
+            explicit_keys = set(data.model_fields_set)
+
+        merged: Dict[str, Any] = {**existing, **patch}
+        if "language" not in explicit_keys and accept_language in ("ru", "en"):
+            merged["language"] = accept_language
+
+        profile = WalletUserProfileSchema(**merged)
         if profile.icon is not None and len(profile.icon) > PROFILE_ICON_MAX_BASE64_LEN:
             raise ValueError("Profile icon size is too large (max 512 KB)")
         _validate_profile_description(profile.description)

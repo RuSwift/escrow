@@ -4,13 +4,15 @@
 from __future__ import annotations
 
 import logging
-from typing import Literal, NotRequired, TypedDict
+from enum import StrEnum
+from typing import Any, Literal, NotRequired, TypedDict
 
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.utils import get_user_did
 from db.models import WalletUserSubRole
+from i18n.translations import get_translation
 from repos.wallet_user import WalletUserRepository
 from settings import Settings
 
@@ -23,6 +25,24 @@ NotifyRole = Literal["admin", "owner", "operator", "reader"]
 _ALLOWED_SUB_ROLES = frozenset({"owner", "operator", "reader"})
 _ROLE_ALIASES = {"admin": "owner"}
 
+_EVENT_I18N_KEY: dict[str, str] = {
+    "ramp_wallet_created": "notify.ramp_wallet_created",
+    "ramp_wallet_deleted": "notify.ramp_wallet_deleted",
+    "multisig_configured_active": "notify.multisig_configured_active",
+    "multisig_reconfigured_active": "notify.multisig_reconfigured_active",
+    "multisig_reconfigured_noop": "notify.multisig_reconfigured_noop",
+}
+
+
+class RampNotifyEvent(StrEnum):
+    """События Ramp / multisig для текстов уведомлений (см. ``NotifyService._message_for_event``)."""
+
+    RAMP_WALLET_CREATED = "ramp_wallet_created"
+    RAMP_WALLET_DELETED = "ramp_wallet_deleted"
+    MULTISIG_CONFIGURED_ACTIVE = "multisig_configured_active"
+    MULTISIG_RECONFIGURED_ACTIVE = "multisig_reconfigured_active"
+    MULTISIG_RECONFIGURED_NOOP = "multisig_reconfigured_noop"
+
 
 class NotifyRecipient(TypedDict):
     """
@@ -33,6 +53,23 @@ class NotifyRecipient(TypedDict):
 
     did: str
     scope: NotRequired[str]
+
+
+def _p(payload: dict[str, Any], key: str) -> str:
+    v = payload.get(key)
+    if v is None or v == "":
+        return "—"
+    return str(v)
+
+
+def _normalize_notify_locale(raw: str | None) -> str:
+    """Только ru/en для уведомлений; иначе и при пустом значении — ru."""
+    if not raw or not str(raw).strip():
+        return "ru"
+    code = str(raw).strip().split("-", maxsplit=1)[0].lower()
+    if code in ("ru", "en"):
+        return code
+    return "ru"
 
 
 class NotifyService:
@@ -50,6 +87,20 @@ class NotifyService:
         self._wallet_users = WalletUserRepository(
             session=session, redis=redis, settings=settings
         )
+
+    async def _language_for_scope(self, scope: str) -> str:
+        """
+        Язык уведомлений: ``WalletUser.profile.language`` владельца спейса (scope = nickname);
+        если нет или неподдерживаемый — ``ru``.
+        """
+        scope_key = (scope or "").strip()
+        if not scope_key:
+            return "ru"
+        owner = await self._wallet_users.get_by_nickname(scope_key)
+        if not owner or not owner.profile:
+            return "ru"
+        lang = getattr(owner.profile, "language", None)
+        return _normalize_notify_locale(lang if isinstance(lang, str) else None)
 
     @staticmethod
     def _normalize_roles(roles: list[NotifyRole]) -> frozenset[str]:
@@ -74,6 +125,40 @@ class NotifyService:
             if val in wanted:
                 return True
         return False
+
+    @staticmethod
+    def _message_for_event(
+        event: str, payload: dict[str, Any], *, language: str
+    ) -> str:
+        ev = str(event)
+        msg_key = _EVENT_I18N_KEY.get(ev)
+        if not msg_key:
+            logger.warning("NotifyService: unknown event %r", event)
+            return f"[{ev}] wallet_id={_p(payload, 'wallet_id')}"
+        lang = _normalize_notify_locale(language)
+        params = {
+            "wallet_name": _p(payload, "wallet_name"),
+            "wallet_id": _p(payload, "wallet_id"),
+            "role": _p(payload, "role"),
+            "tron_address": _p(payload, "tron_address"),
+        }
+        return get_translation(msg_key, lang, **params)
+
+    async def notify_roles_event(
+        self,
+        scope: str,
+        roles: list[NotifyRole],
+        event: str,
+        payload: dict[str, Any],
+        *,
+        language: str | None = None,
+    ) -> None:
+        if language is not None and str(language).strip():
+            resolved = _normalize_notify_locale(language)
+        else:
+            resolved = await self._language_for_scope(scope)
+        text = self._message_for_event(event, payload, language=resolved)
+        await self.notify_roles(scope, roles, text)
 
     async def notify_roles(
         self, scope: str, roles: list[NotifyRole], text: str
