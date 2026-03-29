@@ -211,9 +211,14 @@ class MultisigWalletMaintenanceService:
         """Внутренняя логика state machine с уже открытым клиентом."""
         st = wallet.multisig_setup_status
 
-        # Уже настроено на цепи (ручной сценарий / внешняя операция)
+        acc: Optional[Dict[str, Any]] = None
         try:
             acc = await client.get_account(tron)
+        except Exception as e:
+            logger.warning("multisig id=%s chain read: %s", wallet.id, e)
+
+        # Уже настроено на цепи (ручной сценарий / внешняя операция)
+        if acc is not None:
             reconfrollback = (wallet.multisig_setup_meta or {}).get(
                 "reconfigure_previous_status"
             )
@@ -229,8 +234,6 @@ class MultisigWalletMaintenanceService:
                     {"last_chain_check_at": _utc_iso(), "last_error": None},
                 )
                 return True
-        except Exception as e:
-            logger.warning("multisig id=%s chain read: %s", wallet.id, e)
 
         meta = dict(wallet.multisig_setup_meta or {})
         min_sun = int(meta.get("min_trx_sun") or MULTISIG_DEFAULT_MIN_TRX_SUN)
@@ -240,11 +243,14 @@ class MultisigWalletMaintenanceService:
             MULTISIG_STATUS_READY_FOR_PERMISSIONS,
         ):
             try:
-                bal = await self._list_tron_native_trx_balances_isolated(
-                    [tron],
-                    refresh_cache=force_balance_refresh,
-                )
-                sun = int(bal.get(tron, 0))
+                if acc is not None:
+                    sun = int(acc.get("balance") or 0)
+                else:
+                    bal = await self._list_tron_native_trx_balances_isolated(
+                        [tron],
+                        refresh_cache=force_balance_refresh,
+                    )
+                    sun = int(bal.get(tron, 0))
             except Exception as e:
                 logger.warning("multisig id=%s balance: %s", wallet.id, e)
                 return False

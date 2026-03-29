@@ -480,7 +480,7 @@
                         return r.json();
                     })
                     .then(function() {
-                        self.$emit('saved');
+                        self.$emit('saved', { walletId: rw.id });
                         self.$emit('close');
                     })
                     .catch(function(e) {
@@ -780,7 +780,7 @@
                     .then(function(data) {
                         self.wizardUiForceStep = null;
                         self.applyMultisigResponseToLocalState(data);
-                        self.$emit('saved');
+                        self.$emit('saved', { walletId: rw.id });
                     })
                     .catch(function(e) {
                         self.error = (e && e.message) ? e.message : 'Error';
@@ -814,7 +814,7 @@
                     })
                     .then(function(data) {
                         self.applyMultisigResponseToLocalState(data);
-                        if (!silent) self.$emit('saved');
+                        if (!silent) self.$emit('saved', { walletId: rw.id });
                     })
                     .catch(function(e) {
                         if (!silent) self.error = (e && e.message) ? e.message : 'Error';
@@ -847,7 +847,7 @@
                     })
                     .then(function(data) {
                         self.applyMultisigResponseToLocalState(data);
-                        self.$emit('saved');
+                        self.$emit('saved', { walletId: rw.id });
                         self.refreshMultisigWizard();
                     })
                     .catch(function(e) {

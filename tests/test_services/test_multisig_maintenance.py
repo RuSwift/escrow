@@ -105,17 +105,11 @@ async def test_process_wallet_awaiting_funding_updates_balance_below_min(
     await test_db.commit()
     await test_db.refresh(w)
 
-    async def fake_isolated(*args, **kwargs):
-        return {w.tron_address: 1_000_000}
-
-    monkeypatch.setattr(
-        multisig_maintenance,
-        "_list_tron_native_trx_balances_isolated",
-        fake_isolated,
-    )
     monkeypatch.setattr(
         "services.multisig_wallet.maintenance.TronGridClient",
-        _make_fake_client(account_data={"active_permission": []}),
+        _make_fake_client(
+            account_data={"active_permission": [], "balance": 1_000_000},
+        ),
     )
 
     changed = await multisig_maintenance.process_wallet(
@@ -155,19 +149,11 @@ async def test_ready_for_permissions_precheck_recalculates_min_and_waits_funding
     await test_db.commit()
     await test_db.refresh(w)
 
-    async def fake_isolated(*args, **kwargs):
-        return {w.tron_address: 120_000}
-
-    monkeypatch.setattr(
-        multisig_maintenance,
-        "_list_tron_native_trx_balances_isolated",
-        fake_isolated,
-    )
     # estimate_sun=200_000 > last_trx_balance_sun=120_000 → ожидаем переход в AWAITING_FUNDING
     monkeypatch.setattr(
         "services.multisig_wallet.maintenance.TronGridClient",
         _make_fake_client(
-            account_data={"active_permission": []},
+            account_data={"active_permission": [], "balance": 120_000},
             estimate_sun=200_000,
         ),
     )
@@ -219,14 +205,6 @@ async def test_no_early_active_while_reconfigure_branch(
     await test_db.commit()
     await test_db.refresh(w)
 
-    async def fake_isolated(*args, **kwargs):
-        return {tron: 1_000_000}
-
-    monkeypatch.setattr(
-        multisig_maintenance,
-        "_list_tron_native_trx_balances_isolated",
-        fake_isolated,
-    )
     monkeypatch.setattr(
         "services.multisig_wallet.maintenance.TronGridClient",
         _make_fake_client(account_data=account_data),

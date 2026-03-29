@@ -265,18 +265,20 @@
                 if (token) h.Authorization = 'Bearer ' + token;
                 return h;
             },
-            fetchRampWallets: function() {
+            fetchRampWallets: function(opts) {
                 var self = this;
+                opts = opts || {};
+                var skipBalances = !!opts.skipBalances;
                 var base = this.rampApiBase();
                 if (!base) {
                     this.rampLoading = false;
                     this.rampError = null;
                     this.rampWallets = [];
-                    return;
+                    return Promise.resolve();
                 }
                 this.rampLoading = true;
                 this.rampError = null;
-                fetch(base, { method: 'GET', headers: this.rampAuthHeaders(), credentials: 'include' })
+                return fetch(base, { method: 'GET', headers: this.rampAuthHeaders(), credentials: 'include' })
                     .then(function(r) {
                         if (r.status === 403) throw new Error('403');
                         if (!r.ok) throw new Error(String(r.status));
@@ -292,7 +294,9 @@
                     .finally(function() {
                         self.rampLoading = false;
                         if (!self.rampError) {
-                            self.fetchRampBalances();
+                            if (!skipBalances) {
+                                self.fetchRampBalances();
+                            }
                         } else {
                             self.rampBalancesByWalletId = {};
                             self.rampBalancesLoading = false;
@@ -695,7 +699,7 @@
                         return r.json();
                     })
                     .then(function(data) {
-                        self.fetchRampWallets();
+                        self.fetchRampWallets({ skipBalances: true });
                         self.openMultisigWizard(data);
                     })
                     .catch(function(e) {
@@ -706,8 +710,14 @@
                 this.showRampMultisigWizard = false;
                 this.rampMultisigWizardWallet = null;
             },
-            onMultisigConfigModalSaved: function() {
-                this.fetchRampWallets();
+            onMultisigConfigModalSaved: function(payload) {
+                var self = this;
+                var wid = payload && payload.walletId != null ? payload.walletId : null;
+                this.fetchRampWallets({ skipBalances: true }).then(function() {
+                    if (wid != null && !self.rampError) {
+                        self.fetchRampBalances({ walletId: wid, forceUpdate: true });
+                    }
+                });
             }
         },
         template: [
