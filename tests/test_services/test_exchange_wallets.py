@@ -1,13 +1,19 @@
 """Тесты ExchangeWalletService.create_wallet (Ramp POST)."""
 import pytest
+from sqlalchemy import select
 
-from db.models import WalletUserSubRole
+from db.models import Wallet, WalletUserSubRole
 from repos.wallet_user import WalletUserSubResource
 from services.exchange_wallets import ExchangeWalletService
 from services.multisig_wallet.constants import (
+    MULTISIG_DEFAULT_PERMISSION_NAME,
+    MULTISIG_STATUS_ACTIVE,
     MULTISIG_STATUS_AWAITING_FUNDING,
+    MULTISIG_STATUS_FAILED,
     MULTISIG_STATUS_PENDING_CONFIG,
+    MULTISIG_STATUS_RECONFIGURE,
 )
+from services.multisig_wallet.meta import merge_meta
 from services.wallet_user import WalletUserService
 
 
@@ -15,6 +21,23 @@ SPACE_NAME = "exch_wallet_test_space"
 OWNER_WALLET = "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH"
 SUB_VALID_TRON = "TV6ZVcKH24NzWxwdRbCvVD5gqAwaypdkRi"
 CUSTOM_VALID_TRON = "TYDkyTwMF7ti5R8VstRruqz4N9mGne2CdF"
+
+
+def _mock_tron_grid_getaccount(monkeypatch: pytest.MonkeyPatch, account: dict) -> None:
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+        async def get_account(self, address: str):
+            return account
+
+    monkeypatch.setattr(
+        "services.exchange_wallets.TronGridClient",
+        lambda **kwargs: Client(),
+    )
 
 
 @pytest.fixture
@@ -156,3 +179,277 @@ async def test_patch_multisig_setup_actors(
     assert updated is not None
     assert updated.multisig_setup_status == MULTISIG_STATUS_AWAITING_FUNDING
     assert updated.multisig_setup_meta.get("actors") == [signer]
+
+
+@pytest.mark.asyncio
+async def test_patch_multisig_begin_cancel_reconfigure(
+    exchange_space_owner_sub, exchange_wallet_service, test_db, monkeypatch
+):
+    _mock_tron_grid_getaccount(
+        monkeypatch,
+        {
+            "active_permission": [
+                {
+                    "type": 2,
+                    "permission_name": "ms_cancel",
+                    "threshold": 1,
+                    "keys": [{"address": SUB_VALID_TRON, "weight": 1}],
+                }
+            ]
+        },
+    )
+    row = await exchange_wallet_service.create_wallet(
+        SPACE_NAME,
+        OWNER_WALLET,
+        role="multisig",
+        blockchain="tron",
+        name="Reconf Msig",
+    )
+    res = await test_db.execute(select(Wallet).where(Wallet.id == row.id))
+    w = res.scalar_one()
+    w.multisig_setup_status = MULTISIG_STATUS_ACTIVE
+    await test_db.commit()
+
+    u1 = await exchange_wallet_service.patch_multisig_setup(
+        SPACE_NAME,
+        OWNER_WALLET,
+        row.id,
+        multisig_begin_reconfigure=True,
+    )
+    assert u1 is not None
+    assert u1.multisig_setup_status == MULTISIG_STATUS_RECONFIGURE
+    assert u1.multisig_setup_meta.get("reconfigure_previous_status") == MULTISIG_STATUS_ACTIVE
+
+    u2 = await exchange_wallet_service.patch_multisig_setup(
+        SPACE_NAME,
+        OWNER_WALLET,
+        row.id,
+        multisig_cancel_reconfigure=True,
+    )
+    assert u2 is not None
+    assert u2.multisig_setup_status == MULTISIG_STATUS_ACTIVE
+    assert "reconfigure_previous_status" not in (u2.multisig_setup_meta or {})
+
+
+@pytest.mark.asyncio
+async def test_patch_multisig_begin_reconfigure_from_failed(
+    exchange_space_owner_sub, exchange_wallet_service, test_db, monkeypatch
+):
+    _mock_tron_grid_getaccount(
+        monkeypatch,
+        {
+            "active_permission": [
+                {
+                    "type": 2,
+                    "permission_name": "ms_fail_cancel",
+                    "threshold": 1,
+                    "keys": [{"address": SUB_VALID_TRON, "weight": 1}],
+                }
+            ]
+        },
+    )
+    row = await exchange_wallet_service.create_wallet(
+        SPACE_NAME,
+        OWNER_WALLET,
+        role="multisig",
+        blockchain="tron",
+        name="Reconf Fail",
+    )
+    res = await test_db.execute(select(Wallet).where(Wallet.id == row.id))
+    w = res.scalar_one()
+    w.multisig_setup_status = MULTISIG_STATUS_FAILED
+    w.multisig_setup_meta = {**(w.multisig_setup_meta or {}), "last_error": "x"}
+    await test_db.commit()
+
+    u1 = await exchange_wallet_service.patch_multisig_setup(
+        SPACE_NAME,
+        OWNER_WALLET,
+        row.id,
+        multisig_begin_reconfigure=True,
+    )
+    assert u1.multisig_setup_status == MULTISIG_STATUS_RECONFIGURE
+    assert u1.multisig_setup_meta.get("reconfigure_previous_status") == MULTISIG_STATUS_FAILED
+
+    u2 = await exchange_wallet_service.patch_multisig_setup(
+        SPACE_NAME,
+        OWNER_WALLET,
+        row.id,
+        multisig_cancel_reconfigure=True,
+    )
+    assert u2.multisig_setup_status == MULTISIG_STATUS_FAILED
+
+
+@pytest.mark.asyncio
+async def test_patch_reconfigure_actors_matches_chain_noop(
+    exchange_space_owner_sub, exchange_wallet_service, test_db, monkeypatch
+):
+    signer = SUB_VALID_TRON
+    _mock_tron_grid_getaccount(
+        monkeypatch,
+        {
+            "active_permission": [
+                {
+                    "type": 2,
+                    "permission_name": MULTISIG_DEFAULT_PERMISSION_NAME,
+                    "threshold": 1,
+                    "keys": [{"address": signer, "weight": 1}],
+                }
+            ]
+        },
+    )
+    row = await exchange_wallet_service.create_wallet(
+        SPACE_NAME,
+        OWNER_WALLET,
+        role="multisig",
+        blockchain="tron",
+        name="Reconf Noop",
+    )
+    res = await test_db.execute(select(Wallet).where(Wallet.id == row.id))
+    w = res.scalar_one()
+    w.multisig_setup_status = MULTISIG_STATUS_ACTIVE
+    w.multisig_setup_meta = merge_meta(
+        w.multisig_setup_meta,
+        {
+            "actors": [signer],
+            "threshold_n": 1,
+            "threshold_m": 1,
+            "permission_name": MULTISIG_DEFAULT_PERMISSION_NAME,
+        },
+    )
+    await test_db.commit()
+
+    await exchange_wallet_service.patch_multisig_setup(
+        SPACE_NAME,
+        OWNER_WALLET,
+        row.id,
+        multisig_begin_reconfigure=True,
+    )
+    out = await exchange_wallet_service.patch_multisig_setup(
+        SPACE_NAME,
+        OWNER_WALLET,
+        row.id,
+        multisig_actors=[signer],
+        multisig_threshold_n=1,
+        multisig_threshold_m=1,
+    )
+    assert out.multisig_setup_status == MULTISIG_STATUS_ACTIVE
+    assert out.multisig_setup_meta.get("reconfigure_unchanged") is True
+    assert "reconfigure_previous_status" not in (out.multisig_setup_meta or {})
+
+
+@pytest.mark.asyncio
+async def test_patch_reconfigure_actors_differs_goes_funding(
+    exchange_space_owner_sub, exchange_wallet_service, test_db, monkeypatch
+):
+    _mock_tron_grid_getaccount(
+        monkeypatch,
+        {
+            "active_permission": [
+                {
+                    "type": 2,
+                    "permission_name": MULTISIG_DEFAULT_PERMISSION_NAME,
+                    "threshold": 1,
+                    "keys": [{"address": SUB_VALID_TRON, "weight": 1}],
+                }
+            ]
+        },
+    )
+    row = await exchange_wallet_service.create_wallet(
+        SPACE_NAME,
+        OWNER_WALLET,
+        role="multisig",
+        blockchain="tron",
+        name="Reconf Diff",
+    )
+    res = await test_db.execute(select(Wallet).where(Wallet.id == row.id))
+    w = res.scalar_one()
+    w.multisig_setup_status = MULTISIG_STATUS_ACTIVE
+    w.multisig_setup_meta = merge_meta(
+        w.multisig_setup_meta,
+        {
+            "actors": [SUB_VALID_TRON],
+            "threshold_n": 1,
+            "threshold_m": 1,
+            "permission_name": MULTISIG_DEFAULT_PERMISSION_NAME,
+        },
+    )
+    await test_db.commit()
+
+    await exchange_wallet_service.patch_multisig_setup(
+        SPACE_NAME,
+        OWNER_WALLET,
+        row.id,
+        multisig_begin_reconfigure=True,
+    )
+    out = await exchange_wallet_service.patch_multisig_setup(
+        SPACE_NAME,
+        OWNER_WALLET,
+        row.id,
+        multisig_actors=[CUSTOM_VALID_TRON],
+        multisig_threshold_n=1,
+        multisig_threshold_m=1,
+    )
+    assert out.multisig_setup_status == MULTISIG_STATUS_AWAITING_FUNDING
+    assert out.multisig_setup_meta.get("reconfigure_previous_status") == MULTISIG_STATUS_ACTIVE
+    assert out.multisig_setup_meta.get("actors") == [CUSTOM_VALID_TRON]
+
+
+@pytest.mark.asyncio
+async def test_patch_cancel_reconfigure_from_awaiting_funding(
+    exchange_space_owner_sub, exchange_wallet_service, test_db, monkeypatch
+):
+    chain_acc = {
+        "active_permission": [
+            {
+                "type": 2,
+                "permission_name": MULTISIG_DEFAULT_PERMISSION_NAME,
+                "threshold": 1,
+                "keys": [{"address": SUB_VALID_TRON, "weight": 1}],
+            }
+        ]
+    }
+    _mock_tron_grid_getaccount(monkeypatch, chain_acc)
+    row = await exchange_wallet_service.create_wallet(
+        SPACE_NAME,
+        OWNER_WALLET,
+        role="multisig",
+        blockchain="tron",
+        name="Reconf Cancel Fund",
+    )
+    res = await test_db.execute(select(Wallet).where(Wallet.id == row.id))
+    w = res.scalar_one()
+    w.multisig_setup_status = MULTISIG_STATUS_ACTIVE
+    w.multisig_setup_meta = merge_meta(
+        w.multisig_setup_meta,
+        {
+            "actors": [SUB_VALID_TRON],
+            "threshold_n": 1,
+            "threshold_m": 1,
+            "permission_name": MULTISIG_DEFAULT_PERMISSION_NAME,
+        },
+    )
+    await test_db.commit()
+    await exchange_wallet_service.patch_multisig_setup(
+        SPACE_NAME,
+        OWNER_WALLET,
+        row.id,
+        multisig_begin_reconfigure=True,
+    )
+    await exchange_wallet_service.patch_multisig_setup(
+        SPACE_NAME,
+        OWNER_WALLET,
+        row.id,
+        multisig_actors=[CUSTOM_VALID_TRON],
+        multisig_threshold_n=1,
+        multisig_threshold_m=1,
+    )
+    _mock_tron_grid_getaccount(monkeypatch, chain_acc)
+    out = await exchange_wallet_service.patch_multisig_setup(
+        SPACE_NAME,
+        OWNER_WALLET,
+        row.id,
+        multisig_cancel_reconfigure=True,
+    )
+    assert out.multisig_setup_status == MULTISIG_STATUS_ACTIVE
+    assert "reconfigure_previous_status" not in (out.multisig_setup_meta or {})
+    assert out.multisig_setup_meta.get("actors") == [SUB_VALID_TRON]

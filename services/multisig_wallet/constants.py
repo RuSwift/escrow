@@ -8,6 +8,7 @@ MULTISIG_STATUS_READY_FOR_PERMISSIONS = "ready_for_permissions"
 MULTISIG_STATUS_PERMISSIONS_SUBMITTED = "permissions_submitted"
 MULTISIG_STATUS_ACTIVE = "active"
 MULTISIG_STATUS_FAILED = "failed"
+MULTISIG_STATUS_RECONFIGURE = "reconfigure"
 
 MULTISIG_DEFAULT_MIN_TRX_SUN = 150_000_000  # 150 TRX — запас под fee (как в garantex sample)
 

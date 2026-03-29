@@ -19,14 +19,25 @@ from repos.wallet import (
     WalletResource,
 )
 from repos.wallet_user import WalletUserRepository
+from services.multisig_wallet.chain_config import (
+    chain_config_matches_submission,
+    chain_snapshots_equal,
+    extract_chain_multisig_config,
+    meta_multisig_snapshot,
+)
 from services.multisig_wallet.constants import (
     MULTISIG_STATUS_ACTIVE,
     MULTISIG_STATUS_AWAITING_FUNDING,
+    MULTISIG_STATUS_FAILED,
+    MULTISIG_STATUS_PERMISSIONS_SUBMITTED,
+    MULTISIG_STATUS_READY_FOR_PERMISSIONS,
+    MULTISIG_STATUS_RECONFIGURE,
 )
 from services.multisig_wallet.maintenance import MultisigWalletMaintenanceService
 from services.multisig_wallet.meta import merge_meta, validate_actors_threshold
 from services.space import SpaceService
-from services.tron.utils import is_valid_tron_address
+from services.tron.grid_client import TronGridClient
+from services.tron.utils import account_permissions_snapshot, is_valid_tron_address
 from settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -328,6 +339,8 @@ class ExchangeWalletService:
         multisig_retry: Optional[bool] = None,
         multisig_min_trx_sun: Optional[int] = None,
         multisig_permission_name: Optional[str] = None,
+        multisig_begin_reconfigure: Optional[bool] = None,
+        multisig_cancel_reconfigure: Optional[bool] = None,
     ) -> Optional[ExchangeWalletResource.Get]:
         """PATCH полей настройки Ramp multisig (только owner спейса)."""
         await self._space._ensure_owner_and_owner_id(space, actor_wallet_address)
@@ -339,6 +352,64 @@ class ExchangeWalletService:
             raise ValueError("Not a multisig wallet")
         if model.multisig_setup_status is None:
             raise ValueError("Legacy multisig wallet has no setup flow in the app")
+
+        if multisig_cancel_reconfigure is True:
+            meta = dict(merge_meta(model.multisig_setup_meta, {}))
+            prev = meta.get("reconfigure_previous_status")
+            st = model.multisig_setup_status
+            allowed_prev = (MULTISIG_STATUS_ACTIVE, MULTISIG_STATUS_FAILED)
+            cancelable_st = (
+                MULTISIG_STATUS_RECONFIGURE,
+                MULTISIG_STATUS_AWAITING_FUNDING,
+                MULTISIG_STATUS_READY_FOR_PERMISSIONS,
+                MULTISIG_STATUS_PERMISSIONS_SUBMITTED,
+            )
+            if prev not in allowed_prev or st not in cancelable_st:
+                raise ValueError("Not in cancelable reconfigure flow")
+            tr = (model.tron_address or "").strip()
+            if not tr:
+                raise ValueError("Multisig wallet has no TRON address yet")
+            async with TronGridClient(settings=self._settings) as client:
+                raw_acc = await client.get_account(tr)
+            chain_cfg = extract_chain_multisig_config(raw_acc)
+            meta.pop("reconfigure_previous_status", None)
+            meta.pop("reconfigure_unchanged", None)
+            if chain_cfg:
+                meta["actors"] = list(chain_cfg["actors"])
+                meta["threshold_n"] = chain_cfg["threshold_n"]
+                meta["threshold_m"] = chain_cfg["threshold_m"]
+                if chain_cfg.get("permission_name"):
+                    meta["permission_name"] = chain_cfg["permission_name"]
+            meta["permission_tx_id"] = None
+            meta["broadcast_at"] = None
+            meta["last_error"] = None
+            meta["retry_desired"] = False
+            model.multisig_setup_status = prev
+            model.multisig_setup_meta = merge_meta(meta, {})
+            model.account_permissions = account_permissions_snapshot(raw_acc)
+            await self._session.commit()
+            return await self.get_wallet(space, actor_wallet_address, wallet_id)
+
+        if multisig_begin_reconfigure is True:
+            if model.multisig_setup_status not in (
+                MULTISIG_STATUS_ACTIVE,
+                MULTISIG_STATUS_FAILED,
+            ):
+                raise ValueError(
+                    "Reconfigure is only allowed from active or failed status",
+                )
+            meta = merge_meta(
+                model.multisig_setup_meta,
+                {
+                    "reconfigure_previous_status": model.multisig_setup_status,
+                },
+            )
+            meta.pop("reconfigure_unchanged", None)
+            model.multisig_setup_status = MULTISIG_STATUS_RECONFIGURE
+            model.multisig_setup_meta = meta
+            await self._session.commit()
+            return await self.get_wallet(space, actor_wallet_address, wallet_id)
+
         if model.multisig_setup_status == MULTISIG_STATUS_ACTIVE:
             raise ValueError("Multisig wallet is already active")
 
@@ -371,16 +442,86 @@ class ExchangeWalletService:
                 int(multisig_threshold_m),
                 main_tron_address=tr,
             )
-            meta["actors"] = [a.strip() for a in multisig_actors]
-            meta["threshold_n"] = int(multisig_threshold_n)
-            meta["threshold_m"] = int(multisig_threshold_m)
-            meta["permission_tx_id"] = None
-            meta["broadcast_at"] = None
-            meta["last_error"] = None
-            meta["retry_desired"] = False
-            model.multisig_setup_status = MULTISIG_STATUS_AWAITING_FUNDING
-            model.multisig_setup_meta = meta
-            touched = True
+            meta = merge_meta(model.multisig_setup_meta, {})
+            submitted = [a.strip() for a in multisig_actors]
+            sn = int(multisig_threshold_n)
+            sm = int(multisig_threshold_m)
+
+            if model.multisig_setup_status == MULTISIG_STATUS_RECONFIGURE:
+                async with TronGridClient(settings=self._settings) as client:
+                    raw_acc = await client.get_account(tr)
+                chain_cfg = extract_chain_multisig_config(raw_acc)
+                db_snap = meta_multisig_snapshot(meta)
+                chain_core = (
+                    {k: chain_cfg[k] for k in ("actors", "threshold_n", "threshold_m")}
+                    if chain_cfg
+                    else None
+                )
+                if chain_cfg and db_snap and chain_core and not chain_snapshots_equal(
+                    db_snap, chain_core
+                ):
+                    logger.critical(
+                        "multisig reconfigure wallet_id=%s DB meta != TRON chain; "
+                        "overwriting meta from chain. db=%s chain=%s",
+                        wallet_id,
+                        db_snap,
+                        chain_core,
+                    )
+                    meta["actors"] = list(chain_cfg["actors"])
+                    meta["threshold_n"] = chain_cfg["threshold_n"]
+                    meta["threshold_m"] = chain_cfg["threshold_m"]
+                    if chain_cfg.get("permission_name"):
+                        meta["permission_name"] = chain_cfg["permission_name"]
+                    model.multisig_setup_meta = merge_meta(meta, {})
+                    meta = merge_meta(model.multisig_setup_meta, {})
+
+                pnm = (meta.get("permission_name") or "").strip()
+                if chain_cfg and chain_config_matches_submission(
+                    chain_cfg, submitted, sn, sm, permission_name=pnm or None
+                ):
+                    meta.pop("reconfigure_previous_status", None)
+                    meta["reconfigure_unchanged"] = True
+                    meta["actors"] = submitted
+                    meta["threshold_n"] = sn
+                    meta["threshold_m"] = sm
+                    meta.pop("permission_tx_id", None)
+                    meta.pop("broadcast_at", None)
+                    meta["last_error"] = None
+                    meta["retry_desired"] = False
+                    model.multisig_setup_status = MULTISIG_STATUS_ACTIVE
+                    model.multisig_setup_meta = merge_meta(meta, {})
+                    model.account_permissions = account_permissions_snapshot(raw_acc)
+                    await self._session.commit()
+                    return await self.get_wallet(space, actor_wallet_address, wallet_id)
+
+                if chain_cfg is None:
+                    logger.warning(
+                        "multisig reconfigure wallet_id=%s: no custom multisig on chain",
+                        wallet_id,
+                    )
+                meta.pop("reconfigure_unchanged", None)
+                meta["actors"] = submitted
+                meta["threshold_n"] = sn
+                meta["threshold_m"] = sm
+                meta["permission_tx_id"] = None
+                meta["broadcast_at"] = None
+                meta["last_error"] = None
+                meta["retry_desired"] = False
+                model.multisig_setup_status = MULTISIG_STATUS_AWAITING_FUNDING
+                meta = merge_meta(meta, {})
+                model.multisig_setup_meta = meta
+                touched = True
+            else:
+                meta["actors"] = submitted
+                meta["threshold_n"] = sn
+                meta["threshold_m"] = sm
+                meta["permission_tx_id"] = None
+                meta["broadcast_at"] = None
+                meta["last_error"] = None
+                meta["retry_desired"] = False
+                model.multisig_setup_status = MULTISIG_STATUS_AWAITING_FUNDING
+                model.multisig_setup_meta = meta
+                touched = True
 
         if not touched:
             return await self.get_wallet(space, actor_wallet_address, wallet_id)

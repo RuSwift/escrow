@@ -59,6 +59,7 @@
                 var st = (this.localWallet && this.localWallet.multisig_setup_status)
                     ? String(this.localWallet.multisig_setup_status)
                     : '';
+                if (st === 'reconfigure') return 1;
                 if (st === 'awaiting_funding') return 2;
                 if (
                     st === 'ready_for_permissions'
@@ -103,6 +104,22 @@
             multisigFundingMinRefinedByMaintenance: function() {
                 var m = (this.localWallet && this.localWallet.multisig_setup_meta) || {};
                 return !!m.last_chain_check_at;
+            },
+            multisigReconfigureCancelPending: function() {
+                var rw = this.localWallet;
+                if (!rw) return false;
+                var meta = rw.multisig_setup_meta || {};
+                if (!meta.reconfigure_previous_status) return false;
+                var st = String(rw.multisig_setup_status || '');
+                return st === 'reconfigure'
+                    || st === 'awaiting_funding'
+                    || st === 'ready_for_permissions'
+                    || st === 'permissions_submitted';
+            },
+            multisigWizardReconfigureNoopSuccess: function() {
+                var rw = this.localWallet;
+                if (!rw || rw.multisig_setup_status !== 'active') return false;
+                return !!(rw.multisig_setup_meta || {}).reconfigure_unchanged;
             },
             multisigWizardManagerSignerRows: function() {
                 var self = this;
@@ -419,8 +436,59 @@
                     })
                     .catch(function() {});
             },
+            onMultisigModalBackdrop: function() {
+                if (this.saving) return;
+                this.closeModal();
+            },
             closeModal: function() {
+                if (this.saving) return;
+                if (this.multisigReconfigureCancelPending) {
+                    this.cancelReconfigureAndClose();
+                    return;
+                }
                 this.$emit('close');
+            },
+            cancelReconfigureAndClose: function() {
+                if (this.saving) return;
+                var self = this;
+                var rw = this.localWallet;
+                var base = this.rampApiBase();
+                if (!rw || !rw.id || !base) {
+                    this.$emit('close');
+                    return;
+                }
+                if (!this.multisigReconfigureCancelPending) {
+                    this.$emit('close');
+                    return;
+                }
+                this.saving = true;
+                this.error = null;
+                fetch(base + '/' + rw.id, {
+                    method: 'PATCH',
+                    headers: this.rampAuthHeaders(),
+                    credentials: 'include',
+                    body: JSON.stringify({ multisig_cancel_reconfigure: true })
+                })
+                    .then(function(r) {
+                        if (!r.ok) {
+                            return r.json().then(function(j) {
+                                var d = j && j.detail;
+                                var msg = typeof d === 'string' ? d : (d ? JSON.stringify(d) : String(r.status));
+                                throw new Error(msg);
+                            });
+                        }
+                        return r.json();
+                    })
+                    .then(function() {
+                        self.$emit('saved');
+                        self.$emit('close');
+                    })
+                    .catch(function(e) {
+                        self.error = (e && e.message) ? e.message : self.$t('main.dialog.error_title');
+                    })
+                    .finally(function() {
+                        self.saving = false;
+                    });
             },
             bootstrap: function() {
                 var rw = this.wallet;
@@ -790,14 +858,14 @@
         },
         template: [
             '<div v-if="show && localWallet" class="fixed inset-0 z-[110] flex items-center justify-center p-4">',
-            '  <div class="absolute inset-0 bg-black/60" @click="closeModal"></div>',
+            '  <div class="absolute inset-0 bg-black/60" @click="onMultisigModalBackdrop"></div>',
             '  <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl relative overflow-hidden max-h-[90vh] overflow-y-auto">',
             '    <div class="p-5 sm:p-6 border-b border-[#eff2f5] flex items-center justify-between gap-2">',
             '      <div class="min-w-0 flex-1 pr-2">',
             '        <h3 class="text-lg sm:text-xl font-bold text-[#191d23]">[[ $t(\'main.my_business.multisig_wizard_title\') ]]</h3>',
             '        <p class="text-xs text-[#58667e] mt-0.5">[[ $t(\'main.my_business.multisig_wizard_step_of\', { current: multisigWizardDisplayStep, total: 3 }) ]]<template v-if="multisigWizardStepCaption"> — [[ multisigWizardStepCaption ]]</template></p>',
             '      </div>',
-            '      <button type="button" @click="closeModal" class="p-2 hover:bg-gray-100 rounded-full shrink-0"><svg class="w-6 h-6 text-[#58667e] rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg></button>',
+            '      <button type="button" @click="closeModal" :disabled="saving" class="p-2 hover:bg-gray-100 rounded-full shrink-0 disabled:opacity-45"><svg class="w-6 h-6 text-[#58667e] rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg></button>',
             '    </div>',
             '    <div class="p-5 sm:p-6 space-y-4">',
             '      <div>',
@@ -814,6 +882,7 @@
             '      </div>',
             '      <template v-if="multisigWizardDisplayStep === 1">',
             '      <div>',
+            '        <div v-if="localWallet.multisig_setup_status === \'reconfigure\'" class="rounded-xl border border-violet-200 bg-violet-50/90 px-3 py-2.5 text-[11px] text-[#30384a] leading-snug mb-2" role="status">[[ $t(\'main.my_business.multisig_wizard_reconfigure_hint\') ]]</div>',
             '        <div class="rounded-xl border border-blue-100 bg-blue-50 px-3 py-2.5 text-sm text-[#191d23] mb-2" role="status">[[ $t(\'main.my_business.multisig_owners_all_admins_hint\') ]]</div>',
             '        <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5">[[ $t(\'main.my_business.multisig_actors_label\') ]]</label>',
             '        <div v-if="participantsLoading" class="text-sm text-[#58667e] py-4 text-center rounded-xl border border-dashed border-[#eff2f5]">…</div>',
@@ -865,7 +934,7 @@
             '      <div class="rounded-xl border border-[#eff2f5] bg-[#fafbfd] px-4 py-3 text-sm space-y-3">',
             '        <div v-if="localWallet.multisig_setup_status === \'active\'" role="status" class="rounded-xl bg-emerald-50 border border-emerald-100 px-3 py-2.5">',
             '          <p class="text-sm font-bold text-emerald-900">[[ $t(\'main.my_business.multisig_wizard_success_title\') ]]</p>',
-            '          <p class="text-[11px] text-emerald-800/95 leading-snug mt-1">[[ $t(\'main.my_business.multisig_wizard_success_hint\') ]]</p>',
+            '          <p class="text-[11px] text-emerald-800/95 leading-snug mt-1">[[ multisigWizardReconfigureNoopSuccess ? $t(\'main.my_business.multisig_wizard_reconfigure_noop_hint\') : $t(\'main.my_business.multisig_wizard_success_hint\') ]]</p>',
             '        </div>',
             '        <div v-else-if="localWallet.multisig_setup_status === \'permissions_submitted\'" role="status" class="rounded-xl bg-blue-50/90 border border-blue-100 px-3 py-2.5">',
             '          <p class="text-[11px] text-[#1e3a5f] leading-snug font-semibold">[[ $t(\'main.my_business.multisig_wizard_step3_tx_pending_hint\') ]]</p>',
@@ -889,8 +958,9 @@
             '      <p v-if="error" class="text-xs text-red-600">[[ error ]]</p>',
             '    </div>',
             '    <div class="p-5 sm:p-6 bg-gray-50 border-t border-[#eff2f5] flex flex-col sm:flex-row gap-2 sm:gap-3">',
-            '      <button v-if="localWallet.multisig_setup_status === \'active\'" type="button" @click="closeModal" class="flex-1 py-3 bg-[#3861fb] text-white rounded-xl text-sm font-bold hover:opacity-90 transition-all order-last sm:order-none">[[ $t(\'main.my_business.multisig_wizard_close\') ]]</button>',
-            '      <button v-else type="button" @click="closeModal" class="flex-1 py-3 border border-[#eff2f5] rounded-xl text-sm font-bold text-[#58667e] hover:bg-white transition-all order-last sm:order-none">[[ $t(\'main.my_business.cancel\') ]]</button>',
+            '      <button v-if="localWallet.multisig_setup_status === \'active\'" type="button" @click="closeModal" :disabled="saving" class="flex-1 py-3 bg-[#3861fb] text-white rounded-xl text-sm font-bold hover:opacity-90 transition-all order-last sm:order-none disabled:opacity-45">[[ $t(\'main.my_business.multisig_wizard_close\') ]]</button>',
+            '      <button v-else-if="multisigReconfigureCancelPending" type="button" @click="closeModal" :disabled="saving" class="flex-1 py-3 border border-[#cfd6e4] rounded-xl text-sm font-bold text-[#3861fb] bg-blue-50/50 hover:bg-blue-50 transition-all order-last sm:order-none disabled:opacity-45">[[ $t(\'main.my_business.multisig_wizard_cancel_reconfigure\') ]]</button>',
+            '      <button v-else type="button" @click="closeModal" :disabled="saving" class="flex-1 py-3 border border-[#eff2f5] rounded-xl text-sm font-bold text-[#58667e] hover:bg-white transition-all order-last sm:order-none disabled:opacity-45">[[ $t(\'main.my_business.cancel\') ]]</button>',
             '      <button v-if="multisigWizardDisplayStep === 1" type="button" @click="saveMultisigWizard" :disabled="saving || multisigWizardSaveDisabled" class="flex-1 py-3 bg-[#3861fb] text-white rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 inline-flex items-center justify-center gap-1.5">[[ $t(\'main.my_business.multisig_save_config\') ]]<svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg></button>',
             '      <button v-if="localWallet.multisig_setup_status === \'failed\'" type="button" @click="retryMultisigWizard" :disabled="saving" class="flex-1 py-3 border border-amber-200 rounded-xl text-sm font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 disabled:opacity-50">[[ $t(\'main.my_business.multisig_retry\') ]]</button>',
             '    </div>',

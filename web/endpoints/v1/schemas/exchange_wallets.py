@@ -114,3 +114,11 @@ class PatchExchangeWalletRequest(BaseModel):
         max_length=32,
         description="Имя custom active permission на цепи",
     )
+    multisig_begin_reconfigure: Optional[bool] = Field(
+        default=None,
+        description="Войти в режим перенастройки (только из active или failed)",
+    )
+    multisig_cancel_reconfigure: Optional[bool] = Field(
+        default=None,
+        description="Отменить перенастройку и вернуть статус до multisig_begin_reconfigure",
+    )

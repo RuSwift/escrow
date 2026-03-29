@@ -11,6 +11,8 @@ from redis.asyncio import Redis
 
 from db.models import Wallet
 from services.multisig_wallet.constants import (
+    MULTISIG_DEFAULT_PERMISSION_NAME,
+    MULTISIG_STATUS_ACTIVE,
     MULTISIG_STATUS_AWAITING_FUNDING,
     MULTISIG_STATUS_PENDING_CONFIG,
     MULTISIG_STATUS_READY_FOR_PERMISSIONS,
@@ -176,3 +178,64 @@ async def test_ready_for_permissions_precheck_recalculates_min_and_waits_funding
     await test_db.refresh(w)
     assert w.multisig_setup_status == MULTISIG_STATUS_AWAITING_FUNDING
     assert int(w.multisig_setup_meta.get("min_trx_sun") or 0) == 200_000
+
+
+@pytest.mark.asyncio
+async def test_no_early_active_while_reconfigure_branch(
+    multisig_maintenance: MultisigWalletMaintenanceService,
+    test_db,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """При незавершённой реконфигурации не ставим active по снимку цепи."""
+    tron = "TUEZSdKsoDHQMeZwihtdoBiN46zxhGWYdH"
+    account_data = {
+        "active_permission": [
+            {
+                "type": 2,
+                "permission_name": MULTISIG_DEFAULT_PERMISSION_NAME,
+                "threshold": 1,
+                "keys": [{"address": _MSIG_SIGNER_TRON, "weight": 1}],
+            }
+        ]
+    }
+    w = Wallet(
+        name="m_reconf_guard",
+        encrypted_mnemonic="enc",
+        tron_address=tron,
+        ethereum_address="0x4444444444444444444444444444444444444444",
+        role="multisig",
+        owner_did="did:t",
+        multisig_setup_status=MULTISIG_STATUS_AWAITING_FUNDING,
+        multisig_setup_meta={
+            **default_meta_dict(),
+            "actors": [_MSIG_SIGNER_TRON],
+            "threshold_n": 1,
+            "threshold_m": 1,
+            "reconfigure_previous_status": MULTISIG_STATUS_ACTIVE,
+            "min_trx_sun": 999_999_999,
+        },
+    )
+    test_db.add(w)
+    await test_db.commit()
+    await test_db.refresh(w)
+
+    async def fake_isolated(*args, **kwargs):
+        return {tron: 1_000_000}
+
+    monkeypatch.setattr(
+        multisig_maintenance,
+        "_list_tron_native_trx_balances_isolated",
+        fake_isolated,
+    )
+    monkeypatch.setattr(
+        "services.multisig_wallet.maintenance.TronGridClient",
+        _make_fake_client(account_data=account_data),
+    )
+
+    changed = await multisig_maintenance.process_wallet(
+        w, force_balance_refresh=False
+    )
+    assert changed is True
+    await test_db.commit()
+    await test_db.refresh(w)
+    assert w.multisig_setup_status == MULTISIG_STATUS_AWAITING_FUNDING

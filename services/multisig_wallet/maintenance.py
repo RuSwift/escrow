@@ -23,6 +23,7 @@ from services.multisig_wallet.constants import (
     MULTISIG_STATUS_PENDING_CONFIG,
     MULTISIG_STATUS_PERMISSIONS_SUBMITTED,
     MULTISIG_STATUS_READY_FOR_PERMISSIONS,
+    MULTISIG_STATUS_RECONFIGURE,
 )
 from services.multisig_wallet.meta import merge_meta, validate_actors_threshold
 from services.tron.grid_client import TronGridClient
@@ -124,6 +125,8 @@ class MultisigWalletMaintenanceService:
         st = wallet.multisig_setup_status
         if st is None or st == MULTISIG_STATUS_ACTIVE:
             return False
+        if st == MULTISIG_STATUS_RECONFIGURE:
+            return False
         if st == MULTISIG_STATUS_PENDING_CONFIG:
             return False
         if st == MULTISIG_STATUS_FAILED:
@@ -167,7 +170,14 @@ class MultisigWalletMaintenanceService:
         # Уже настроено на цепи (ручной сценарий / внешняя операция)
         try:
             acc = await client.get_account(tron)
-            if is_custom_multisig_active_permission(acc):
+            reconfrollback = (wallet.multisig_setup_meta or {}).get(
+                "reconfigure_previous_status"
+            )
+            if (
+                wallet.multisig_setup_status != MULTISIG_STATUS_RECONFIGURE
+                and not reconfrollback
+                and is_custom_multisig_active_permission(acc)
+            ):
                 wallet.account_permissions = account_permissions_snapshot(acc)
                 wallet.multisig_setup_status = MULTISIG_STATUS_ACTIVE
                 wallet.multisig_setup_meta = merge_meta(
@@ -329,10 +339,15 @@ class MultisigWalletMaintenanceService:
             except Exception:
                 pass
             wallet.multisig_setup_status = MULTISIG_STATUS_ACTIVE
-            wallet.multisig_setup_meta = merge_meta(
-                wallet.multisig_setup_meta or {},
-                {"last_error": None, "last_chain_check_at": _utc_iso()},
+            meta_done = dict(
+                merge_meta(
+                    wallet.multisig_setup_meta or {},
+                    {"last_error": None, "last_chain_check_at": _utc_iso()},
+                )
             )
+            meta_done.pop("reconfigure_previous_status", None)
+            meta_done.pop("reconfigure_unchanged", None)
+            wallet.multisig_setup_meta = meta_done
             return True
 
         return False

@@ -86,5 +86,7 @@ def meta_for_api(meta: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         "broadcast_at",
         "retry_desired",
         "permission_name",
+        "reconfigure_previous_status",
+        "reconfigure_unchanged",
     )
     return {k: meta[k] for k in keys if k in meta}

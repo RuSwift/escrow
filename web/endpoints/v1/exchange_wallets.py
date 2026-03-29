@@ -30,6 +30,8 @@ _MULTISIG_PATCH_KEYS = frozenset(
         "multisig_retry",
         "multisig_min_trx_sun",
         "multisig_permission_name",
+        "multisig_begin_reconfigure",
+        "multisig_cancel_reconfigure",
     }
 )
 

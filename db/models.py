@@ -500,7 +500,7 @@ class Wallet(Base):
     multisig_setup_status = Column(
         String(32),
         nullable=True,
-        comment="pending_config|awaiting_funding|ready_for_permissions|permissions_submitted|active|failed; NULL=legacy active",
+        comment="pending_config|awaiting_funding|ready_for_permissions|permissions_submitted|active|failed|reconfigure; NULL=legacy active",
     )
     multisig_setup_meta = Column(
         JSONB,

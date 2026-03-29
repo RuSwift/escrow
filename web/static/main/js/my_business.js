@@ -673,6 +673,35 @@
                 this.rampMultisigWizardWallet = rw;
                 this.showRampMultisigWizard = true;
             },
+            beginMultisigReconfigure: function(rw) {
+                var self = this;
+                if (!rw || !rw.id) return;
+                var base = this.rampApiBase();
+                if (!base) return;
+                fetch(base + '/' + rw.id, {
+                    method: 'PATCH',
+                    headers: this.rampAuthHeaders(),
+                    credentials: 'include',
+                    body: JSON.stringify({ multisig_begin_reconfigure: true })
+                })
+                    .then(function(r) {
+                        if (!r.ok) {
+                            return r.json().then(function(j) {
+                                var d = j && j.detail;
+                                var msg = typeof d === 'string' ? d : (d ? JSON.stringify(d) : String(r.status));
+                                throw new Error(msg);
+                            });
+                        }
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        self.fetchRampWallets();
+                        self.openMultisigWizard(data);
+                    })
+                    .catch(function(e) {
+                        self.rampError = (e && e.message) ? e.message : self.$t('main.my_business.ramp_loading_error');
+                    });
+            },
             closeMultisigWizard: function() {
                 this.showRampMultisigWizard = false;
                 this.rampMultisigWizardWallet = null;
@@ -730,12 +759,16 @@
             '            </button>',
             '          </div>',
             '        </div>',
+            '        <div v-if="rw.role === \'multisig\' && rw.multisig_setup_status === \'active\'" class="mb-2 flex flex-wrap items-center gap-2">',
+            '          <button type="button" @click="beginMultisigReconfigure(rw)" class="text-xs font-bold text-[#3861fb] hover:underline shrink-0">[[ $t(\'main.my_business.multisig_reconfigure_begin\') ]]</button>',
+            '        </div>',
             '        <div v-if="rw.role === \'multisig\' && rw.multisig_setup_status && rw.multisig_setup_status !== \'active\'" class="mb-2 flex flex-wrap items-center gap-2">',
             '          <span class="inline-flex items-center gap-1.5 min-w-0 max-w-full rounded-md bg-amber-50 text-amber-900 border border-amber-100 pl-2 pr-1.5 py-0.5">',
             '            <span class="text-[10px] font-bold uppercase truncate">[[ multisigStatusLabel(rw) ]]</span>',
-            '            <svg v-if="rw.multisig_setup_status !== \'failed\'" class="w-3.5 h-3.5 shrink-0 animate-spin text-amber-800 opacity-90" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>',
+            '            <svg v-if="rw.multisig_setup_status !== \'failed\' && rw.multisig_setup_status !== \'reconfigure\'" class="w-3.5 h-3.5 shrink-0 animate-spin text-amber-800 opacity-90" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>',
             '          </span>',
             '          <button type="button" @click="openMultisigWizard(rw)" class="text-xs font-bold text-[#3861fb] hover:underline shrink-0">[[ $t(\'main.my_business.multisig_wizard_open\') ]]</button>',
+            '          <button v-if="rw.multisig_setup_status === \'failed\'" type="button" @click="beginMultisigReconfigure(rw)" class="text-xs font-bold text-[#3861fb] hover:underline shrink-0">[[ $t(\'main.my_business.multisig_reconfigure_begin\') ]]</button>',
             '        </div>',
             '        <div class="mb-2 rounded-xl border border-[#eff2f5] bg-white px-3 py-2.5">',
             '          <div v-if="rampBalancesLoading" class="text-xs text-[#58667e]">[[ $t(\'main.my_business.ramp_balances_loading\') ]]</div>',
