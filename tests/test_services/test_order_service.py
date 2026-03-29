@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from redis.asyncio import Redis
 
-from db.models import Wallet, WalletUser
+from db.models import Wallet, WalletUser, WalletUserSub, WalletUserSubRole
 from services.multisig_wallet.constants import (
     MULTISIG_STATUS_ACTIVE,
     MULTISIG_STATUS_AWAITING_FUNDING,
@@ -186,6 +186,62 @@ async def test_refresh_owners_drift_only_actors_match_space(
     assert pl.get("owners_drift") is True
     assert pl.get("actors_drift") is False
     assert _SIGNER_OTHER in (pl.get("owners_only_in_meta") or [])
+
+
+@pytest.mark.asyncio
+async def test_refresh_no_actors_drift_when_meta_actors_subset_of_space(
+    order_service: OrderService,
+    test_db,
+):
+    """В спейсе есть лишний operator относительно actors в meta — actors ⊆ space, drift не создаётся."""
+    owner = WalletUser(
+        nickname="subset_actors",
+        wallet_address=_SPACE_TRON,
+        blockchain="tron",
+        did="did:web:escrow.ruswift.ru:subset_actors",
+    )
+    test_db.add(owner)
+    await test_db.commit()
+    await test_db.refresh(owner)
+
+    sub = WalletUserSub(
+        wallet_user_id=owner.id,
+        wallet_address=_SIGNER_OTHER,
+        blockchain="tron",
+        roles=[WalletUserSubRole.operator.value],
+        is_verified=True,
+        is_blocked=False,
+    )
+    test_db.add(sub)
+    await test_db.commit()
+
+    w = Wallet(
+        name="ms_subset",
+        encrypted_mnemonic="enc",
+        role="multisig",
+        owner_did=owner.did,
+        multisig_setup_status=MULTISIG_STATUS_ACTIVE,
+        multisig_setup_meta={
+            **default_meta_dict(),
+            "actors": [_SPACE_TRON],
+            "threshold_n": 1,
+            "threshold_m": 1,
+        },
+    )
+    test_db.add(w)
+    await test_db.commit()
+    await test_db.refresh(w)
+
+    await order_service.refresh_ephemeral()
+    await test_db.commit()
+
+    from sqlalchemy import select
+    from db.models import Order
+
+    r = await test_db.execute(
+        select(Order).where(Order.dedupe_key == f"ephemeral:multisig_space_drift:{w.id}")
+    )
+    assert r.scalar_one_or_none() is None
 
 
 @pytest.mark.asyncio

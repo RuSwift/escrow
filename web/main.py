@@ -183,7 +183,6 @@ def create_app() -> FastAPI:
 
         valid = (
             "dashboard",
-            "my-trusts",
             "how-it-works",
             "api",
             "settings",

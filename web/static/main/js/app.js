@@ -79,7 +79,6 @@
     var initialPage = (el.getAttribute('data-initial-page') || 'dashboard').trim();
     var validPages = [
         'dashboard',
-        'my-trusts',
         'how-it-works',
         'api',
         'settings',

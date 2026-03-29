@@ -131,6 +131,29 @@ Vue.component('dashboard', {
                     (escrow.seller_id || '').toLowerCase().indexOf(participantFilter) !== -1;
                 return matchesSearch && matchesStatus && matchesParticipant;
             });
+        },
+        /** Блоки расхождений в модалке — только если есть ненулевые списки отличий */
+        driftModalShowOwnersBlock: function() {
+            var p = this.driftDetailOrder && this.driftDetailOrder.payload;
+            if (!p || !p.owners_drift) return false;
+            var m = p.owners_only_in_meta;
+            var s = p.owners_only_in_space;
+            return (Array.isArray(m) && m.length > 0) || (Array.isArray(s) && s.length > 0);
+        },
+        driftModalActorsOnlyInMetaArr: function() {
+            var p = this.driftDetailOrder && this.driftDetailOrder.payload;
+            if (!p) return [];
+            return Array.isArray(p.actors_only_in_meta) ? p.actors_only_in_meta : (Array.isArray(p.only_in_meta) ? p.only_in_meta : []);
+        },
+        driftModalActorsOnlyInSpaceArr: function() {
+            var p = this.driftDetailOrder && this.driftDetailOrder.payload;
+            if (!p) return [];
+            return Array.isArray(p.actors_only_in_space) ? p.actors_only_in_space : (Array.isArray(p.only_in_space) ? p.only_in_space : []);
+        },
+        driftModalShowActorsBlock: function() {
+            var p = this.driftDetailOrder && this.driftDetailOrder.payload;
+            if (!p || !p.actors_drift) return false;
+            return this.driftModalActorsOnlyInMetaArr.length > 0 || this.driftModalActorsOnlyInSpaceArr.length > 0;
         }
     },
     mounted: function() {
@@ -224,6 +247,10 @@ Vue.component('dashboard', {
         },
         onApiOrderRowClick: function(order) {
             if (!this.isMultisigEphemeralOrder(order) || this.dashboardMultisigFetching) return;
+            if (this.isDriftOrder(order)) {
+                this.openDriftDetailModal(order);
+                return;
+            }
             this.openDashboardMultisigWizardFromOrder(order);
         },
         openDashboardMultisigWizardFromOrder: function(order) {
@@ -299,6 +326,55 @@ Vue.component('dashboard', {
         closeDriftDetailModal: function() {
             this.driftDetailModalOpen = false;
             this.driftDetailOrder = null;
+        },
+        /** PATCH multisig_begin_reconfigure, затем открыть multisig-config-modal (как beginMultisigReconfigure в my_business.js). */
+        beginDashboardMultisigReconfigureFromDrift: function() {
+            var order = this.driftDetailOrder;
+            var p = (order && order.payload) || {};
+            var wid = order && order.space_wallet_id != null ? order.space_wallet_id : p.wallet_id;
+            if (wid == null) return;
+            var self = this;
+            var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__)
+                ? String(window.__CURRENT_SPACE__).trim()
+                : '';
+            if (!space) return;
+            self.dashboardMultisigFetching = true;
+            var headers = Object.assign({}, authHeadersMain(), { 'Content-Type': 'application/json' });
+            fetch(
+                '/v1/spaces/' + encodeURIComponent(space) + '/exchange-wallets/' + encodeURIComponent(String(wid)),
+                {
+                    method: 'PATCH',
+                    headers: headers,
+                    credentials: 'include',
+                    body: JSON.stringify({ multisig_begin_reconfigure: true })
+                }
+            )
+                .then(function(res) {
+                    if (!res.ok) {
+                        return res.json().then(function(j) {
+                            var d = j && j.detail;
+                            var msg = typeof d === 'string' ? d : (d ? JSON.stringify(d) : String(res.status));
+                            throw new Error(msg);
+                        });
+                    }
+                    return res.json();
+                })
+                .then(function(data) {
+                    self.closeDriftDetailModal();
+                    self.dashboardMultisigWizardWallet = data;
+                    self.showDashboardMultisigWizard = true;
+                })
+                .catch(function(e) {
+                    if (typeof window.showAlert === 'function') {
+                        window.showAlert({
+                            title: self.$t('main.dialog.error_title'),
+                            message: (e && e.message) ? e.message : self.$t('main.dashboard.multisig_modal_load_error')
+                        });
+                    }
+                })
+                .finally(function() {
+                    self.dashboardMultisigFetching = false;
+                });
         },
         driftAddrList: function(arr) {
             if (!arr || !Array.isArray(arr) || !arr.length) return '—';
@@ -503,20 +579,10 @@ Vue.component('dashboard', {
                 <td class="cmc-table-cell text-cmc-muted">—</td>
                 <td class="cmc-table-cell">
                   <div class="flex items-center gap-1 min-w-0">
-                    <div :class="['inline-flex items-center gap-1.5 min-w-0 max-w-[calc(100%-2rem)] rounded-md pl-2 pr-1.5 py-0.5', ephemeralMultisigBadgeClass(order)]">
+                    <div :class="['inline-flex items-center gap-1.5 min-w-0 max-w-full rounded-md pl-2 pr-1.5 py-0.5', ephemeralMultisigBadgeClass(order)]">
                       <span class="text-[10px] font-bold uppercase truncate">[[ ephemeralMultisigStatusLabel(order) ]]</span>
                       <svg v-if="ephemeralMultisigSpinnerVisible(order)" class="w-3.5 h-3.5 shrink-0 animate-spin opacity-90" :class="(order.payload && order.payload.kind) === 'multisig_space_drift' ? 'text-violet-800' : 'text-amber-800'" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                     </div>
-                    <button
-                      v-if="isDriftOrder(order)"
-                      type="button"
-                      @click.stop="openDriftDetailModal(order)"
-                      class="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-lg border border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors"
-                      :title="$t('main.dashboard.drift_info_title')"
-                      :aria-label="$t('main.dashboard.drift_info_aria')"
-                    >
-                      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    </button>
                   </div>
                 </td>
                 <td class="cmc-table-cell text-cmc-muted">[[ formatDate(order.updated_at) ]]</td>
@@ -683,16 +749,16 @@ Vue.component('dashboard', {
                 <span class="font-semibold text-[#191d23]">[[ orderRowTitle(driftDetailOrder) ]]</span>
                 <span v-if="driftDetailOrder.payload && driftDetailOrder.payload.tron_address" class="font-mono break-all block mt-1">[[ driftDetailOrder.payload.tron_address ]]</span>
               </div>
-              <div v-if="driftDetailOrder.payload && driftDetailOrder.payload.owners_drift" class="rounded-xl border border-violet-100 bg-violet-50/90 p-3 space-y-2">
+              <div v-if="driftModalShowOwnersBlock" class="rounded-xl border border-violet-100 bg-violet-50/90 p-3 space-y-2">
                 <h3 class="text-xs font-bold text-violet-900 uppercase tracking-wide">[[ $t('main.dashboard.drift_modal_section_owners') ]]</h3>
                 <p class="text-xs text-[#58667e] leading-relaxed">[[ $t('main.dashboard.drift_modal_owners_comment') ]]</p>
                 <dl class="mt-2 space-y-2 text-xs">
-                  <div>
-                    <dt class="font-semibold text-[#191d23]">[[ $t('main.dashboard.drift_modal_diff_only_in_meta') ]]</dt>
+                  <div v-if="(driftDetailOrder.payload.owners_only_in_meta || []).length">
+                    <dt class="font-semibold text-[#191d23]">[[ $t('main.dashboard.drift_modal_owners_diff_meta') ]]</dt>
                     <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftDetailOrder.payload.owners_only_in_meta) ]]</dd>
                   </div>
-                  <div>
-                    <dt class="font-semibold text-[#191d23]">[[ $t('main.dashboard.drift_modal_diff_only_in_space') ]]</dt>
+                  <div v-if="(driftDetailOrder.payload.owners_only_in_space || []).length">
+                    <dt class="font-semibold text-[#191d23]">[[ $t('main.dashboard.drift_modal_owners_diff_space') ]]</dt>
                     <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftDetailOrder.payload.owners_only_in_space) ]]</dd>
                   </div>
                   <div>
@@ -705,17 +771,17 @@ Vue.component('dashboard', {
                   </div>
                 </dl>
               </div>
-              <div v-if="driftDetailOrder.payload && driftDetailOrder.payload.actors_drift" class="rounded-xl border border-violet-100 bg-violet-50/90 p-3 space-y-2">
+              <div v-if="driftModalShowActorsBlock" class="rounded-xl border border-violet-100 bg-violet-50/90 p-3 space-y-2">
                 <h3 class="text-xs font-bold text-violet-900 uppercase tracking-wide">[[ $t('main.dashboard.drift_modal_section_actors') ]]</h3>
                 <p class="text-xs text-[#58667e] leading-relaxed">[[ $t('main.dashboard.drift_modal_actors_comment') ]]</p>
                 <dl class="mt-2 space-y-2 text-xs">
-                  <div>
-                    <dt class="font-semibold text-[#191d23]">[[ $t('main.dashboard.drift_modal_diff_only_in_meta') ]]</dt>
-                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftDetailOrder.payload.actors_only_in_meta) ]]</dd>
+                  <div v-if="driftModalActorsOnlyInMetaArr.length">
+                    <dt class="font-semibold text-[#191d23]">[[ $t('main.dashboard.drift_modal_actors_diff_meta') ]]</dt>
+                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftModalActorsOnlyInMetaArr) ]]</dd>
                   </div>
-                  <div>
-                    <dt class="font-semibold text-[#191d23]">[[ $t('main.dashboard.drift_modal_diff_only_in_space') ]]</dt>
-                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftDetailOrder.payload.actors_only_in_space) ]]</dd>
+                  <div v-if="driftModalActorsOnlyInSpaceArr.length">
+                    <dt class="font-semibold text-[#191d23]">[[ $t('main.dashboard.drift_modal_actors_diff_space') ]]</dt>
+                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftModalActorsOnlyInSpaceArr) ]]</dd>
                   </div>
                   <div>
                     <dt class="font-semibold text-[#58667e]">[[ $t('main.dashboard.drift_modal_snapshot_meta_actors') ]]</dt>
@@ -728,7 +794,8 @@ Vue.component('dashboard', {
                 </dl>
               </div>
             </div>
-            <div class="px-4 py-3 border-t border-[#eff2f5] flex justify-end shrink-0">
+            <div class="px-4 py-3 border-t border-[#eff2f5] flex flex-wrap justify-end gap-2 shrink-0">
+              <button type="button" class="px-4 py-2 text-sm font-semibold rounded-lg border border-[#eff2f5] bg-white text-[#191d23] hover:bg-[#f8fafd] disabled:opacity-50 disabled:cursor-not-allowed transition-colors" :disabled="dashboardMultisigFetching" @click="beginDashboardMultisigReconfigureFromDrift">[[ $t('main.dashboard.drift_modal_edit_multisig') ]]</button>
               <button type="button" class="px-4 py-2 text-sm font-semibold rounded-lg bg-main-blue text-white hover:opacity-90 transition-opacity" @click="closeDriftDetailModal">[[ $t('main.dashboard.drift_modal_close') ]]</button>
             </div>
           </div>

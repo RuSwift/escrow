@@ -123,7 +123,8 @@ class OrderService:
                         owners_set.add(o.strip())
                 owners_drift = owners_set != admins_set
 
-            actors_drift = actors_set != oo_set
+            # Админы: точное совпадение наборов. Actors: достаточно actors ⊆ (owner+operator в спейсе).
+            actors_drift = not actors_set.issubset(oo_set)
 
             if owners_drift or actors_drift:
                 owners_only_in_meta: List[str] = []
@@ -131,8 +132,12 @@ class OrderService:
                 if owners_drift:
                     owners_only_in_meta = sorted(owners_set - admins_set)
                     owners_only_in_space = sorted(admins_set - owners_set)
-                actors_only_in_meta = sorted(actors_set - oo_set) if actors_drift else []
-                actors_only_in_space = sorted(oo_set - actors_set) if actors_drift else []
+                if actors_drift:
+                    actors_only_in_meta = sorted(actors_set - oo_set)
+                    actors_only_in_space = []
+                else:
+                    actors_only_in_meta = []
+                    actors_only_in_space = []
                 desired.append(
                     OrderResource.EphemeralSync(
                         dedupe_key=_dedupe_drift(w.id),
