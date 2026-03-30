@@ -3,21 +3,23 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Sequence, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
 
 from core.entities import BaseResource
 from db.models import Order as OrderModel
+from db.models import OrderWithdrawalSignature as OrderWithdrawalSignatureModel
 from db.models import Wallet
 from repos.base import BaseRepository
 from settings import Settings
 
 ORDER_CATEGORY_EPHEMERAL = "ephemeral"
+ORDER_CATEGORY_WITHDRAWAL = "withdrawal"
 
 
 class OrderResource(BaseResource):
@@ -111,3 +113,134 @@ class OrderRepository(BaseRepository):
             await self._session.execute(stmt)
             upserted += 1
         return upserted, deleted
+
+    async def insert_withdrawal_order(
+        self,
+        *,
+        dedupe_key: str,
+        space_wallet_id: int,
+        payload: Dict[str, Any],
+    ) -> OrderResource.Get:
+        now = datetime.now(timezone.utc)
+        model = OrderModel(
+            category=ORDER_CATEGORY_WITHDRAWAL,
+            dedupe_key=dedupe_key,
+            space_wallet_id=space_wallet_id,
+            payload=payload,
+            created_at=now,
+            updated_at=now,
+        )
+        self._session.add(model)
+        await self._session.flush()
+        await self._session.refresh(model)
+        return _order_model_to_get(model)
+
+    async def get_by_id(self, order_id: int) -> Optional[OrderResource.Get]:
+        stmt = select(OrderModel).where(OrderModel.id == order_id)
+        res = await self._session.execute(stmt)
+        m = res.scalar_one_or_none()
+        return _order_model_to_get(m) if m else None
+
+    async def get_by_dedupe_key(self, dedupe_key: str) -> Optional[OrderResource.Get]:
+        dk = (dedupe_key or "").strip()
+        if not dk:
+            return None
+        stmt = select(OrderModel).where(OrderModel.dedupe_key == dk)
+        res = await self._session.execute(stmt)
+        m = res.scalar_one_or_none()
+        return _order_model_to_get(m) if m else None
+
+    async def delete_withdrawal_by_id(self, order_id: int) -> bool:
+        stmt = delete(OrderModel).where(
+            OrderModel.id == order_id,
+            OrderModel.category == ORDER_CATEGORY_WITHDRAWAL,
+        )
+        res = await self._session.execute(stmt)
+        return (res.rowcount or 0) > 0
+
+    async def list_withdrawal_by_owner_did(self, owner_did: str) -> List[OrderResource.Get]:
+        od = (owner_did or "").strip()
+        if not od:
+            return []
+        stmt = (
+            select(OrderModel)
+            .join(Wallet, OrderModel.space_wallet_id == Wallet.id)
+            .where(
+                OrderModel.category == ORDER_CATEGORY_WITHDRAWAL,
+                Wallet.owner_did == od,
+            )
+            .order_by(OrderModel.updated_at.desc())
+        )
+        res = await self._session.execute(stmt)
+        return [_order_model_to_get(m) for m in res.scalars().all()]
+
+    async def update_withdrawal_payload(
+        self,
+        order_id: int,
+        payload: Dict[str, Any],
+    ) -> None:
+        stmt = (
+            update(OrderModel)
+            .where(
+                OrderModel.id == order_id,
+                OrderModel.category == ORDER_CATEGORY_WITHDRAWAL,
+            )
+            .values(payload=payload, updated_at=datetime.now(timezone.utc))
+        )
+        await self._session.execute(stmt)
+
+    async def upsert_withdrawal_signature(
+        self,
+        order_id: int,
+        signer_address: str,
+        signature_data: Optional[Dict[str, Any]],
+    ) -> None:
+        addr = (signer_address or "").strip()
+        if not addr:
+            return
+        ins = pg_insert(OrderWithdrawalSignatureModel).values(
+            order_id=order_id,
+            signer_address=addr,
+            signature_data=signature_data,
+            created_at=datetime.now(timezone.utc),
+        )
+        stmt = ins.on_conflict_do_update(
+            constraint="uq_order_withdrawal_sig_order_signer",
+            set_={
+                "signature_data": ins.excluded.signature_data,
+            },
+        )
+        await self._session.execute(stmt)
+
+    async def list_withdrawal_signatures(
+        self, order_id: int
+    ) -> List[Dict[str, Any]]:
+        stmt = (
+            select(OrderWithdrawalSignatureModel)
+            .where(OrderWithdrawalSignatureModel.order_id == order_id)
+            .order_by(OrderWithdrawalSignatureModel.created_at.asc())
+        )
+        res = await self._session.execute(stmt)
+        out: List[Dict[str, Any]] = []
+        for row in res.scalars().all():
+            out.append(
+                {
+                    "signer_address": row.signer_address,
+                    "signature_data": dict(row.signature_data)
+                    if row.signature_data is not None
+                    else None,
+                    "created_at": row.created_at,
+                }
+            )
+        return out
+
+
+WITHDRAWAL_DEDUPE_PREFIX = "withdrawal:"
+
+
+def withdrawal_dedupe_key(sign_token: str) -> str:
+    """dedupe_key для заявки на вывод; sign_token — сегмент URL /o/{sign_token}."""
+    t = (sign_token or "").strip()
+    if not t:
+        raise ValueError("withdrawal sign token required")
+    return f"{WITHDRAWAL_DEDUPE_PREFIX}{t}"

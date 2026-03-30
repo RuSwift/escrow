@@ -164,14 +164,68 @@ class SpaceService:
             raise SpacePermissionDenied("Space not found")
         return owner.id
 
+    async def ensure_actor_in_space(
+        self, space: str, actor_wallet_address: str
+    ) -> None:
+        """Владелец спейса или участник (sub) с любой ролью. Иначе SpacePermissionDenied."""
+        key = (space or "").strip()
+        if not key:
+            raise SpacePermissionDenied("Invalid space")
+        for bc in ("tron", "ethereum"):
+            spaces = await self._repo.get_spaces_for_address(
+                actor_wallet_address, bc
+            )
+            if key in spaces:
+                return
+        raise SpacePermissionDenied("No access to this space")
+
+    async def ensure_owner_or_operator(
+        self, space: str, actor_wallet_address: str
+    ) -> None:
+        """Только владелец спейса или operator (reader — запрет)."""
+        for bc in ("tron", "ethereum"):
+            role = await self.get_space_role(space, actor_wallet_address, bc)
+            if role in (WalletUserSubRole.owner, WalletUserSubRole.operator):
+                return
+        raise SpacePermissionDenied(
+            "Only space owner or operator can perform this action"
+        )
+
     async def list_subs_for_space(
         self, space: str, actor_wallet_address: str
     ) -> List[WalletUserSubResource.Get]:
-        """Список участников спейса. Только owner."""
-        wallet_user_id = await self._ensure_owner_and_owner_id(
-            space, actor_wallet_address
-        )
-        return await self._repo.list_subs(wallet_user_id)
+        """Список участников спейса. Owner или operator (reader — нет)."""
+        await self.ensure_owner_or_operator(space, actor_wallet_address)
+        owner = await self._repo.get_by_nickname((space or "").strip())
+        if not owner:
+            raise SpacePermissionDenied("Space not found")
+        return await self._repo.list_subs(owner.id)
+
+    async def signatory_tron_labels(
+        self, space: str, actor_wallet_address: str
+    ) -> List[Dict[str, str]]:
+        """TRON-адрес → отображаемое имя: подписанты из субаккаунтов и при отсутствии дубля — владелец спейса."""
+        await self.ensure_owner_or_operator(space, actor_wallet_address)
+        owner_m = await self._repo.get_by_nickname((space or "").strip())
+        if not owner_m:
+            raise SpacePermissionDenied("Space not found")
+        by_addr: Dict[str, str] = {}
+        for sub in await self._repo.list_subs(owner_m.id):
+            if (sub.blockchain or "").strip().lower() != "tron":
+                continue
+            addr = (sub.wallet_address or "").strip()
+            nick = (sub.nickname or "").strip()
+            if addr and nick:
+                by_addr[addr] = nick
+        if (owner_m.blockchain or "").strip().lower() == "tron":
+            oaddr = (owner_m.wallet_address or "").strip()
+            onick = (owner_m.nickname or "").strip()
+            if oaddr and onick and oaddr not in by_addr:
+                by_addr[oaddr] = onick
+        return [
+            {"tron_address": a, "nickname": by_addr[a]}
+            for a in sorted(by_addr.keys())
+        ]
 
     async def add_sub_for_space(
         self,

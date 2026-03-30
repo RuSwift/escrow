@@ -137,7 +137,7 @@ async def test_get_space_role_sub_with_owner_in_roles(space_service, wallet_user
     assert role == WalletUserSubRole.owner
 
 
-# --- list_subs_for_space (only owner) ---
+# --- list_subs_for_space (owner or operator) ---
 
 
 @pytest.mark.asyncio
@@ -150,8 +150,52 @@ async def test_list_subs_for_space_owner_success(space_with_owner_and_sub, space
 
 
 @pytest.mark.asyncio
-async def test_list_subs_for_space_non_owner_raises(space_with_owner_and_sub, space_service):
-    """Не-owner (operator/reader) получает SpacePermissionDenied."""
+async def test_list_subs_for_space_operator_success(space_with_owner_and_sub, space_service):
+    """Operator может читать список участников."""
+    subs = await space_service.list_subs_for_space(SPACE_NAME, WALLET_SUB1)
+    assert len(subs) == 1
+    assert subs[0].wallet_address == WALLET_SUB1
+
+
+@pytest.mark.asyncio
+async def test_signatory_tron_labels_owner_and_sub(space_with_owner_and_sub, space_service):
+    """Подписи к TRON: суб с ником + владелец, если адрес не пересёкся."""
+    rows = await space_service.signatory_tron_labels(SPACE_NAME, WALLET_OWNER)
+    by_a = {r["tron_address"]: r["nickname"] for r in rows}
+    assert by_a[WALLET_SUB1] == "sub_one"
+    assert by_a[WALLET_OWNER] == SPACE_NAME
+
+
+@pytest.mark.asyncio
+async def test_signatory_tron_labels_operator_ok(space_with_owner_and_sub, space_service):
+    """Operator может запросить те же подписи."""
+    rows = await space_service.signatory_tron_labels(SPACE_NAME, WALLET_SUB1)
+    by_a = {r["tron_address"]: r["nickname"] for r in rows}
+    assert by_a[WALLET_SUB1] == "sub_one"
+    assert WALLET_OWNER in by_a
+
+
+@pytest.mark.asyncio
+async def test_list_subs_for_space_reader_raises(space_service, wallet_user_repo):
+    """Reader не может получить список участников."""
+    from services.wallet_user import WalletUserService
+
+    wu = WalletUserService(
+        session=space_service._session,
+        redis=space_service._redis,
+        settings=space_service._settings,
+    )
+    owner = await wu.create_user(WALLET_OWNER, "tron", SPACE_NAME)
+    await wallet_user_repo.add_sub(
+        owner.id,
+        WalletUserSubResource.Create(
+            wallet_address=WALLET_SUB1,
+            blockchain="tron",
+            nickname="sub_reader",
+            roles=[WalletUserSubRole.reader],
+        ),
+    )
+    await space_service._session.commit()
     with pytest.raises(SpacePermissionDenied):
         await space_service.list_subs_for_space(SPACE_NAME, WALLET_SUB1)
 

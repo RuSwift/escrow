@@ -73,10 +73,21 @@ Vue.component('dashboard', {
             dashboardMultisigWizardWallet: null,
             dashboardMultisigFetching: false,
             driftDetailModalOpen: false,
-            driftDetailOrder: null
+            driftDetailOrder: null,
+            spaceRole: '',
+            showWithdrawalModal: false,
+            rampWalletByTron: {},
+            rampWalletById: {},
+            signatoryTronLabelByAddress: {},
+            ordersSignLinkCopiedId: null,
+            _ordersSignLinkCopyTimer: null
         };
     },
     computed: {
+        canCreateWithdrawal: function() {
+            var r = (this.spaceRole || '').trim();
+            return r === 'owner' || r === 'operator';
+        },
         ratiosPivot: function() {
             return buildRatiosPivot(this.ratiosRaw);
         },
@@ -107,7 +118,11 @@ Vue.component('dashboard', {
                     String(p.kind || ''),
                     String(p.wallet_name || ''),
                     String(p.multisig_setup_status || ''),
-                    String(p.tron_address || '')
+                    String(p.tron_address || ''),
+                    String(p.status || ''),
+                    String(p.destination_address || ''),
+                    String((p.token && p.token.symbol) || ''),
+                    String(self.withdrawalSignatoriesDisplay(row) || '')
                 ].join(' ').toLowerCase();
                 return blob.indexOf(q) !== -1;
             });
@@ -157,6 +172,9 @@ Vue.component('dashboard', {
         }
     },
     mounted: function() {
+        if (typeof window !== 'undefined' && window.__SPACE_ROLE__) {
+            this.spaceRole = String(window.__SPACE_ROLE__).trim();
+        }
         this.fetchRatios();
         this.fetchOrders();
     },
@@ -193,11 +211,16 @@ Vue.component('dashboard', {
             var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__) ? String(window.__CURRENT_SPACE__).trim() : '';
             if (!space) {
                 self.apiOrders = [];
+                self.rampWalletByTron = {};
+                self.rampWalletById = {};
+                self.signatoryTronLabelByAddress = {};
                 return;
             }
             self.ordersLoading = true;
             self.ordersError = null;
-            fetch('/v1/spaces/' + encodeURIComponent(space) + '/orders', {
+            var walletsPromise = self.fetchRampWalletsForSignatories();
+            var labelsPromise = self.fetchSignatoryTronLabels();
+            var ordersPromise = fetch('/v1/spaces/' + encodeURIComponent(space) + '/orders', {
                 method: 'GET',
                 headers: authHeadersMain(),
                 credentials: 'include'
@@ -212,9 +235,73 @@ Vue.component('dashboard', {
                 .catch(function() {
                     self.ordersError = true;
                     self.apiOrders = [];
+                });
+            Promise.all([ordersPromise, walletsPromise, labelsPromise]).finally(function() {
+                self.ordersLoading = false;
+            });
+        },
+        fetchSignatoryTronLabels: function() {
+            var self = this;
+            var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__) ? String(window.__CURRENT_SPACE__).trim() : '';
+            if (!space) {
+                self.signatoryTronLabelByAddress = {};
+                return Promise.resolve();
+            }
+            return fetch('/v1/spaces/' + encodeURIComponent(space) + '/signatory-tron-labels', {
+                method: 'GET',
+                headers: authHeadersMain(),
+                credentials: 'include'
+            })
+                .then(function(res) {
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.json();
                 })
-                .finally(function() {
-                    self.ordersLoading = false;
+                .then(function(data) {
+                    var items = (data && data.items && Array.isArray(data.items)) ? data.items : [];
+                    var m = {};
+                    items.forEach(function(row) {
+                        var addr = (row.tron_address || '').trim();
+                        var nick = (row.nickname || '').trim();
+                        if (addr && nick) m[addr] = nick;
+                    });
+                    self.signatoryTronLabelByAddress = m;
+                })
+                .catch(function() {
+                    self.signatoryTronLabelByAddress = {};
+                });
+        },
+        fetchRampWalletsForSignatories: function() {
+            var self = this;
+            var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__) ? String(window.__CURRENT_SPACE__).trim() : '';
+            if (!space) {
+                self.rampWalletByTron = {};
+                self.rampWalletById = {};
+                return Promise.resolve();
+            }
+            return fetch('/v1/spaces/' + encodeURIComponent(space) + '/exchange-wallets', {
+                method: 'GET',
+                headers: authHeadersMain(),
+                credentials: 'include'
+            })
+                .then(function(res) {
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.json();
+                })
+                .then(function(data) {
+                    var items = (data && data.items) ? data.items : [];
+                    var byTron = {};
+                    var byId = {};
+                    items.forEach(function(w) {
+                        var t = (w.tron_address || '').trim();
+                        if (t) byTron[t] = w;
+                        if (w.id != null) byId[Number(w.id)] = w;
+                    });
+                    self.rampWalletByTron = byTron;
+                    self.rampWalletById = byId;
+                })
+                .catch(function() {
+                    self.rampWalletByTron = {};
+                    self.rampWalletById = {};
                 });
         },
         /** Как в my_business.multisigStatusLabel — те же ключи main.my_business.multisig_status_* */
@@ -244,6 +331,213 @@ Vue.component('dashboard', {
         isMultisigEphemeralOrder: function(order) {
             var k = order && order.payload && order.payload.kind;
             return k === 'multisig_pipeline' || k === 'multisig_space_drift';
+        },
+        isWithdrawalOrder: function(order) {
+            return order && order.payload && order.payload.kind === 'withdrawal_request';
+        },
+        withdrawalAmountDisplay: function(order) {
+            var p = (order && order.payload) || {};
+            var raw = p.amount_raw;
+            if (raw == null) return '—';
+            var tok = p.token || {};
+            var ttype = (tok.type || '').toLowerCase();
+            var dec = typeof tok.decimals === 'number' && tok.decimals >= 0 ? tok.decimals : 6;
+            var sym = (tok.symbol || '').toUpperCase() || (ttype === 'native' ? 'TRX' : 'TOKEN');
+            var human = Number(raw) / Math.pow(10, dec);
+            var formatted = human.toLocaleString(undefined, {
+                maximumFractionDigits: dec,
+                minimumFractionDigits: 0
+            });
+            return formatted + ' ' + sym;
+        },
+        withdrawalStatusLabel: function(order) {
+            var p = (order && order.payload) || {};
+            var st = (p.status || '').trim();
+            if (!st) return '—';
+            var key = 'main.dashboard.withdrawal_status_' + st;
+            var t = this.$t(key);
+            return (t && t !== key) ? t : st;
+        },
+        withdrawalBadgeClass: function() {
+            return 'bg-sky-50 text-sky-900 border border-sky-100';
+        },
+        withdrawalSpinnerVisible: function(order) {
+            if (!this.isWithdrawalOrder(order)) return false;
+            var p = (order && order.payload) || {};
+            var st = (p.status || '').trim();
+            if (st === 'confirmed' || st === 'failed') return false;
+            return true;
+        },
+        shortenAddress: function(addr) {
+            var s = String(addr || '').trim();
+            if (!s) return '—';
+            if (s.length <= 12) return s;
+            return s.slice(0, 4) + '…' + s.slice(-4);
+        },
+        displayNameForTronAddress: function(addr) {
+            var a = String(addr || '').trim();
+            if (!a) return '—';
+            var w = this.rampWalletByTron[a];
+            if (w && (w.name || '').trim()) return (w.name || '').trim();
+            var lab = this.signatoryTronLabelByAddress[a];
+            if (lab) return lab;
+            return this.shortenAddress(a);
+        },
+        withdrawalSignatoriesDisplay: function(order) {
+            if (!this.isWithdrawalOrder(order)) return '—';
+            var p = order.payload || {};
+            var role = (p.wallet_role || '').trim();
+            if (role === 'external') {
+                var wid = order.space_wallet_id;
+                if (wid != null && this.rampWalletById[Number(wid)]) {
+                    var rw = this.rampWalletById[Number(wid)];
+                    if ((rw.name || '').trim()) return (rw.name || '').trim();
+                }
+                var extAddr = (p.tron_address || '').trim();
+                return extAddr ? this.displayNameForTronAddress(extAddr) : '—';
+            }
+            if (role === 'multisig') {
+                var actors = Array.isArray(p.actors_snapshot) ? p.actors_snapshot : [];
+                if (!actors.length) return '—';
+                var self = this;
+                var parts = actors.map(function(a) {
+                    return self.displayNameForTronAddress(a);
+                });
+                return parts.join(', ');
+            }
+            return '—';
+        },
+        withdrawalSignatoriesTitle: function(order) {
+            if (!this.isWithdrawalOrder(order)) return '';
+            var p = order.payload || {};
+            var role = (p.wallet_role || '').trim();
+            if (role === 'external') {
+                return (p.tron_address || '').trim() || '';
+            }
+            if (role === 'multisig') {
+                var actors = Array.isArray(p.actors_snapshot) ? p.actors_snapshot : [];
+                return actors.map(function(a) { return String(a || '').trim(); }).filter(Boolean).join(', ');
+            }
+            return '';
+        },
+        /** Полная цепочка адресов/тикера для подсказки в описании вывода. */
+        withdrawalRowDescTitle: function(order) {
+            if (!this.isWithdrawalOrder(order)) return '';
+            var p = order.payload || {};
+            var src = (p.tron_address || '').trim();
+            var dest = (p.destination_address || '').trim();
+            var tok = (p.token && p.token.symbol) ? String(p.token.symbol) : '';
+            var parts = [];
+            if (src) parts.push(src);
+            if (tok) parts.push(tok);
+            if (dest) parts.push(dest);
+            return parts.join(' → ');
+        },
+        /** Токен публичной страницы подписи: dedupe_key = withdrawal:{token}. */
+        withdrawalSignTokenFromOrder: function(order) {
+            if (!this.isWithdrawalOrder(order)) return '';
+            var dk = String((order && order.dedupe_key) || '').trim();
+            var prefix = 'withdrawal:';
+            if (dk.indexOf(prefix) !== 0) return '';
+            var t = dk.slice(prefix.length).trim();
+            return t || '';
+        },
+        withdrawalSignHref: function(order) {
+            var t = this.withdrawalSignTokenFromOrder(order);
+            if (!t) return '#';
+            return '/o/' + encodeURIComponent(t);
+        },
+        withdrawalSignAbsoluteUrl: function(order) {
+            var path = this.withdrawalSignHref(order);
+            if (!path || path === '#') return '';
+            if (typeof window !== 'undefined' && window.location && window.location.origin) {
+                return window.location.origin + path;
+            }
+            return path;
+        },
+        copyWithdrawalSignLink: function(order, ev) {
+            if (ev && ev.stopPropagation) ev.stopPropagation();
+            var url = this.withdrawalSignAbsoluteUrl(order);
+            if (!url) return;
+            var self = this;
+            function afterCopy() {
+                self.ordersSignLinkCopiedId = order.id;
+                if (self._ordersSignLinkCopyTimer) clearTimeout(self._ordersSignLinkCopyTimer);
+                self._ordersSignLinkCopyTimer = setTimeout(function() {
+                    self.ordersSignLinkCopiedId = null;
+                }, 2000);
+            }
+            if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(url).then(afterCopy).catch(function() {
+                    self.copyWithdrawalSignLinkFallback(url, afterCopy);
+                });
+            } else {
+                this.copyWithdrawalSignLinkFallback(url, afterCopy);
+            }
+        },
+        copyWithdrawalSignLinkFallback: function(text, done) {
+            try {
+                var ta = document.createElement('textarea');
+                ta.value = text;
+                ta.setAttribute('readonly', '');
+                ta.style.position = 'fixed';
+                ta.style.left = '-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                if (done) done();
+            } catch (e) {}
+        },
+        onNewRequestSelect: function(e) {
+            var el = e && e.target;
+            var v = el ? el.value : '';
+            if (v === 'withdrawal') {
+                this.showWithdrawalModal = true;
+            }
+            if (el) el.value = '';
+        },
+        closeWithdrawalModal: function() {
+            this.showWithdrawalModal = false;
+        },
+        deleteWithdrawalOrder: function(order, ev) {
+            if (ev && ev.stopPropagation) ev.stopPropagation();
+            if (!this.isWithdrawalOrder(order) || !this.canCreateWithdrawal) return;
+            var self = this;
+            var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__) ? String(window.__CURRENT_SPACE__).trim() : '';
+            if (!space) return;
+            function runDelete() {
+                fetch('/v1/spaces/' + encodeURIComponent(space) + '/orders/' + encodeURIComponent(order.id), {
+                    method: 'DELETE',
+                    headers: authHeadersMain(),
+                    credentials: 'include'
+                })
+                    .then(function(res) {
+                        if (!res.ok) throw new Error('HTTP ' + res.status);
+                        self.fetchOrders();
+                    })
+                    .catch(function() {
+                        if (typeof window.showAlert === 'function') {
+                            window.showAlert({
+                                title: self.$t('main.dialog.error_title'),
+                                message: self.$t('main.dashboard.orders_delete_error')
+                            });
+                        } else {
+                            alert(self.$t('main.dashboard.orders_delete_error'));
+                        }
+                    });
+            }
+            if (typeof window.showConfirm === 'function') {
+                window.showConfirm({
+                    title: self.$t('main.dashboard.orders_delete_confirm_title'),
+                    message: self.$t('main.dashboard.orders_delete_confirm'),
+                    danger: true,
+                    onConfirm: runDelete
+                });
+            } else {
+                if (!confirm(self.$t('main.dashboard.orders_delete_confirm'))) return;
+                runDelete();
+            }
         },
         onApiOrderRowClick: function(order) {
             if (!this.isMultisigEphemeralOrder(order) || this.dashboardMultisigFetching) return;
@@ -382,11 +676,26 @@ Vue.component('dashboard', {
         },
         orderRowTitle: function(order) {
             var p = (order && order.payload) || {};
+            if (p.kind === 'withdrawal_request') {
+                return this.$t('main.dashboard.order_kind_withdrawal');
+            }
             var wid = order.space_wallet_id != null ? order.space_wallet_id : (p.wallet_id != null ? p.wallet_id : null);
             return (p.wallet_name || '').trim() || ('#' + (wid != null ? wid : (order.id || '')));
         },
         orderRowDesc: function(order) {
             var p = (order && order.payload) || {};
+            if (p.kind === 'withdrawal_request') {
+                var dest = (p.destination_address || '').trim();
+                var tok = (p.token && p.token.symbol) ? String(p.token.symbol) : '';
+                var destDisp = dest ? this.shortenAddress(dest) : '';
+                var tail = tok + (destDisp ? ' → ' + destDisp : '');
+                var srcRaw = (p.tron_address || '').trim();
+                var srcDisp = srcRaw ? this.shortenAddress(srcRaw) : '';
+                if (srcDisp && srcDisp !== '—') {
+                    return srcDisp + ' → ' + tail;
+                }
+                return tail;
+            }
             if (p.kind === 'multisig_space_drift') {
                 if (p.owners_drift == null && p.actors_drift == null) {
                     var om0 = (p.only_in_meta && p.only_in_meta.length) ? p.only_in_meta.join(', ') : '';
@@ -533,6 +842,18 @@ Vue.component('dashboard', {
           </button>
         </div>
       </div>
+      <div v-if="canCreateWithdrawal" class="flex flex-wrap items-center gap-2 mb-4">
+        <label class="text-xs font-semibold text-[#58667e] shrink-0" for="dash-new-request-select">[[ $t('main.dashboard.new_request_label') ]]</label>
+        <select
+          id="dash-new-request-select"
+          @change="onNewRequestSelect"
+          class="max-w-xs rounded-lg border border-[#eff2f5] bg-white px-3 py-2 text-sm text-[#191d23] focus:outline-none focus:ring-2 focus:ring-main-blue/20"
+        >
+          <option value="">[[ $t('main.dashboard.new_request_placeholder') ]]</option>
+          <option value="withdrawal">[[ $t('main.dashboard.new_request_withdrawal') ]]</option>
+          <option value="invoice" disabled>[[ $t('main.dashboard.new_request_invoice') ]]</option>
+        </select>
+      </div>
       <div v-if="ordersError" class="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-800">[[ $t('main.dashboard.orders_load_error') ]]</div>
       <div class="cmc-card overflow-hidden mb-10">
         <div class="overflow-x-auto">
@@ -540,22 +861,23 @@ Vue.component('dashboard', {
             <thead>
               <tr class="bg-gray-50">
                 <th class="cmc-table-header w-12">#</th>
+                <th class="cmc-table-header whitespace-nowrap min-w-[11rem] sm:min-w-[13rem]">[[ $t('main.dashboard.table_col_link') ]]</th>
                 <th class="cmc-table-header">[[ $t('main.dashboard.table_col_title') ]]</th>
                 <th class="cmc-table-header">[[ $t('main.dashboard.table_col_amount') ]]</th>
                 <th class="cmc-table-header">[[ $t('main.dashboard.table_col_status') ]]</th>
                 <th class="cmc-table-header">[[ $t('main.dashboard.table_col_created') ]]</th>
-                <th class="cmc-table-header">[[ $t('main.dashboard.table_col_participants') ]]</th>
+                <th class="cmc-table-header">[[ $t('main.dashboard.table_col_signatories') ]]</th>
                 <th class="cmc-table-header text-right">[[ $t('main.dashboard.table_col_action') ]]</th>
               </tr>
             </thead>
             <tbody>
               <template v-if="ordersLoading">
                 <tr v-for="i in 5" :key="'ord-sk-' + i" class="animate-pulse">
-                  <td colspan="7" class="cmc-table-cell h-16 bg-gray-50/50"></td>
+                  <td colspan="8" class="cmc-table-cell h-16 bg-gray-50/50"></td>
                 </tr>
               </template>
               <tr v-else-if="filteredApiOrders.length === 0">
-                <td colspan="7" class="cmc-table-cell text-center py-12 text-cmc-muted">[[ $t('main.dashboard.ephemeral_no_orders') ]]</td>
+                <td colspan="8" class="cmc-table-cell text-center py-12 text-cmc-muted">[[ $t('main.dashboard.ephemeral_no_orders') ]]</td>
               </tr>
               <tr v-else v-for="(order, i) in filteredApiOrders" :key="'api-ord-' + order.id"
                 class="border-b border-[#eff2f5] last:border-0 transition-all duration-200"
@@ -565,6 +887,30 @@ Vue.component('dashboard', {
                 @keydown.enter.prevent="onApiOrderRowClick(order)"
               >
                 <td class="cmc-table-cell text-cmc-muted font-medium">[[ i + 1 ]]</td>
+                <td class="cmc-table-cell align-middle" @click.stop>
+                  <div v-if="isWithdrawalOrder(order) && withdrawalSignTokenFromOrder(order)" class="flex flex-wrap items-center gap-1.5 sm:gap-2">
+                    <a
+                      :href="withdrawalSignHref(order)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="inline-flex items-center gap-1.5 text-xs font-semibold text-main-blue hover:opacity-90 shrink-0"
+                      :aria-label="$t('main.dashboard.orders_sign_link') + ' — ' + withdrawalSignHref(order)"
+                      @click.stop
+                    >
+                      <svg class="w-4 h-4 shrink-0 text-main-blue" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+                      <span>[[ $t('main.dashboard.orders_link_label') ]]</span>
+                    </a>
+                    <button
+                      type="button"
+                      class="shrink-0 rounded-md border border-[#eff2f5] bg-white px-2 py-1 text-[10px] sm:text-xs font-semibold text-[#58667e] hover:bg-[#f8fafd] hover:border-[#cfd6e4] focus:outline-none focus:ring-2 focus:ring-main-blue/25"
+                      :aria-label="$t('main.dashboard.orders_copy_sign_link')"
+                      @click="copyWithdrawalSignLink(order, $event)"
+                    >
+                      [[ ordersSignLinkCopiedId === order.id ? $t('main.copied') : $t('main.dashboard.orders_copy_sign_link') ]]
+                    </button>
+                  </div>
+                  <span v-else class="text-cmc-muted text-xs">—</span>
+                </td>
                 <td class="cmc-table-cell">
                   <div class="flex items-center gap-3">
                     <div class="w-8 h-8 rounded-full bg-main-blue/10 flex items-center justify-center text-main-blue shrink-0">
@@ -572,13 +918,22 @@ Vue.component('dashboard', {
                     </div>
                     <div class="min-w-0">
                       <div class="font-bold truncate">[[ orderRowTitle(order) ]]</div>
-                      <div class="text-xs text-cmc-muted truncate max-w-[240px] sm:max-w-md">[[ orderRowDesc(order) ]]</div>
+                      <div class="text-xs text-cmc-muted truncate max-w-[240px] sm:max-w-md" :title="isWithdrawalOrder(order) ? withdrawalRowDescTitle(order) : ''">[[ orderRowDesc(order) ]]</div>
                     </div>
                   </div>
                 </td>
-                <td class="cmc-table-cell text-cmc-muted">—</td>
+                <td class="cmc-table-cell text-cmc-muted">
+                  <span v-if="isWithdrawalOrder(order)">[[ withdrawalAmountDisplay(order) ]]</span>
+                  <span v-else>—</span>
+                </td>
                 <td class="cmc-table-cell">
-                  <div class="flex items-center gap-1 min-w-0">
+                  <div v-if="isWithdrawalOrder(order)" class="flex items-center gap-1 min-w-0">
+                    <div :class="['inline-flex items-center gap-1.5 min-w-0 max-w-full rounded-md pl-2 pr-1.5 py-0.5', withdrawalBadgeClass()]">
+                      <span class="text-[10px] font-bold uppercase truncate">[[ withdrawalStatusLabel(order) ]]</span>
+                      <svg v-if="withdrawalSpinnerVisible(order)" class="w-3.5 h-3.5 shrink-0 animate-spin opacity-90 text-sky-800" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    </div>
+                  </div>
+                  <div v-else class="flex items-center gap-1 min-w-0">
                     <div :class="['inline-flex items-center gap-1.5 min-w-0 max-w-full rounded-md pl-2 pr-1.5 py-0.5', ephemeralMultisigBadgeClass(order)]">
                       <span class="text-[10px] font-bold uppercase truncate">[[ ephemeralMultisigStatusLabel(order) ]]</span>
                       <svg v-if="ephemeralMultisigSpinnerVisible(order)" class="w-3.5 h-3.5 shrink-0 animate-spin opacity-90" :class="(order.payload && order.payload.kind) === 'multisig_space_drift' ? 'text-violet-800' : 'text-amber-800'" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
@@ -586,8 +941,18 @@ Vue.component('dashboard', {
                   </div>
                 </td>
                 <td class="cmc-table-cell text-cmc-muted">[[ formatDate(order.updated_at) ]]</td>
-                <td class="cmc-table-cell text-cmc-muted">—</td>
-                <td class="cmc-table-cell text-right text-cmc-muted text-[10px]"></td>
+                <td class="cmc-table-cell text-cmc-muted text-xs min-w-0 max-w-[220px]">
+                  <span v-if="isWithdrawalOrder(order)" class="block truncate" :title="withdrawalSignatoriesTitle(order)">[[ withdrawalSignatoriesDisplay(order) ]]</span>
+                  <span v-else>—</span>
+                </td>
+                <td class="cmc-table-cell text-right align-middle" @click.stop>
+                  <button
+                    v-if="isWithdrawalOrder(order) && canCreateWithdrawal"
+                    type="button"
+                    class="px-2 py-1 text-xs font-semibold rounded-md border border-rose-200 text-rose-800 bg-white hover:bg-rose-50"
+                    @click="deleteWithdrawalOrder(order, $event)"
+                  >[[ $t('main.dashboard.orders_delete') ]]</button>
+                </td>
               </tr>
             </tbody>
           </table>
@@ -807,6 +1172,10 @@ Vue.component('dashboard', {
         @close="closeDashboardMultisigWizard"
         @saved="onDashboardMultisigConfigSaved"
       ></multisig-config-modal>
+      <withdrawal-order-modal
+        :show="showWithdrawalModal"
+        @close="closeWithdrawalModal"
+      ></withdrawal-order-modal>
     </div>
     `
 });

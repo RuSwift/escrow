@@ -124,7 +124,7 @@ class ExchangeWalletService:
         actor_wallet_address: str,
         role: Optional[ExchangeRole] = None,
     ) -> List[ExchangeWalletResource.Get]:
-        await self._space._ensure_owner_and_owner_id(space, actor_wallet_address)
+        await self._space.ensure_owner_or_operator(space, actor_wallet_address)
         owner_did = await self._owner_did_for_space(space)
         return await self._repo.list_exchange_wallets(owner_did, role=role)
 
@@ -134,7 +134,7 @@ class ExchangeWalletService:
         actor_wallet_address: str,
         wallet_id: int,
     ) -> Optional[ExchangeWalletResource.Get]:
-        await self._space._ensure_owner_and_owner_id(space, actor_wallet_address)
+        await self._space.ensure_owner_or_operator(space, actor_wallet_address)
         owner_did = await self._owner_did_for_space(space)
         return await self._repo.get_exchange_wallet(wallet_id, owner_did)
 

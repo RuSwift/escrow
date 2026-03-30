@@ -1,0 +1,36 @@
+{% extends "main/invite_layout.html" %}
+{% block title %}{{ _('main.order_sign.title') }} — {{ app_name }}{% endblock %}
+{% block content %}
+<div id="order-sign-root"
+     data-invalid="{{ 'true' if order_sign_invalid else 'false' }}"
+     data-token="{{ order_sign_token | default('') | e }}">
+  {% if order_sign_invalid %}
+  <div class="rounded-xl bg-white border border-[#eff2f5] shadow-sm p-8 text-center">
+    <h1 class="text-xl font-bold text-[#191d23] mb-2">{{ _('main.order_sign.invalid_title') }}</h1>
+    <p class="text-[#58667e] text-sm">{{ _('main.order_sign.invalid_message') }}</p>
+  </div>
+  {% else %}
+  <div class="rounded-xl bg-white border border-[#eff2f5] shadow-sm p-6 md:p-8">
+    <h1 class="text-lg font-bold text-[#191d23] mb-4">{{ _('main.order_sign.title') }}</h1>
+    <p id="order-sign-loading" class="text-[#58667e] text-sm">{{ _('main.loading') }}</p>
+    <div id="order-sign-body" class="hidden space-y-4 text-sm">
+      <div class="text-[#58667e]">
+        <span class="font-medium text-[#191d23]" id="order-sign-status"></span>
+      </div>
+      <dl class="grid gap-2 text-xs">
+        <div><dt class="text-[#58667e] inline">{{ _('main.order_sign.amount') }}</dt> <dd class="inline font-mono" id="order-sign-amount"></dd></div>
+        <div><dt class="text-[#58667e] inline">{{ _('main.order_sign.destination') }}</dt> <dd class="inline font-mono break-all" id="order-sign-dest"></dd></div>
+        <div><dt class="text-[#58667e] inline">{{ _('main.order_sign.from_wallet') }}</dt> <dd class="inline font-mono break-all" id="order-sign-from"></dd></div>
+      </dl>
+      <p id="order-sign-error" class="text-main-red text-sm hidden" role="alert"></p>
+      <button type="button" id="order-sign-btn" class="cmc-btn-primary px-6 py-3 font-medium">
+        {{ _('main.order_sign.sign_button') }}
+      </button>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="/static/main/js/order_sign.js"></script>
+{% endblock %}

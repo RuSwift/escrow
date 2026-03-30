@@ -19,6 +19,7 @@ from i18n.translations import get_translations_for_locale
 from settings import Settings
 from web.endpoints.dependencies import (
     get_invite_service,
+    get_order_service,
     get_required_wallet_address_for_space,
     get_space_service,
     get_wallet_user_service,
@@ -129,6 +130,32 @@ def create_app() -> FastAPI:
                 "invite": invite_payload,
                 "invite_json": json.dumps(invite_payload, ensure_ascii=False),
                 "invite_token": token,
+            },
+        )
+
+    @app.get("/o/{token}", response_class=HTMLResponse)
+    async def order_sign_page(
+        request: Request,
+        token: str,
+        order_svc=Depends(get_order_service),
+    ):
+        """Публичная страница подписи заявки на вывод по токену из Redis."""
+        ctx = await order_svc.get_public_sign_context(token)
+        if not ctx:
+            return templates.TemplateResponse(
+                "main/order_sign.html",
+                {
+                    **_main_context(request, "dashboard"),
+                    "order_sign_invalid": True,
+                    "order_sign_token": token,
+                },
+            )
+        return templates.TemplateResponse(
+            "main/order_sign.html",
+            {
+                **_main_context(request, "dashboard"),
+                "order_sign_invalid": False,
+                "order_sign_token": token,
             },
         )
 

@@ -581,6 +581,46 @@ class Order(Base):
         return f"<Order(id={self.id}, category={self.category}, dedupe_key={self.dedupe_key!r})>"
 
 
+class OrderWithdrawalSignature(Base):
+    """Off-chain подписи к заявке на вывод (Tron multisig / внешний кошелёк)."""
+
+    __tablename__ = "order_withdrawal_signatures"
+
+    __table_args__ = (
+        Index("ix_order_withdrawal_signatures_order_id", "order_id"),
+        UniqueConstraint(
+            "order_id",
+            "signer_address",
+            name="uq_order_withdrawal_sig_order_signer",
+        ),
+    )
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    order_id = Column(
+        BigInteger,
+        ForeignKey("orders.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    signer_address = Column(
+        String(64),
+        nullable=False,
+        comment="TRON base58 адрес подписанта",
+    )
+    signature_data = Column(
+        JSONB,
+        nullable=True,
+        comment="Фрагмент подписи / partial signed tx (Tron)",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<OrderWithdrawalSignature(order_id={self.order_id}, signer={self.signer_address!r})>"
+
+
 class BestchangeYamlSnapshot(Base):
     """Снимок экспорта BestChange (bc.yaml): хеш, meta.exported_at и тело файла в JSON."""
 

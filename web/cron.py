@@ -8,6 +8,7 @@
   - Forex и Rapira: обновление кэша котировок каждую минуту;
   - ЦБ РФ (Cbr): каждый час;
   - Эфемерные ордера дашборда: отдельный цикл (OrderService.refresh_ephemeral).
+  - Заявки на вывод: опрос Tron по txid (OrderService.refresh_withdrawal_statuses).
 
 Нужны Redis и настройки ratios в .env (для Rapira — ключи RATIOS_RAPIRA_*).
 """
@@ -44,6 +45,7 @@ FOREX_RAPIRA_SEC = 60.0
 CBR_SEC = 3600.0
 MULTISIG_WALLET_SEC = 10.0
 ORDERS_EPHEMERAL_SEC = 10.0
+ORDERS_WITHDRAWAL_SEC = 20.0
 
 
 async def _merge_ratios_after_tick(
@@ -225,6 +227,36 @@ async def _loop_orders_ephemeral(redis: Redis, settings: Settings) -> None:
         await asyncio.sleep(ORDERS_EPHEMERAL_SEC)
 
 
+async def _loop_orders_withdrawal(redis: Redis, settings: Settings) -> None:
+    task = "orders_withdrawal"
+    while True:
+        logger.info(
+            "cron task=%s: tick start (interval=%ss)",
+            task,
+            int(ORDERS_WITHDRAWAL_SEC),
+        )
+        t0 = time.perf_counter()
+        try:
+            session_factory = db_module.SessionLocal
+            if session_factory is None:
+                logger.warning("cron task=%s: SessionLocal missing", task)
+            else:
+                async with session_factory() as session:
+                    svc = OrderService(session, redis, settings)
+                    stats = await svc.refresh_withdrawal_statuses()
+                    await session.commit()
+                    elapsed_ms = (time.perf_counter() - t0) * 1000
+                    logger.info(
+                        "cron task=%s: refresh done in %.0fms | updated=%s",
+                        task,
+                        elapsed_ms,
+                        stats.get("updated"),
+                    )
+        except Exception:
+            logger.exception("cron task=%s: tick raised", task)
+        await asyncio.sleep(ORDERS_WITHDRAWAL_SEC)
+
+
 async def main() -> None:
     logging.basicConfig(
         level=logging.INFO,
@@ -235,11 +267,12 @@ async def main() -> None:
     redis = Redis.from_url(settings.redis.url, decode_responses=True)
     logger.info(
         "cron: tasks started — forex_rapira every %ss, cbr every %ss, multisig every %ss, "
-        "orders_ephemeral every %ss",
+        "orders_ephemeral every %ss, orders_withdrawal every %ss",
         int(FOREX_RAPIRA_SEC),
         int(CBR_SEC),
         int(MULTISIG_WALLET_SEC),
         int(ORDERS_EPHEMERAL_SEC),
+        int(ORDERS_WITHDRAWAL_SEC),
     )
     try:
         await asyncio.gather(
@@ -247,6 +280,7 @@ async def main() -> None:
             _loop_cbr(redis, settings),
             _loop_multisig_wallets(redis, settings),
             _loop_orders_ephemeral(redis, settings),
+            _loop_orders_withdrawal(redis, settings),
         )
     finally:
         await redis.aclose()
