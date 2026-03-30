@@ -68,8 +68,12 @@ def create_app() -> FastAPI:
     app.include_router(v1_router)
 
     def _main_context(request: Request, initial_page: str = "dashboard"):
-        locale = get_request_locale() or Settings().default_locale
+        settings = Settings()
+        locale = get_request_locale() or settings.default_locale
         translations = get_translations_for_locale(locale)
+        tron_net = (settings.tron.network or "mainnet").strip().lower()
+        if tron_net not in ("mainnet", "shasta", "nile"):
+            tron_net = "mainnet"
         return {
             "request": request,
             "_": _,
@@ -79,6 +83,7 @@ def create_app() -> FastAPI:
             "translations": translations,
             "translations_json": json.dumps(translations, ensure_ascii=False),
             "initial_page": initial_page,
+            "tron_network": tron_net,
         }
 
     @app.get("/", response_class=HTMLResponse)

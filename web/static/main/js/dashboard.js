@@ -76,6 +76,8 @@ Vue.component('dashboard', {
             driftDetailOrder: null,
             spaceRole: '',
             showWithdrawalModal: false,
+            showWithdrawalDetailModal: false,
+            withdrawalDetailOrder: null,
             rampWalletByTron: {},
             rampWalletById: {},
             signatoryTronLabelByAddress: {},
@@ -455,6 +457,30 @@ Vue.component('dashboard', {
             }
             return path;
         },
+        withdrawalBroadcastTxId: function(order) {
+            if (!this.isWithdrawalOrder(order)) return '';
+            var p = (order && order.payload) || {};
+            return String((p.broadcast_tx_id || '')).trim();
+        },
+        withdrawalTxExplorerUrl: function(order) {
+            var tx = this.withdrawalBroadcastTxId(order);
+            if (!tx || !window.EscrowWithdrawalSign || typeof window.EscrowWithdrawalSign.tronTxExplorerUrl !== 'function') {
+                return '';
+            }
+            return window.EscrowWithdrawalSign.tronTxExplorerUrl(tx);
+        },
+        withdrawalTxExplorerVisible: function(order) {
+            if (!this.withdrawalBroadcastTxId(order)) return false;
+            var p = (order && order.payload) || {};
+            var st = String((p.status || '')).trim();
+            return st === 'broadcast_submitted' || st === 'confirmed' || st === 'failed';
+        },
+        withdrawalDeleteAllowed: function(order) {
+            if (!this.isWithdrawalOrder(order)) return false;
+            var st = String((((order || {}).payload || {}).status || '')).trim();
+            if (st === 'broadcast_submitted' || st === 'confirmed' || st === 'failed') return false;
+            return true;
+        },
         copyWithdrawalSignLink: function(order, ev) {
             if (ev && ev.stopPropagation) ev.stopPropagation();
             var url = this.withdrawalSignAbsoluteUrl(order);
@@ -500,9 +526,20 @@ Vue.component('dashboard', {
         closeWithdrawalModal: function() {
             this.showWithdrawalModal = false;
         },
+        closeWithdrawalDetailModal: function() {
+            this.showWithdrawalDetailModal = false;
+            this.withdrawalDetailOrder = null;
+        },
+        onWithdrawalDetailDeleted: function() {
+            this.fetchOrders();
+            this.closeWithdrawalDetailModal();
+        },
+        onWithdrawalDetailUpdated: function() {
+            this.fetchOrders();
+        },
         deleteWithdrawalOrder: function(order, ev) {
             if (ev && ev.stopPropagation) ev.stopPropagation();
-            if (!this.isWithdrawalOrder(order) || !this.canCreateWithdrawal) return;
+            if (!this.isWithdrawalOrder(order) || !this.canCreateWithdrawal || !this.withdrawalDeleteAllowed(order)) return;
             var self = this;
             var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__) ? String(window.__CURRENT_SPACE__).trim() : '';
             if (!space) return;
@@ -513,8 +550,24 @@ Vue.component('dashboard', {
                     credentials: 'include'
                 })
                     .then(function(res) {
-                        if (!res.ok) throw new Error('HTTP ' + res.status);
-                        self.fetchOrders();
+                        if (res.ok) {
+                            self.fetchOrders();
+                            return;
+                        }
+                        if (res.status === 400) {
+                            return res.json().then(function(d) {
+                                var msg = (d && typeof d.detail === 'string') ? d.detail : self.$t('main.withdrawal_detail.delete_order_forbidden');
+                                if (typeof window.showAlert === 'function') {
+                                    window.showAlert({
+                                        title: self.$t('main.dialog.error_title'),
+                                        message: msg
+                                    });
+                                } else {
+                                    alert(msg);
+                                }
+                            });
+                        }
+                        throw new Error('HTTP ' + res.status);
                     })
                     .catch(function() {
                         if (typeof window.showAlert === 'function') {
@@ -540,6 +593,11 @@ Vue.component('dashboard', {
             }
         },
         onApiOrderRowClick: function(order) {
+            if (this.isWithdrawalOrder(order)) {
+                this.withdrawalDetailOrder = order;
+                this.showWithdrawalDetailModal = true;
+                return;
+            }
             if (!this.isMultisigEphemeralOrder(order) || this.dashboardMultisigFetching) return;
             if (this.isDriftOrder(order)) {
                 this.openDriftDetailModal(order);
@@ -881,8 +939,8 @@ Vue.component('dashboard', {
               </tr>
               <tr v-else v-for="(order, i) in filteredApiOrders" :key="'api-ord-' + order.id"
                 class="border-b border-[#eff2f5] last:border-0 transition-all duration-200"
-                :class="isMultisigEphemeralOrder(order) ? 'hover:bg-[#f0f6ff] cursor-pointer' : 'hover:bg-[#f8fafd]'"
-                :tabindex="isMultisigEphemeralOrder(order) ? 0 : -1"
+                :class="(isMultisigEphemeralOrder(order) || isWithdrawalOrder(order)) ? 'hover:bg-[#f0f6ff] cursor-pointer' : 'hover:bg-[#f8fafd]'"
+                :tabindex="(isMultisigEphemeralOrder(order) || isWithdrawalOrder(order)) ? 0 : -1"
                 @click="onApiOrderRowClick(order)"
                 @keydown.enter.prevent="onApiOrderRowClick(order)"
               >
@@ -908,6 +966,21 @@ Vue.component('dashboard', {
                     >
                       [[ ordersSignLinkCopiedId === order.id ? $t('main.copied') : $t('main.dashboard.orders_copy_sign_link') ]]
                     </button>
+                    <a
+                      v-if="withdrawalTxExplorerVisible(order)"
+                      :href="withdrawalTxExplorerUrl(order)"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="inline-flex items-center gap-1 text-[10px] sm:text-xs font-semibold text-main-green hover:text-emerald-700 shrink-0 rounded-md px-1.5 py-0.5 bg-main-green/12 hover:bg-main-green/20 transition-colors"
+                      :aria-label="$t('main.dashboard.withdrawal_tx_explorer')"
+                      @click.stop
+                    >
+                      <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 text-main-green" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24" aria-hidden="true">
+                        <path d="M12 3 4 7.5v9L12 21l8-4.5v-9L12 3z"/>
+                        <path d="M12 12 4 7.5M12 12l8-4.5M12 12v9"/>
+                      </svg>
+                      <span>[[ $t('main.dashboard.withdrawal_tx_explorer_short') ]]</span>
+                    </a>
                   </div>
                   <span v-else class="text-cmc-muted text-xs">—</span>
                 </td>
@@ -949,7 +1022,9 @@ Vue.component('dashboard', {
                   <button
                     v-if="isWithdrawalOrder(order) && canCreateWithdrawal"
                     type="button"
-                    class="px-2 py-1 text-xs font-semibold rounded-md border border-rose-200 text-rose-800 bg-white hover:bg-rose-50"
+                    class="px-2 py-1 text-xs font-semibold rounded-md border border-rose-200 text-rose-800 bg-white hover:bg-rose-50 disabled:opacity-45 disabled:cursor-not-allowed disabled:hover:bg-white"
+                    :disabled="!withdrawalDeleteAllowed(order)"
+                    :title="withdrawalDeleteAllowed(order) ? '' : $t('main.withdrawal_detail.delete_order_forbidden_hint')"
                     @click="deleteWithdrawalOrder(order, $event)"
                   >[[ $t('main.dashboard.orders_delete') ]]</button>
                 </td>
@@ -1176,6 +1251,14 @@ Vue.component('dashboard', {
         :show="showWithdrawalModal"
         @close="closeWithdrawalModal"
       ></withdrawal-order-modal>
+      <withdrawal-order-detail-modal
+        :show="showWithdrawalDetailModal"
+        :order="withdrawalDetailOrder"
+        :can-manage="canCreateWithdrawal"
+        @close="closeWithdrawalDetailModal"
+        @deleted="onWithdrawalDetailDeleted"
+        @updated="onWithdrawalDetailUpdated"
+      ></withdrawal-order-detail-modal>
     </div>
     `
 });

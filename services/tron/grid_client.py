@@ -200,6 +200,20 @@ class TronGridClient:
             return False
         if data.get("id") and not receipt:
             return None
+        # Нативный TransferContract: gettransactioninfobyid часто даёт receipt только с net_usage /
+        # energy_usage, без receipt["result"]. Итог — в gettransactionbyid → ret[].contractRet.
+        if data.get("blockNumber") and r is None:
+            try:
+                txwrap = await self.post("/wallet/gettransactionbyid", {"value": tid})
+            except Exception:
+                return None
+            ret = txwrap.get("ret")
+            if isinstance(ret, list) and ret and isinstance(ret[0], dict):
+                cr = ret[0].get("contractRet")
+                if cr == "SUCCESS":
+                    return True
+                if cr in ("REVERT", "OUT_OF_TIME", "FAILED"):
+                    return False
         return None
 
     async def get_chain_parameters(self) -> Dict[str, Any]:

@@ -4,8 +4,10 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+from sqlalchemy import select
+
 from db import get_db
-from db.models import Wallet, WalletUser
+from db.models import Order, Wallet, WalletUser
 from repos.order import ORDER_CATEGORY_WITHDRAWAL, withdrawal_dedupe_key
 from web.endpoints.dependencies import (
     get_redis,
@@ -138,3 +140,35 @@ async def test_delete_withdrawal_204(main_app_withdrawal):
         order_id = r.json()["order"]["id"]
         r_del = await client.delete(f"/v1/spaces/wd_space/orders/{order_id}")
     assert r_del.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_delete_withdrawal_400_when_confirmed(main_app_withdrawal, test_db):
+    app, wallet_id = main_app_withdrawal
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        r = await client.post(
+            "/v1/spaces/wd_space/orders/withdrawal",
+            json={
+                "wallet_id": wallet_id,
+                "token_type": "native",
+                "symbol": "TRX",
+                "contract_address": None,
+                "amount_raw": 1_000_000,
+                "destination_address": "TV6ZVcKH24NzWxwdRbCvVD5gqAwaypdkRi",
+            },
+        )
+        assert r.status_code == 201
+        order_id = r.json()["order"]["id"]
+        row_res = await test_db.execute(select(Order).where(Order.id == order_id))
+        row = row_res.scalar_one()
+        payload = dict(row.payload or {})
+        payload["status"] = "confirmed"
+        row.payload = payload
+        test_db.add(row)
+        await test_db.commit()
+        r_del = await client.delete(f"/v1/spaces/wd_space/orders/{order_id}")
+    assert r_del.status_code == 400
+    assert "Cannot delete withdrawal" in r_del.json()["detail"]

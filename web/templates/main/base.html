@@ -24,6 +24,7 @@
   <script>
     window.__LOCALE__ = "{{ locale | default('ru') }}";
     window.__TRANSLATIONS__ = {{ translations_json | default('{}') | safe }};
+    window.__TRON_NETWORK__ = "{{ tron_network | default('mainnet') | e }}";
   </script>
   <aside id="sidebar-main" class="fixed inset-y-0 left-0 z-40 w-0 min-w-0 overflow-visible md:static md:z-auto md:w-auto"
          data-initial-page="{{ initial_page | default('dashboard') }}"

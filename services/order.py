@@ -45,6 +45,12 @@ WITHDRAWAL_STATUS_CONFIRMED = "confirmed"
 WITHDRAWAL_STATUS_FAILED = "failed"
 
 
+class WithdrawalDeleteForbidden(ValueError):
+    """Удаление заявки запрещено после отправки tx в сеть или по завершении."""
+
+    pass
+
+
 def _dedupe_pipeline(wallet_id: int) -> str:
     return f"ephemeral:multisig_pipeline:{wallet_id}"
 
@@ -331,10 +337,60 @@ class OrderService:
         wallet = w_res.scalar_one_or_none()
         if not wallet or (wallet.owner_did or "").strip() != owner_did:
             raise ValueError("Order not found")
+        p = dict(row.payload or {})
+        st = (p.get("status") or "").strip()
+        if st in (
+            WITHDRAWAL_STATUS_BROADCAST_SUBMITTED,
+            WITHDRAWAL_STATUS_CONFIRMED,
+            WITHDRAWAL_STATUS_FAILED,
+        ):
+            raise WithdrawalDeleteForbidden(
+                "Cannot delete withdrawal in status broadcast_submitted, confirmed, or failed"
+            )
         deleted = await self._orders.delete_withdrawal_by_id(order_id)
         if not deleted:
             raise ValueError("Order not found")
         await self._session.commit()
+
+    async def clear_offchain_signatures(
+        self,
+        space: str,
+        actor_wallet_address: str,
+        order_id: int,
+    ) -> OrderResource.Get:
+        """Сброс off-chain подписей мультисиг-заявки (owner | operator)."""
+        await self._space.ensure_owner_or_operator(space, actor_wallet_address)
+        owner_did = await self._owner_did_for_space(space)
+        row = await self._orders.get_by_id(order_id)
+        if not row or row.category != ORDER_CATEGORY_WITHDRAWAL:
+            raise ValueError("Order not found")
+        if row.space_wallet_id is None:
+            raise ValueError("Order not found")
+        w_stmt = select(Wallet).where(Wallet.id == row.space_wallet_id)
+        w_res = await self._session.execute(w_stmt)
+        wallet = w_res.scalar_one_or_none()
+        if not wallet or (wallet.owner_did or "").strip() != owner_did:
+            raise ValueError("Order not found")
+        p = dict(row.payload or {})
+        if (p.get("wallet_role") or "").strip() != "multisig":
+            raise ValueError("Only multisig withdrawals support signature reset")
+        st = (p.get("status") or "").strip()
+        if st not in (
+            WITHDRAWAL_STATUS_AWAITING_SIGNATURES,
+            WITHDRAWAL_STATUS_READY_TO_BROADCAST,
+        ):
+            raise ValueError("Cannot clear signatures in current status")
+        await self._orders.delete_withdrawal_signatures(order_id)
+        p["status"] = WITHDRAWAL_STATUS_AWAITING_SIGNATURES
+        p["broadcast_tx_id"] = None
+        p.pop("last_signer", None)
+        p.pop("signed_at", None)
+        await self._orders.update_withdrawal_payload(order_id, p)
+        out = await self._orders.get_by_id(order_id)
+        if not out:
+            raise ValueError("Order not found")
+        await self._session.commit()
+        return out
 
     async def get_public_sign_context(self, token: str) -> Optional[Dict[str, Any]]:
         resolved = await self.resolve_order_by_sign_token(token)
@@ -345,7 +401,14 @@ class OrderService:
         if not row or row.category != ORDER_CATEGORY_WITHDRAWAL:
             return None
         p = dict(row.payload or {})
-        sigs = await self._orders.list_withdrawal_signatures(order_id)
+        sigs_raw = await self._orders.list_withdrawal_signatures(order_id)
+        sigs: List[Dict[str, Any]] = []
+        for s in sigs_raw:
+            entry = dict(s)
+            ca = entry.get("created_at")
+            if ca is not None and hasattr(ca, "isoformat"):
+                entry["created_at"] = ca.isoformat()
+            sigs.append(entry)
         return {
             "order_id": row.id,
             "status": p.get("status"),
@@ -360,6 +423,7 @@ class OrderService:
             "long_expiration_ms": bool(p.get("long_expiration_ms")),
             "signatures": sigs,
             "broadcast_tx_id": p.get("broadcast_tx_id"),
+            "last_error": p.get("last_error"),
         }
 
     async def submit_signed_transaction(

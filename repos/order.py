@@ -234,6 +234,13 @@ class OrderRepository(BaseRepository):
             )
         return out
 
+    async def delete_withdrawal_signatures(self, order_id: int) -> int:
+        stmt = delete(OrderWithdrawalSignatureModel).where(
+            OrderWithdrawalSignatureModel.order_id == order_id
+        )
+        res = await self._session.execute(stmt)
+        return int(res.rowcount or 0)
+
 
 WITHDRAWAL_DEDUPE_PREFIX = "withdrawal:"
 

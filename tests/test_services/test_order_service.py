@@ -12,9 +12,11 @@ from services.multisig_wallet.constants import (
     MULTISIG_STATUS_PENDING_CONFIG,
 )
 from services.multisig_wallet.meta import default_meta_dict
+from repos.order import OrderRepository, withdrawal_dedupe_key
 from services.order import (
     ORDER_KIND_MULTISIG_PIPELINE,
     ORDER_KIND_MULTISIG_SPACE_DRIFT,
+    WITHDRAWAL_KIND,
     OrderService,
 )
 
@@ -287,3 +289,130 @@ async def test_refresh_no_space_drift_while_pending_config(
         select(Order).where(Order.dedupe_key == f"ephemeral:multisig_space_drift:{w.id}")
     )
     assert r.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_clear_offchain_signatures_multisig(
+    order_service: OrderService,
+    test_db,
+    test_redis,
+    test_settings,
+):
+    owner = WalletUser(
+        nickname="clr_wd_space",
+        wallet_address=_SPACE_TRON,
+        blockchain="tron",
+        did="did:web:escrow.ruswift.ru:clr_wd_space",
+    )
+    test_db.add(owner)
+    await test_db.commit()
+    await test_db.refresh(owner)
+
+    w_ms = Wallet(
+        name="ms_clr",
+        encrypted_mnemonic="enc",
+        role="multisig",
+        tron_address="TLrJJkGK4puQGZLFbrPxK2icPgADaNTq5B",
+        owner_did=owner.did,
+        multisig_setup_status=MULTISIG_STATUS_ACTIVE,
+        multisig_setup_meta={
+            **default_meta_dict(),
+            "actors": [_SIGNER_OTHER, _SPACE_TRON],
+            "threshold_n": 2,
+            "threshold_m": 2,
+        },
+    )
+    test_db.add(w_ms)
+    await test_db.commit()
+    await test_db.refresh(w_ms)
+
+    repo = OrderRepository(session=test_db, redis=test_redis, settings=test_settings)
+    created = await repo.insert_withdrawal_order(
+        dedupe_key=withdrawal_dedupe_key("cleartokentest0001"),
+        space_wallet_id=w_ms.id,
+        payload={
+            "kind": WITHDRAWAL_KIND,
+            "status": "awaiting_signatures",
+            "wallet_role": "multisig",
+            "wallet_id": w_ms.id,
+            "tron_address": w_ms.tron_address,
+            "token": {"type": "native", "symbol": "TRX", "decimals": 6},
+            "amount_raw": 1000,
+            "destination_address": _SIGNER_OTHER,
+            "threshold_n": 2,
+            "threshold_m": 2,
+            "actors_snapshot": [_SIGNER_OTHER, _SPACE_TRON],
+            "long_expiration_ms": True,
+            "broadcast_tx_id": None,
+        },
+    )
+    await repo.upsert_withdrawal_signature(
+        int(created.id),
+        _SIGNER_OTHER,
+        {"signed_transaction": {"txid": "x"}},
+    )
+    await test_db.commit()
+
+    out = await order_service.clear_offchain_signatures(
+        "clr_wd_space", _SPACE_TRON, int(created.id)
+    )
+    assert out.payload is not None
+    assert out.payload.get("status") == "awaiting_signatures"
+    assert out.payload.get("broadcast_tx_id") is None
+    sigs = await repo.list_withdrawal_signatures(int(created.id))
+    assert sigs == []
+
+
+@pytest.mark.asyncio
+async def test_clear_offchain_signatures_rejects_external(
+    order_service: OrderService,
+    test_db,
+    test_redis,
+    test_settings,
+):
+    owner = WalletUser(
+        nickname="clr_ext_space",
+        wallet_address=_SPACE_TRON,
+        blockchain="tron",
+        did="did:web:escrow.ruswift.ru:clr_ext_space",
+    )
+    test_db.add(owner)
+    await test_db.commit()
+    await test_db.refresh(owner)
+
+    w_ext = Wallet(
+        name="ext_clr",
+        encrypted_mnemonic=None,
+        role="external",
+        tron_address=_SIGNER_OTHER,
+        owner_did=owner.did,
+    )
+    test_db.add(w_ext)
+    await test_db.commit()
+    await test_db.refresh(w_ext)
+
+    repo = OrderRepository(session=test_db, redis=test_redis, settings=test_settings)
+    created = await repo.insert_withdrawal_order(
+        dedupe_key=withdrawal_dedupe_key("cleartokentest0002"),
+        space_wallet_id=w_ext.id,
+        payload={
+            "kind": WITHDRAWAL_KIND,
+            "status": "awaiting_signatures",
+            "wallet_role": "external",
+            "wallet_id": w_ext.id,
+            "tron_address": w_ext.tron_address,
+            "token": {"type": "native", "symbol": "TRX", "decimals": 6},
+            "amount_raw": 1000,
+            "destination_address": _SIGNER_OTHER,
+            "threshold_n": 1,
+            "threshold_m": 1,
+            "actors_snapshot": [],
+            "long_expiration_ms": False,
+        },
+    )
+    await test_db.commit()
+
+    with pytest.raises(ValueError, match="multisig"):
+        await order_service.clear_offchain_signatures(
+            "clr_ext_space", _SPACE_TRON, int(created.id)
+        )

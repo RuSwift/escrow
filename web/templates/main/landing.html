@@ -24,6 +24,7 @@
   <script>
     window.__LOCALE__ = "{{ locale | default('ru') }}";
     window.__TRANSLATIONS__ = {{ translations_json | default('{}') | safe }};
+    window.__TRON_NETWORK__ = "{{ tron_network | default('mainnet') | e }}";
   </script>
   <header class="p-6 flex justify-between items-center z-10">
     <div class="flex items-center gap-2">

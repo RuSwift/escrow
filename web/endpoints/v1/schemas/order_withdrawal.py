@@ -40,6 +40,10 @@ class OrderSignContextResponse(BaseModel):
     long_expiration_ms: bool = False
     signatures: List[Dict[str, Any]] = Field(default_factory=list)
     broadcast_tx_id: Optional[str] = None
+    last_error: Optional[str] = Field(
+        default=None,
+        description="Текст ошибки при status=failed",
+    )
 
 
 class OrderSignSubmitRequest(BaseModel):

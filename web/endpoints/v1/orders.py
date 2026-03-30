@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 
 from core.exceptions import SpacePermissionDenied
-from services.order import OrderService
+from services.order import OrderService, WithdrawalDeleteForbidden
 from web.endpoints.dependencies import (
     get_exchange_wallet_service,
     get_order_service,
@@ -64,12 +64,45 @@ async def delete_space_order(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=str(e),
         ) from e
+    except WithdrawalDeleteForbidden as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e),
         ) from e
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.delete(
+    "/spaces/{space}/orders/{order_id}/withdrawal-signatures",
+    response_model=OrderItem,
+)
+async def clear_withdrawal_order_signatures(
+    space: str,
+    order_id: int,
+    wallet_address: str = Depends(get_required_wallet_address_for_space),
+    svc: OrderService = Depends(get_order_service),
+):
+    """Сброс off-chain подписей заявки на вывод (multisig, owner | operator)."""
+    try:
+        order = await svc.clear_offchain_signatures(
+            space, wallet_address, order_id
+        )
+    except SpacePermissionDenied as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e),
+        ) from e
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e),
+        ) from e
+    return OrderItem.model_validate(order.model_dump())
 
 
 @router.post(

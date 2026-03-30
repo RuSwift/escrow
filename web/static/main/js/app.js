@@ -75,6 +75,10 @@
     window.__SPACE_SUBS_COUNT__ = spaceSubsCount;
     window.__SPACE_PROFILE_FILLED__ = spaceProfileFilled;
     window.__SPACE_OWNER_TRON__ = (el.getAttribute('data-space-owner-tron') || '').trim();
+    var tronNetAttr = (el.getAttribute('data-tron-network') || '').trim().toLowerCase();
+    if (tronNetAttr) {
+        window.__TRON_NETWORK__ = tronNetAttr;
+    }
 
     var initialPage = (el.getAttribute('data-initial-page') || 'dashboard').trim();
     var validPages = [
