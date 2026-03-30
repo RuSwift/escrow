@@ -82,7 +82,9 @@ Vue.component('dashboard', {
             rampWalletById: {},
             signatoryTronLabelByAddress: {},
             ordersSignLinkCopiedId: null,
-            _ordersSignLinkCopyTimer: null
+            _ordersSignLinkCopyTimer: null,
+            /** Периодическое обновление таблицы заявок (в т.ч. статус выводов после подписи на /o/{token}). */
+            ordersPollTimer: null
         };
     },
     computed: {
@@ -123,6 +125,7 @@ Vue.component('dashboard', {
                     String(p.tron_address || ''),
                     String(p.status || ''),
                     String(p.destination_address || ''),
+                    String(p.purpose || ''),
                     String((p.token && p.token.symbol) || ''),
                     String(self.withdrawalSignatoriesDisplay(row) || '')
                 ].join(' ').toLowerCase();
@@ -179,6 +182,14 @@ Vue.component('dashboard', {
         }
         this.fetchRatios();
         this.fetchOrders();
+        this.startOrdersPoll();
+    },
+    beforeDestroy: function() {
+        this.stopOrdersPoll();
+        if (this._ordersSignLinkCopyTimer) {
+            clearTimeout(this._ordersSignLinkCopyTimer);
+            this._ordersSignLinkCopyTimer = null;
+        }
     },
     methods: {
         fetchRatios: function() {
@@ -208,7 +219,8 @@ Vue.component('dashboard', {
                     self.ratiosLoading = false;
                 });
         },
-        fetchOrders: function() {
+        fetchOrders: function(opts) {
+            var silent = !!(opts && opts.silent);
             var self = this;
             var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__) ? String(window.__CURRENT_SPACE__).trim() : '';
             if (!space) {
@@ -216,6 +228,22 @@ Vue.component('dashboard', {
                 self.rampWalletByTron = {};
                 self.rampWalletById = {};
                 self.signatoryTronLabelByAddress = {};
+                return;
+            }
+            if (silent) {
+                fetch('/v1/spaces/' + encodeURIComponent(space) + '/orders', {
+                    method: 'GET',
+                    headers: authHeadersMain(),
+                    credentials: 'include'
+                })
+                    .then(function(res) {
+                        if (!res.ok) throw new Error('HTTP ' + res.status);
+                        return res.json();
+                    })
+                    .then(function(data) {
+                        self.apiOrders = (data && data.items && Array.isArray(data.items)) ? data.items : [];
+                    })
+                    .catch(function() {});
                 return;
             }
             self.ordersLoading = true;
@@ -241,6 +269,20 @@ Vue.component('dashboard', {
             Promise.all([ordersPromise, walletsPromise, labelsPromise]).finally(function() {
                 self.ordersLoading = false;
             });
+        },
+        startOrdersPoll: function() {
+            this.stopOrdersPoll();
+            var self = this;
+            this.ordersPollTimer = setInterval(function() {
+                if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+                self.fetchOrders({ silent: true });
+            }, 5000);
+        },
+        stopOrdersPoll: function() {
+            if (this.ordersPollTimer != null) {
+                clearInterval(this.ordersPollTimer);
+                this.ordersPollTimer = null;
+            }
         },
         fetchSignatoryTronLabels: function() {
             var self = this;
@@ -360,8 +402,25 @@ Vue.component('dashboard', {
             var t = this.$t(key);
             return (t && t !== key) ? t : st;
         },
-        withdrawalBadgeClass: function() {
-            return 'bg-sky-50 text-sky-900 border border-sky-100';
+        withdrawalBadgeClass: function(order) {
+            if (!this.isWithdrawalOrder(order)) {
+                return 'bg-sky-50 text-sky-900 border border-sky-100';
+            }
+            var p = (order && order.payload) || {};
+            var st = String((p.status || '')).trim();
+            if (st === 'confirmed') {
+                return 'bg-main-green/12 text-main-green border border-main-green/25';
+            }
+            if (st === 'failed') {
+                return 'bg-main-red/10 text-main-red border border-main-red/25';
+            }
+            if (st === 'broadcast_submitted' || st === 'awaiting_signatures' || st === 'ready_to_broadcast') {
+                return 'bg-main-blue/12 text-main-blue border border-main-blue/25';
+            }
+            if (st) {
+                return 'bg-main-blue/10 text-main-blue border border-main-blue/20';
+            }
+            return 'bg-gray-100 text-[#58667e] border border-[#eff2f5]';
         },
         withdrawalSpinnerVisible: function(order) {
             if (!this.isWithdrawalOrder(order)) return false;
@@ -375,6 +434,24 @@ Vue.component('dashboard', {
             if (!s) return '—';
             if (s.length <= 12) return s;
             return s.slice(0, 4) + '…' + s.slice(-4);
+        },
+        /** Обрезка длинной строки для таблицы: начало + … + конец (середина свёрнута). */
+        ellipsisMiddle: function(str, maxLen) {
+            var n = maxLen == null ? 56 : maxLen;
+            var s = String(str == null ? '' : str);
+            if (s.length <= n) return s;
+            var take = Math.floor((n - 1) / 2);
+            if (take < 4) take = 4;
+            return s.slice(0, take) + '…' + s.slice(s.length - take);
+        },
+        /** Подзаголовок строки заявки в таблице (с обрезкой середины). */
+        orderRowDescDisplay: function(order) {
+            return this.ellipsisMiddle(this.orderRowDesc(order), 56);
+        },
+        /** Полный текст подсказки под описанием в таблице. */
+        orderRowDescTooltip: function(order) {
+            if (this.isWithdrawalOrder(order)) return this.withdrawalRowDescTitle(order);
+            return this.orderRowDesc(order);
         },
         displayNameForTronAddress: function(addr) {
             var a = String(addr || '').trim();
@@ -430,6 +507,8 @@ Vue.component('dashboard', {
             var dest = (p.destination_address || '').trim();
             var tok = (p.token && p.token.symbol) ? String(p.token.symbol) : '';
             var parts = [];
+            var pur = (p.purpose || '').trim();
+            if (pur) parts.push(pur);
             if (src) parts.push(src);
             if (tok) parts.push(tok);
             if (dest) parts.push(dest);
@@ -749,10 +828,10 @@ Vue.component('dashboard', {
                 var tail = tok + (destDisp ? ' → ' + destDisp : '');
                 var srcRaw = (p.tron_address || '').trim();
                 var srcDisp = srcRaw ? this.shortenAddress(srcRaw) : '';
-                if (srcDisp && srcDisp !== '—') {
-                    return srcDisp + ' → ' + tail;
-                }
-                return tail;
+                var line = (srcDisp && srcDisp !== '—') ? (srcDisp + ' → ' + tail) : tail;
+                var pur = (p.purpose || '').trim();
+                if (pur) return pur + ' — ' + line;
+                return line;
             }
             if (p.kind === 'multisig_space_drift') {
                 if (p.owners_drift == null && p.actors_drift == null) {
@@ -891,13 +970,8 @@ Vue.component('dashboard', {
             <span>[[ $t('main.dashboard.orders_refresh') ]]</span>
           </button>
         </div>
-        <div class="flex flex-col sm:flex-row gap-2 w-full md:w-auto">
-          <div class="relative flex-1 md:w-80">
-            <input v-model="ordersSearch" type="text" :placeholder="$t('main.dashboard.orders_search_placeholder')" class="w-full pl-10 pr-4 py-2 bg-white border border-[#eff2f5] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-main-blue/20" />
-          </div>
-          <button type="button" class="cmc-btn-primary flex items-center justify-center gap-2 whitespace-nowrap py-2 px-4">
-            [[ $t('main.dashboard.create_escrow') ]]
-          </button>
+        <div class="relative w-full md:w-80 md:shrink-0">
+          <input v-model="ordersSearch" type="text" :placeholder="$t('main.dashboard.orders_search_placeholder')" class="w-full pl-10 pr-4 py-2 bg-white border border-[#eff2f5] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-main-blue/20" />
         </div>
       </div>
       <div v-if="canCreateWithdrawal" class="flex flex-wrap items-center gap-2 mb-4">
@@ -991,7 +1065,7 @@ Vue.component('dashboard', {
                     </div>
                     <div class="min-w-0">
                       <div class="font-bold truncate">[[ orderRowTitle(order) ]]</div>
-                      <div class="text-xs text-cmc-muted truncate max-w-[240px] sm:max-w-md" :title="isWithdrawalOrder(order) ? withdrawalRowDescTitle(order) : ''">[[ orderRowDesc(order) ]]</div>
+                      <div class="text-xs text-cmc-muted max-w-[240px] sm:max-w-md min-w-0 whitespace-nowrap overflow-hidden" :title="orderRowDescTooltip(order)">[[ orderRowDescDisplay(order) ]]</div>
                     </div>
                   </div>
                 </td>
@@ -1001,9 +1075,9 @@ Vue.component('dashboard', {
                 </td>
                 <td class="cmc-table-cell">
                   <div v-if="isWithdrawalOrder(order)" class="flex items-center gap-1 min-w-0">
-                    <div :class="['inline-flex items-center gap-1.5 min-w-0 max-w-full rounded-md pl-2 pr-1.5 py-0.5', withdrawalBadgeClass()]">
+                    <div :class="['inline-flex items-center gap-1.5 min-w-0 max-w-full rounded-md pl-2 pr-1.5 py-0.5', withdrawalBadgeClass(order)]">
                       <span class="text-[10px] font-bold uppercase truncate">[[ withdrawalStatusLabel(order) ]]</span>
-                      <svg v-if="withdrawalSpinnerVisible(order)" class="w-3.5 h-3.5 shrink-0 animate-spin opacity-90 text-sky-800" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                      <svg v-if="withdrawalSpinnerVisible(order)" class="w-3.5 h-3.5 shrink-0 animate-spin opacity-90 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                     </div>
                   </div>
                   <div v-else class="flex items-center gap-1 min-w-0">

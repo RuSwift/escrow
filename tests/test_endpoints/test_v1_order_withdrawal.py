@@ -89,10 +89,12 @@ async def test_create_withdrawal_201(main_app_withdrawal, test_redis):
                 "contract_address": None,
                 "amount_raw": 1_000_000,
                 "destination_address": "TV6ZVcKH24NzWxwdRbCvVD5gqAwaypdkRi",
+                "purpose": "Тестовое назначение",
             },
         )
         assert r.status_code == 201, r.text
         data = r.json()
+        assert data["order"]["payload"].get("purpose") == "Тестовое назначение"
         assert "sign_url" in data
         assert "/o/" in data["sign_url"]
         assert data["order"]["payload"]["kind"] == "withdrawal_request"
@@ -105,6 +107,7 @@ async def test_create_withdrawal_201(main_app_withdrawal, test_redis):
         r_sign = await client.get(f"/v1/order-sign/{sign_token}")
         assert r_sign.status_code == 200, r_sign.text
         assert r_sign.json()["order_id"] == data["order"]["id"]
+        assert r_sign.json().get("purpose") == "Тестовое назначение"
 
 
 @pytest.mark.asyncio
@@ -134,6 +137,7 @@ async def test_delete_withdrawal_204(main_app_withdrawal):
                 "contract_address": None,
                 "amount_raw": 1_000_000,
                 "destination_address": "TV6ZVcKH24NzWxwdRbCvVD5gqAwaypdkRi",
+                "purpose": "Выплата контрагенту",
             },
         )
         assert r.status_code == 201
@@ -158,6 +162,7 @@ async def test_delete_withdrawal_400_when_confirmed(main_app_withdrawal, test_db
                 "contract_address": None,
                 "amount_raw": 1_000_000,
                 "destination_address": "TV6ZVcKH24NzWxwdRbCvVD5gqAwaypdkRi",
+                "purpose": "Тест",
             },
         )
         assert r.status_code == 201

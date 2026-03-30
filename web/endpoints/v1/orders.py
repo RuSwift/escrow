@@ -130,6 +130,7 @@ async def create_withdrawal_order(
             contract_address=body.contract_address,
             amount_raw=body.amount_raw,
             destination_address=body.destination_address,
+            purpose=body.purpose,
         )
     except SpacePermissionDenied as e:
         raise HTTPException(

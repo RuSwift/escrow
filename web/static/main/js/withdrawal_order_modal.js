@@ -1,5 +1,6 @@
 /**
  * Модалка: заявка на вывод (ramp-кошелёк, токен TRX/TRC-20, сумма, адрес).
+ * Стейблкоины — radio (USDT первым), TRX — отдельный пункт в конце.
  */
 (function() {
     Vue.component('withdrawal-order-modal', {
@@ -11,12 +12,12 @@
             return {
                 loading: false,
                 submitError: null,
-                successUrl: null,
                 rampWallets: [],
                 walletId: '',
-                tokenMode: 'native',
-                selectedTokenContract: '',
+                /** 'native' (TRX) или contract_address TRC-20 стейбла */
+                tokenChoice: 'native',
                 amount: '',
+                purpose: '',
                 destination: ''
             };
         },
@@ -27,17 +28,31 @@
                 return raw.filter(function(t) {
                     return (t.network || '').toUpperCase() === 'TRON';
                 });
+            },
+            sortedStableTokens: function() {
+                var list = this.collateralTokens.slice();
+                list.sort(function(a, b) {
+                    var sa = (a.symbol || '').toUpperCase();
+                    var sb = (b.symbol || '').toUpperCase();
+                    if (sa === 'USDT') return -1;
+                    if (sb === 'USDT') return 1;
+                    return sa.localeCompare(sb);
+                });
+                return list;
             }
         },
         watch: {
             show: function(v) {
                 if (v) {
                     this.submitError = null;
-                    this.successUrl = null;
+                    this.applyDefaultTokenChoice();
                     this.fetchWallets();
                 }
             },
-            tokenMode: function() {
+            tokenChoice: function() {
+                this.submitError = null;
+            },
+            purpose: function() {
                 this.submitError = null;
             }
         },
@@ -87,10 +102,25 @@
             close: function() {
                 this.$emit('close');
             },
+            applyDefaultTokenChoice: function() {
+                var stables = this.sortedStableTokens;
+                if (stables.length) {
+                    var pick = null;
+                    for (var i = 0; i < stables.length; i++) {
+                        if ((stables[i].symbol || '').toUpperCase() === 'USDT') {
+                            pick = stables[i];
+                            break;
+                        }
+                    }
+                    if (!pick) pick = stables[0];
+                    this.tokenChoice = String(pick.contract_address || '').trim() || 'native';
+                } else {
+                    this.tokenChoice = 'native';
+                }
+            },
             submit: function() {
                 var self = this;
                 self.submitError = null;
-                self.successUrl = null;
                 var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__)
                     ? String(window.__CURRENT_SPACE__).trim()
                     : '';
@@ -114,12 +144,20 @@
                     self.submitError = self.$t('main.withdrawal_modal.error_amount');
                     return;
                 }
-                var tokenType = self.tokenMode === 'native' ? 'native' : 'trc20';
-                var symbol = tokenType === 'native' ? 'TRX' : '';
+                var purposeTrim = String(self.purpose || '').trim();
+                if (!purposeTrim) {
+                    self.submitError = self.$t('main.withdrawal_modal.error_purpose');
+                    return;
+                }
+                var tokenType = self.tokenChoice === 'native' ? 'native' : 'trc20';
+                var symbol = '';
                 var contract = null;
-                if (tokenType === 'trc20') {
-                    var ct = self.collateralTokens.find(function(x) {
-                        return (x.contract_address || '') === self.selectedTokenContract;
+                var ct = null;
+                if (tokenType === 'native') {
+                    symbol = 'TRX';
+                } else {
+                    ct = self.collateralTokens.find(function(x) {
+                        return (x.contract_address || '') === self.tokenChoice;
                     });
                     if (!ct) {
                         self.submitError = self.$t('main.withdrawal_modal.error_token');
@@ -141,7 +179,8 @@
                     symbol: symbol,
                     contract_address: contract,
                     amount_raw: amountRaw,
-                    destination_address: dest
+                    destination_address: dest,
+                    purpose: purposeTrim
                 };
                 self.loading = true;
                 fetch('/v1/spaces/' + encodeURIComponent(space) + '/orders/withdrawal', {
@@ -159,9 +198,9 @@
                         return r.json();
                     })
                     .then(function(data) {
-                        self.successUrl = (data && data.sign_url) ? data.sign_url : '';
                         self.$emit('created', data);
                         self.fetchOrdersParent();
+                        self.close();
                     })
                     .catch(function(e) {
                         self.submitError = String(e && e.message ? e.message : e);
@@ -186,26 +225,27 @@
             '</button></div>' +
             '<div class="overflow-auto p-4 flex-1 min-h-0 space-y-4 text-sm">' +
             '<p v-if="submitError" class="text-main-red text-xs">[[ submitError ]]</p>' +
-            '<p v-if="successUrl" class="text-xs text-emerald-800 break-all">' +
-            '<span class="font-semibold">[[ $t(\'main.withdrawal_modal.sign_link\') ]]</span><br>' +
-            '<a :href="successUrl" class="text-main-blue underline" target="_blank" rel="noopener">[[ successUrl ]]</a></p>' +
             '<div v-if="loading && !rampWallets.length" class="text-cmc-muted text-xs">[[ $t(\'main.loading\') ]]</div>' +
             '<div><label class="block text-xs font-semibold text-[#58667e] mb-1">[[ $t(\'main.withdrawal_modal.wallet\') ]]</label>' +
             '<select v-model="walletId" class="w-full px-3 py-2 border border-[#eff2f5] rounded-lg text-sm">' +
             '<option value="" disabled>[[ $t(\'main.withdrawal_modal.wallet_placeholder\') ]]</option>' +
             '<option v-for="w in rampWallets" :key="\'rw-\' + w.id" :value="w.id">[[ w.name ]] ([[ w.role ]])</option>' +
             '</select></div>' +
-            '<div><label class="block text-xs font-semibold text-[#58667e] mb-1">[[ $t(\'main.withdrawal_modal.token\') ]]</label>' +
-            '<select v-model="tokenMode" class="w-full px-3 py-2 border border-[#eff2f5] rounded-lg text-sm mb-2">' +
-            '<option value="native">TRX</option>' +
-            '<option value="trc20">[[ $t(\'main.withdrawal_modal.token_trc20\') ]]</option>' +
-            '</select>' +
-            '<select v-if="tokenMode === \'trc20\'" v-model="selectedTokenContract" class="w-full px-3 py-2 border border-[#eff2f5] rounded-lg text-sm">' +
-            '<option value="" disabled>[[ $t(\'main.withdrawal_modal.token_pick\') ]]</option>' +
-            '<option v-for="tok in collateralTokens" :key="tok.contract_address" :value="tok.contract_address">[[ tok.symbol ]]</option>' +
-            '</select></div>' +
+            '<div><span class="block text-xs font-semibold text-[#58667e] mb-2">[[ $t(\'main.withdrawal_modal.token\') ]]</span>' +
+            '<div class="space-y-2" role="radiogroup" :aria-label="$t(\'main.withdrawal_modal.token\')">' +
+            '<label v-for="tok in sortedStableTokens" :key="\'wd-tok-\' + tok.contract_address" class="flex items-center gap-2.5 cursor-pointer rounded-lg border px-3 py-2.5 min-h-[44px] touch-manipulation transition-colors" :class="tokenChoice === tok.contract_address ? \'border-main-blue bg-main-blue/5\' : \'border-[#eff2f5] hover:bg-[#f8fafd]\'">' +
+            '<input type="radio" class="shrink-0 w-4 h-4 accent-main-blue" :value="tok.contract_address" v-model="tokenChoice" />' +
+            '<span class="text-sm font-medium text-[#191d23]">[[ tok.symbol ]]</span>' +
+            '</label>' +
+            '<label class="flex items-center gap-2.5 cursor-pointer rounded-lg border px-3 py-2.5 min-h-[44px] touch-manipulation transition-colors" :class="tokenChoice === \'native\' ? \'border-main-blue bg-main-blue/5\' : \'border-[#eff2f5] hover:bg-[#f8fafd]\'">' +
+            '<input type="radio" class="shrink-0 w-4 h-4 accent-main-blue" value="native" v-model="tokenChoice" />' +
+            '<span class="text-sm text-[#58667e]">TRX</span>' +
+            '</label>' +
+            '</div></div>' +
             '<div><label class="block text-xs font-semibold text-[#58667e] mb-1">[[ $t(\'main.withdrawal_modal.amount\') ]]</label>' +
             '<input v-model="amount" type="text" inputmode="decimal" class="w-full px-3 py-2 border border-[#eff2f5] rounded-lg text-sm" :placeholder="$t(\'main.withdrawal_modal.amount_ph\')" /></div>' +
+            '<div><label class="block text-xs font-semibold text-[#58667e] mb-1">[[ $t(\'main.withdrawal_modal.purpose\') ]]</label>' +
+            '<textarea v-model="purpose" rows="2" class="w-full px-3 py-2 border border-[#eff2f5] rounded-lg text-sm resize-y min-h-[2.75rem]" :placeholder="$t(\'main.withdrawal_modal.purpose_ph\')"></textarea></div>' +
             '<div><label class="block text-xs font-semibold text-[#58667e] mb-1">[[ $t(\'main.withdrawal_modal.destination\') ]]</label>' +
             '<input v-model="destination" type="text" class="w-full px-3 py-2 border border-[#eff2f5] rounded-lg text-sm font-mono" :placeholder="$t(\'main.withdrawal_modal.destination_ph\')" /></div>' +
             '</div>' +

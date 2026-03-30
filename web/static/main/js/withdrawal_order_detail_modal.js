@@ -53,6 +53,11 @@
                 if (c && (c.destination_address || '').trim()) return (c.destination_address || '').trim();
                 return String((this.p.destination_address || '')).trim();
             },
+            displayPurpose: function() {
+                var c = this.signContext;
+                if (c && c.purpose != null && String(c.purpose).trim()) return String(c.purpose).trim();
+                return String((this.p.purpose || '')).trim();
+            },
             signToken: function() {
                 if (!this.order) return '';
                 var dk = String((this.order.dedupe_key || '')).trim();
@@ -521,6 +526,8 @@
             '</dd></div>' +
             '<div class="flex flex-col gap-0.5"><dt class="text-[#58667e] font-semibold">[[ $t(\'main.withdrawal_detail.field_amount\') ]]</dt>' +
             '<dd class="text-[#191d23] font-mono">[[ amountDisplay ]]</dd></div>' +
+            '<div class="flex flex-col gap-0.5"><dt class="text-[#58667e] font-semibold">[[ $t(\'main.withdrawal_detail.field_purpose\') ]]</dt>' +
+            '<dd class="text-[#191d23] text-xs leading-relaxed break-words whitespace-pre-wrap">[[ displayPurpose || \'\u2014\' ]]</dd></div>' +
             '<div class="flex flex-col gap-0.5"><dt class="text-[#58667e] font-semibold">[[ $t(\'main.withdrawal_detail.field_source\') ]]</dt>' +
             '<dd class="text-[#191d23] text-xs leading-relaxed break-words" :title="displaySourceAddr">' +
             '<span class="font-semibold text-[#30384a]" v-if="labelForTron(displaySourceAddr)">[[ labelForTron(displaySourceAddr) ]]</span>' +

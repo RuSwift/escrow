@@ -210,6 +210,7 @@ class OrderService:
         contract_address: Optional[str],
         amount_raw: int,
         destination_address: str,
+        purpose: str,
     ) -> Tuple[OrderResource.Get, str, str]:
         """
         Создаёт ордер withdrawal и токен в Redis; возвращает (order, sign_token, sign_path).
@@ -228,6 +229,11 @@ class OrderService:
         dest = (destination_address or "").strip()
         if not is_valid_tron_address(dest):
             raise ValueError("Invalid destination TRON address")
+        purpose_clean = (purpose or "").strip()
+        if not purpose_clean:
+            raise ValueError("Purpose is required")
+        if len(purpose_clean) > 512:
+            raise ValueError("Purpose is too long")
         if amount_raw <= 0:
             raise ValueError("Amount must be positive")
 
@@ -288,6 +294,7 @@ class OrderService:
             },
             "amount_raw": int(amount_raw),
             "destination_address": dest,
+            "purpose": purpose_clean,
             "threshold_n": threshold_n,
             "threshold_m": threshold_m,
             "actors_snapshot": sorted(actors),
@@ -417,6 +424,7 @@ class OrderService:
             "token": p.get("token"),
             "amount_raw": p.get("amount_raw"),
             "destination_address": p.get("destination_address"),
+            "purpose": p.get("purpose"),
             "threshold_n": p.get("threshold_n"),
             "threshold_m": p.get("threshold_m"),
             "actors_snapshot": p.get("actors_snapshot") or [],

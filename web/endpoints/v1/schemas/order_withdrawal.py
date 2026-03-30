@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from web.endpoints.v1.schemas.orders import OrderItem
 
@@ -19,6 +19,20 @@ class WithdrawalCreateRequest(BaseModel):
     )
     amount_raw: int = Field(..., gt=0, description="SUN или минимальные единицы токена")
     destination_address: str = Field(..., min_length=26, max_length=64)
+    purpose: str = Field(
+        ...,
+        min_length=1,
+        max_length=512,
+        description="Назначение платежа (обязательный комментарий)",
+    )
+
+    @field_validator("purpose")
+    @classmethod
+    def purpose_stripped_nonempty(cls, v: str) -> str:
+        s = (v or "").strip()
+        if not s:
+            raise ValueError("purpose must not be empty")
+        return s
 
 
 class WithdrawalCreateResponse(BaseModel):
@@ -34,6 +48,10 @@ class OrderSignContextResponse(BaseModel):
     token: Optional[Dict[str, Any]] = None
     amount_raw: Optional[int] = None
     destination_address: Optional[str] = None
+    purpose: Optional[str] = Field(
+        default=None,
+        description="Назначение платежа",
+    )
     threshold_n: Optional[int] = None
     threshold_m: Optional[int] = None
     actors_snapshot: List[str] = Field(default_factory=list)
