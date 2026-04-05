@@ -102,6 +102,21 @@
             close: function() {
                 this.$emit('close');
             },
+            resetForm: function() {
+                this.walletId = '';
+                this.amount = '';
+                this.purpose = '';
+                this.destination = '';
+                this.submitError = null;
+                this.applyDefaultTokenChoice();
+            },
+            goToWallets: function() {
+                this.close();
+                var p = this.$parent;
+                if (p && typeof p.goToWallets === 'function') {
+                    p.goToWallets();
+                }
+            },
             applyDefaultTokenChoice: function() {
                 var stables = this.sortedStableTokens;
                 if (stables.length) {
@@ -200,6 +215,7 @@
                     .then(function(data) {
                         self.$emit('created', data);
                         self.fetchOrdersParent();
+                        self.resetForm();
                         self.close();
                     })
                     .catch(function(e) {
@@ -232,12 +248,16 @@
             '<div class="overflow-auto p-4 flex-1 min-h-0 space-y-4 text-sm">' +
             '<p v-if="submitError" class="text-main-red text-xs">[[ submitError ]]</p>' +
             '<div v-if="loading && !rampWallets.length" class="text-cmc-muted text-xs">[[ $t(\'main.loading\') ]]</div>' +
-            '<div><label class="block text-xs font-semibold text-[#58667e] mb-1">[[ $t(\'main.withdrawal_modal.wallet\') ]]</label>' +
+            '<div v-if="!loading && !rampWallets.length" class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-amber-800 text-xs font-medium flex flex-wrap items-center gap-x-2 gap-y-1">' +
+            '<span>[[ $t(\'main.dashboard.no_corp_wallets_warning\') ]]</span>' +
+            '<a href="#" @click.prevent="goToWallets()" class="font-semibold text-main-blue hover:underline">[[ $t(\'main.dashboard.go_to_wallets\') ]]</a>' +
+            '</div>' +
+            '<div v-else-if="rampWallets.length"><label class="block text-xs font-semibold text-[#58667e] mb-1">[[ $t(\'main.withdrawal_modal.wallet\') ]]</label>' +
             '<select v-model="walletId" class="w-full px-3 py-2 border border-[#eff2f5] rounded-lg text-sm">' +
             '<option value="" disabled>[[ $t(\'main.withdrawal_modal.wallet_placeholder\') ]]</option>' +
             '<option v-for="w in rampWallets" :key="\'rw-\' + w.id" :value="w.id">[[ w.name ]] ([[ w.role ]])</option>' +
             '</select></div>' +
-            '<div><span class="block text-xs font-semibold text-[#58667e] mb-2">[[ $t(\'main.withdrawal_modal.token\') ]]</span>' +
+            '<div v-if="rampWallets.length"><span class="block text-xs font-semibold text-[#58667e] mb-2">[[ $t(\'main.withdrawal_modal.token\') ]]</span>' +
             '<div class="space-y-2" role="radiogroup" :aria-label="$t(\'main.withdrawal_modal.token\')">' +
             '<label v-for="tok in sortedStableTokens" :key="\'wd-tok-\' + tok.contract_address" class="flex items-center gap-2.5 cursor-pointer rounded-lg border px-3 py-2.5 min-h-[44px] touch-manipulation transition-colors" :class="tokenChoice === tok.contract_address ? \'border-main-blue bg-main-blue/5\' : \'border-[#eff2f5] hover:bg-[#f8fafd]\'">' +
             '<input type="radio" class="shrink-0 w-4 h-4 accent-main-blue" :value="tok.contract_address" v-model="tokenChoice" />' +
@@ -248,16 +268,16 @@
             '<span class="text-sm text-[#58667e]">TRX</span>' +
             '</label>' +
             '</div></div>' +
-            '<div><label class="block text-xs font-semibold text-[#58667e] mb-1">[[ $t(\'main.withdrawal_modal.amount\') ]]</label>' +
+            '<div v-if="rampWallets.length"><label class="block text-xs font-semibold text-[#58667e] mb-1">[[ $t(\'main.withdrawal_modal.amount\') ]]</label>' +
             '<input v-model="amount" type="text" inputmode="decimal" class="w-full px-3 py-2 border border-[#eff2f5] rounded-lg text-sm" :placeholder="$t(\'main.withdrawal_modal.amount_ph\')" /></div>' +
-            '<div><label class="block text-xs font-semibold text-[#58667e] mb-1">[[ $t(\'main.withdrawal_modal.purpose\') ]]</label>' +
+            '<div v-if="rampWallets.length"><label class="block text-xs font-semibold text-[#58667e] mb-1">[[ $t(\'main.withdrawal_modal.purpose\') ]]</label>' +
             '<textarea v-model="purpose" rows="2" class="w-full px-3 py-2 border border-[#eff2f5] rounded-lg text-sm resize-y min-h-[2.75rem]" :placeholder="$t(\'main.withdrawal_modal.purpose_ph\')"></textarea></div>' +
-            '<div><label class="block text-xs font-semibold text-[#58667e] mb-1">[[ $t(\'main.withdrawal_modal.destination\') ]]</label>' +
+            '<div v-if="rampWallets.length"><label class="block text-xs font-semibold text-[#58667e] mb-1">[[ $t(\'main.withdrawal_modal.destination\') ]]</label>' +
             '<input v-model="destination" type="text" class="w-full px-3 py-2 border border-[#eff2f5] rounded-lg text-sm font-mono" :placeholder="$t(\'main.withdrawal_modal.destination_ph\')" /></div>' +
             '</div>' +
             '<div class="px-4 py-3 border-t border-[#eff2f5] flex justify-end gap-2 shrink-0">' +
             '<button type="button" class="px-4 py-2 text-sm font-semibold rounded-lg border border-[#eff2f5] bg-white text-[#191d23] hover:bg-[#f8fafd]" @click="close">[[ $t(\'main.withdrawal_modal.cancel\') ]]</button>' +
-            '<button type="button" class="px-4 py-2 text-sm font-semibold rounded-lg bg-main-blue text-white hover:opacity-90 disabled:opacity-50" :disabled="loading" @click="submit">[[ $t(\'main.withdrawal_modal.submit\') ]]</button>' +
+            '<button v-if="rampWallets.length" type="button" class="px-4 py-2 text-sm font-semibold rounded-lg bg-main-blue text-white hover:opacity-90 disabled:opacity-50" :disabled="loading" @click="submit">[[ $t(\'main.withdrawal_modal.submit\') ]]</button>' +
             '</div></div></div>' +
             '</transition>'
     });
