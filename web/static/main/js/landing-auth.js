@@ -42,11 +42,17 @@
                 openLogin: function() {
                     window.dispatchEvent(new CustomEvent('open-landing-login'));
                 },
-                goToSpace: function(space) {
-                    if (!space) return;
+            goToSpace: function(space) {
+                if (!space) return;
+                var next = (new URLSearchParams(window.location.search)).get('next');
+                // Если в next указан именно этот спейс, переходим по нему (там может быть initial_page)
+                if (next && next.startsWith('/') && decodeURIComponent(next.split('/')[1]) === space) {
+                    window.location.href = next;
+                } else {
                     window.location.href = '/' + encodeURIComponent(space);
-                },
-                truncateMiddle: function(str, maxLen) {
+                }
+            },
+            truncateMiddle: function(str, maxLen) {
                     if (!str || str.length <= maxLen) return str || '';
                     var half = Math.floor((maxLen - 3) / 2);
                     return str.slice(0, half) + '...' + str.slice(-(maxLen - 3 - half));
@@ -182,8 +188,13 @@
             },
             goToSpace: function(space) {
                 if (!space) return;
-                var path = '/' + encodeURIComponent(space);
-                window.location.href = path;
+                var next = (new URLSearchParams(window.location.search)).get('next');
+                // Если в next указан именно этот спейс, переходим по нему (там может быть initial_page)
+                if (next && next.startsWith('/') && decodeURIComponent(next.split('/')[1]) === space) {
+                    window.location.href = next;
+                } else {
+                    window.location.href = '/' + encodeURIComponent(space);
+                }
             },
             submitInit: function() {
                 var self = this;

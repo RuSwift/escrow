@@ -6,10 +6,11 @@ import json
 from pathlib import Path
 
 from contextlib import asynccontextmanager
-from fastapi import Depends, FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi import Depends, FastAPI, Request, HTTPException
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.exception_handlers import http_exception_handler as default_http_exception_handler
 
 from db import init_db
 from db.models import WalletUserSubRole
@@ -49,6 +50,23 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Escrow Main API", lifespan=lifespan)
     install_locale_middleware(app)
 
+    @app.exception_handler(HTTPException)
+    async def custom_http_exception_handler(request: Request, exc: HTTPException):
+        """Редирект на лендинг при 401 для браузерных запросов."""
+        if exc.status_code == 401:
+            accept = request.headers.get("accept", "")
+            if "text/html" in accept:
+                # Если пользователь ломится в какой-то спейс, запоминаем куда
+                path = request.url.path
+                query = f"?next={path}" if path and path != "/" else ""
+                # Если это корень, не добавляем next
+                if path == "/":
+                    query = ""
+                return RedirectResponse(url=f"/{query}")
+        
+        # Для API или других ошибок используем стандартный обработчик
+        return await default_http_exception_handler(request, exc)
+
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
@@ -81,6 +99,13 @@ def create_app() -> FastAPI:
         tron_net = (settings.tron.network or "mainnet").strip().lower()
         if tron_net not in ("mainnet", "shasta", "nile"):
             tron_net = "mainnet"
+        
+        # Check for 'next' parameter to show a message on landing
+        next_url = request.query_params.get("next")
+        show_auth_required = False
+        if next_url and next_url.startswith("/") and len(next_url) > 1:
+            show_auth_required = True
+
         return {
             "request": request,
             "_": _,
@@ -92,6 +117,8 @@ def create_app() -> FastAPI:
             "initial_page": initial_page,
             "tron_network": tron_net,
             "settings_debug": settings.debug,
+            "show_auth_required": show_auth_required,
+            "next_url": next_url,
         }
 
     @app.get("/", response_class=HTMLResponse)
