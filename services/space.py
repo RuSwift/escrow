@@ -303,12 +303,19 @@ class SpaceService:
     async def get_space_profile(
         self, space: str, actor_wallet_address: str
     ) -> Optional[Dict[str, Any]]:
-        """Профиль спейса (description, company_name, icon). Только owner. Возвращает dict или None."""
+        """Профиль спейса (description, company_name, icon). Только owner. Возвращает dict."""
         await self._ensure_owner_and_owner_id(space, actor_wallet_address)
         owner = await self._repo.get_by_nickname(space)
-        if not owner or not owner.profile:
+        if not owner:
             return None
-        return owner.profile.model_dump()
+
+        profile_dict = {}
+        if owner.profile:
+            profile_dict = owner.profile.model_dump()
+
+        # Always include primary wallet as per test expectations
+        profile_dict["primary_wallet"] = await self.get_primary_wallet(space)
+        return profile_dict
 
     async def get_space_company_name_for_display(self, space: str) -> Optional[str]:
         """
