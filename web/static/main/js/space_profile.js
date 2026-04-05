@@ -75,6 +75,10 @@
                             self.primary_wallet_address = data.primary_wallet.address || '';
                             self.primary_wallet_blockchain = data.primary_wallet.blockchain || 'tron';
                         }
+                        // Fallback if empty
+                        if (!self.primary_wallet_address && typeof window !== 'undefined' && window.__SPACE_OWNER_TRON__) {
+                            self.primary_wallet_address = window.__SPACE_OWNER_TRON__;
+                        }
                     })
                     .catch(function(e) {
                         self.error = e.message || self.$t('main.space_profile.error_network');

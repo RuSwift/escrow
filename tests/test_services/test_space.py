@@ -378,10 +378,14 @@ async def test_delete_sub_for_space_non_owner_raises(space_with_owner_and_sub, s
 
 
 @pytest.mark.asyncio
-async def test_get_space_profile_owner_returns_none_when_empty(space_with_owner_and_sub, space_service):
-    """Owner получает None когда профиль не заполнен."""
+async def test_get_space_profile_owner_returns_primary_wallet_even_when_empty(space_with_owner_and_sub, space_service):
+    """Owner получает primary_wallet (по умолчанию адрес владельца) даже когда профиль не заполнен."""
     profile = await space_service.get_space_profile(SPACE_NAME, WALLET_OWNER)
-    assert profile is None
+    # Теперь мы ожидаем, что профиль не None, а содержит как минимум primary_wallet
+    assert profile is not None
+    assert "primary_wallet" in profile
+    assert profile["primary_wallet"]["address"] == WALLET_OWNER
+    assert profile["primary_wallet"]["blockchain"] == "tron"
 
 
 @pytest.mark.asyncio

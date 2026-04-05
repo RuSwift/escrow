@@ -48,7 +48,7 @@ async def get_space_profile(
     try:
         profile = await space_service.get_space_profile(space, wallet_address)
         if profile is None:
-            return None
+            profile = {}
         
         # Добавляем primary wallet в ответ
         pw = await space_service.get_primary_wallet(space)

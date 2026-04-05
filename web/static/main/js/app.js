@@ -85,6 +85,12 @@
             console.error('Failed to parse primary wallet data', e);
         }
     }
+    
+    // Fallback if address is still empty
+    if (!window.__SPACE_PRIMARY_WALLET__.address && window.__SPACE_OWNER_TRON__) {
+        window.__SPACE_PRIMARY_WALLET__.address = window.__SPACE_OWNER_TRON__;
+        window.__SPACE_PRIMARY_WALLET__.blockchain = 'tron';
+    }
 
     var tronNetAttr = (el.getAttribute('data-tron-network') || '').trim().toLowerCase();
     if (tronNetAttr) {
