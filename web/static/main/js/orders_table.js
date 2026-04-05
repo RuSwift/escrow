@@ -16,12 +16,26 @@
 Vue.component('orders-table', {
     delimiters: ['[[', ']]'],
     props: {
-        orders: { type: Array, default: () => [] },
-        loading: { type: Boolean, default: false },
+        space: { type: String, default: '' },
         canManage: { type: Boolean, default: false }
     },
     data: function() {
         return {
+            orders: [],
+            ordersTotal: 0,
+            ordersPage: 1,
+            ordersPageSize: 10,
+            /** Коды статусов вывода (мультивыбор); пусто = все статусы */
+            ordersSelectedStatuses: [],
+            ordersStatusDropdownOpen: false,
+            ordersSearch: '',
+            ordersLoading: false,
+            ordersError: false,
+            rampWalletByTron: {},
+            rampWalletById: {},
+            signatoryTronLabelByAddress: {},
+            ordersPollTimer: null,
+            _ordersSearchDebounce: null,
             ordersSignLinkCopiedId: null,
             _ordersSignLinkCopyTimer: null,
             driftDetailModalOpen: false,
@@ -33,13 +47,225 @@ Vue.component('orders-table', {
             withdrawalDetailOrder: null
         };
     },
+    mounted: function() {
+        this.fetchOrders();
+        this.startOrdersPoll();
+    },
     beforeDestroy: function() {
+        this.stopOrdersPoll();
+        if (this._ordersSearchDebounce) {
+            clearTimeout(this._ordersSearchDebounce);
+            this._ordersSearchDebounce = null;
+        }
         if (this._ordersSignLinkCopyTimer) {
             clearTimeout(this._ordersSignLinkCopyTimer);
             this._ordersSignLinkCopyTimer = null;
         }
     },
+    watch: {
+        space: function() {
+            this.ordersPage = 1;
+            this.ordersSelectedStatuses = [];
+            this.ordersStatusDropdownOpen = false;
+            this.fetchOrders();
+        },
+        ordersSearch: function() {
+            var self = this;
+            if (this._ordersSearchDebounce) clearTimeout(this._ordersSearchDebounce);
+            this._ordersSearchDebounce = setTimeout(function() {
+                self.ordersPage = 1;
+                self.fetchOrders();
+            }, 350);
+        },
+    },
     methods: {
+        refresh: function(opts) {
+            if (opts && opts.resetPage) {
+                this.ordersPage = 1;
+            }
+            return this.fetchOrders(opts);
+        },
+        fetchOrders: function(opts) {
+            var silent = !!(opts && opts.silent);
+            var skipSpinner = !!(opts && opts.skipSpinner);
+            var self = this;
+            var space = (this.space || '').trim() || ((typeof window !== 'undefined' && window.__CURRENT_SPACE__) ? String(window.__CURRENT_SPACE__).trim() : '');
+            if (!space) {
+                this.orders = [];
+                this.ordersTotal = 0;
+                return Promise.resolve();
+            }
+            if (!silent && !skipSpinner) {
+                this.ordersLoading = true;
+                this.ordersError = false;
+            }
+            this.fetchRampWalletsForSignatories();
+            this.fetchSignatoryTronLabels();
+            var params = new URLSearchParams();
+            params.set('page', String(this.ordersPage));
+            params.set('page_size', String(this.ordersPageSize));
+            if (this.ordersSelectedStatuses && this.ordersSelectedStatuses.length) {
+                params.set('status', this.ordersSelectedStatuses.join(','));
+            }
+            var qs = (this.ordersSearch || '').trim();
+            if (qs) params.set('q', qs);
+            var url = '/v1/spaces/' + encodeURIComponent(space) + '/orders?' + params.toString();
+            return fetch(url, {
+                method: 'GET',
+                headers: authHeadersMain(),
+                credentials: 'include'
+            })
+                .then(function(res) {
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.json();
+                })
+                .then(function(data) {
+                    var items = (data && data.items && Array.isArray(data.items)) ? data.items : [];
+                    self.orders = items;
+                    self.ordersTotal = typeof data.total === 'number' ? data.total : items.length;
+                    var tp = self.totalPages;
+                    if (tp > 0 && self.ordersPage > tp) {
+                        self.ordersPage = tp;
+                        var nextOpts = Object.assign({}, opts || {}, { skipSpinner: true });
+                        return self.fetchOrders(nextOpts);
+                    }
+                })
+                .catch(function() {
+                    if (!silent) self.ordersError = true;
+                    self.orders = [];
+                    self.ordersTotal = 0;
+                })
+                .finally(function() {
+                    if (!silent) self.ordersLoading = false;
+                });
+        },
+        startOrdersPoll: function() {
+            this.stopOrdersPoll();
+            var self = this;
+            this.ordersPollTimer = setInterval(function() {
+                if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+                self.fetchOrders({ silent: true });
+            }, 5000);
+        },
+        stopOrdersPoll: function() {
+            if (this.ordersPollTimer != null) {
+                clearInterval(this.ordersPollTimer);
+                this.ordersPollTimer = null;
+            }
+        },
+        fetchSignatoryTronLabels: function() {
+            var self = this;
+            var space = (this.space || '').trim() || ((typeof window !== 'undefined' && window.__CURRENT_SPACE__) ? String(window.__CURRENT_SPACE__).trim() : '');
+            if (!space) {
+                self.signatoryTronLabelByAddress = {};
+                return Promise.resolve();
+            }
+            return fetch('/v1/spaces/' + encodeURIComponent(space) + '/signatory-tron-labels', {
+                method: 'GET',
+                headers: authHeadersMain(),
+                credentials: 'include'
+            })
+                .then(function(res) {
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.json();
+                })
+                .then(function(data) {
+                    var items = (data && data.items && Array.isArray(data.items)) ? data.items : [];
+                    var m = {};
+                    items.forEach(function(row) {
+                        var addr = (row.tron_address || '').trim();
+                        var nick = (row.nickname || '').trim();
+                        if (addr && nick) m[addr] = nick;
+                    });
+                    self.signatoryTronLabelByAddress = m;
+                })
+                .catch(function() {
+                    self.signatoryTronLabelByAddress = {};
+                });
+        },
+        fetchRampWalletsForSignatories: function() {
+            var self = this;
+            var space = (this.space || '').trim() || ((typeof window !== 'undefined' && window.__CURRENT_SPACE__) ? String(window.__CURRENT_SPACE__).trim() : '');
+            if (!space) {
+                self.rampWalletByTron = {};
+                self.rampWalletById = {};
+                return Promise.resolve();
+            }
+            return fetch('/v1/spaces/' + encodeURIComponent(space) + '/exchange-wallets', {
+                method: 'GET',
+                headers: authHeadersMain(),
+                credentials: 'include'
+            })
+                .then(function(res) {
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.json();
+                })
+                .then(function(data) {
+                    var items = (data && data.items) ? data.items : [];
+                    var byTron = {};
+                    var byId = {};
+                    items.forEach(function(w) {
+                        var t = (w.tron_address || '').trim();
+                        if (t) byTron[t] = w;
+                        if (w.id != null) byId[Number(w.id)] = w;
+                    });
+                    self.rampWalletByTron = byTron;
+                    self.rampWalletById = byId;
+                })
+                .catch(function() {
+                    self.rampWalletByTron = {};
+                    self.rampWalletById = {};
+                });
+        },
+        displayNameForTronAddress: function(addr) {
+            var a = String(addr || '').trim();
+            if (!a) return '—';
+            var w = this.rampWalletByTron[a];
+            if (w && (w.name || '').trim()) return (w.name || '').trim();
+            var lab = this.signatoryTronLabelByAddress[a];
+            if (lab) return lab;
+            return this.shortenAddress(a);
+        },
+        shortenAddress: function(addr) {
+            var s = String(addr || '').trim();
+            if (!s) return '—';
+            if (s.length <= 12) return s;
+            return s.slice(0, 4) + '…' + s.slice(-4);
+        },
+        ordersGoPrevPage: function() {
+            if (this.ordersPage <= 1) return;
+            this.ordersPage -= 1;
+            this.fetchOrders();
+        },
+        ordersGoNextPage: function() {
+            if (this.ordersPage >= this.totalPages) return;
+            this.ordersPage += 1;
+            this.fetchOrders();
+        },
+        onOrderStatusCheckboxChange: function(code, ev) {
+            var checked = ev && ev.target ? !!ev.target.checked : false;
+            var arr = this.ordersSelectedStatuses.slice();
+            var i = arr.indexOf(code);
+            if (checked && i < 0) arr.push(code);
+            if (!checked && i >= 0) arr.splice(i, 1);
+            this.ordersSelectedStatuses = arr;
+            this.ordersPage = 1;
+            this.fetchOrders();
+        },
+        removeOrderStatusFilter: function(code) {
+            var i = this.ordersSelectedStatuses.indexOf(code);
+            if (i < 0) return;
+            this.ordersSelectedStatuses.splice(i, 1);
+            this.ordersPage = 1;
+            this.fetchOrders();
+        },
+        toggleOrdersStatusDropdown: function(ev) {
+            if (ev && ev.stopPropagation) ev.stopPropagation();
+            this.ordersStatusDropdownOpen = !this.ordersStatusDropdownOpen;
+        },
+        closeOrdersStatusDropdown: function() {
+            this.ordersStatusDropdownOpen = false;
+        },
         isWithdrawalOrder: function(order) {
             return order && order.payload && order.payload.kind === 'withdrawal_request';
         },
@@ -277,11 +503,49 @@ Vue.component('orders-table', {
             return this.orderRowDesc(order);
         },
         withdrawalSignatorySegments: function(order) {
-            return Array.isArray(order._signatorySegments) ? order._signatorySegments : [];
+            var p = order.payload || {};
+            if ((p.wallet_role || '').trim() !== 'multisig') return [];
+            var actors = Array.isArray(p.actors_snapshot) ? p.actors_snapshot : [];
+            if (!actors.length) return [];
+            var signedRaw = Array.isArray(p.offchain_signed_addresses) ? p.offchain_signed_addresses : [];
+            var signedSet = {};
+            signedRaw.forEach(function(a) {
+                var s = String(a || '').trim();
+                if (s) signedSet[s] = true;
+            });
+            var self = this;
+            return actors.map(function(a) {
+                var addr = String(a || '').trim();
+                return {
+                    address: addr,
+                    signed: !!signedSet[addr],
+                    label: self.displayNameForTronAddress(addr)
+                };
+            });
         },
         withdrawalSignatoriesDisplay: function(order) {
             if (!this.isWithdrawalOrder(order)) return '—';
-            return order._signatoriesDisplay || '—';
+            var p = order.payload || {};
+            var role = (p.wallet_role || '').trim();
+            if (role === 'external') {
+                var wid = order.space_wallet_id;
+                if (wid != null && this.rampWalletById[Number(wid)]) {
+                    var rw = this.rampWalletById[Number(wid)];
+                    if ((rw.name || '').trim()) return (rw.name || '').trim();
+                }
+                var extAddr = (p.tron_address || '').trim();
+                return extAddr ? this.displayNameForTronAddress(extAddr) : '—';
+            }
+            if (role === 'multisig') {
+                var actors = Array.isArray(p.actors_snapshot) ? p.actors_snapshot : [];
+                if (!actors.length) return '—';
+                var self = this;
+                var parts = actors.map(function(a) {
+                    return self.displayNameForTronAddress(a);
+                });
+                return parts.join(', ');
+            }
+            return '—';
         },
         withdrawalSignatoriesTitle: function(order) {
             if (!this.isWithdrawalOrder(order)) return '';
@@ -406,7 +670,7 @@ Vue.component('orders-table', {
             this.dashboardMultisigWizardWallet = null;
         },
         onDashboardMultisigConfigSaved: function() {
-            this.$emit('refresh');
+            this.refresh();
         },
         openDriftDetailModal: function(order) {
             this.driftDetailOrder = order;
@@ -465,11 +729,11 @@ Vue.component('orders-table', {
             this.withdrawalDetailOrder = null;
         },
         onWithdrawalDetailDeleted: function() {
-            this.$emit('refresh');
+            this.refresh();
             this.closeWithdrawalDetailModal();
         },
         onWithdrawalDetailUpdated: function() {
-            this.$emit('refresh');
+            this.refresh();
         },
         deleteWithdrawalOrder: function(order, ev) {
             if (ev && ev.stopPropagation) ev.stopPropagation();
@@ -484,7 +748,7 @@ Vue.component('orders-table', {
                 })
                     .then(function(res) {
                         if (res.ok) {
-                            self.$emit('refresh');
+                            self.refresh();
                             return;
                         }
                         if (res.status === 400) {
@@ -521,6 +785,40 @@ Vue.component('orders-table', {
         }
     },
     computed: {
+        totalPages: function() {
+            var t = this.ordersTotal || 0;
+            var ps = this.ordersPageSize || 10;
+            if (t <= 0) return 1;
+            return Math.max(1, Math.ceil(t / ps));
+        },
+        ordersRowFrom: function() {
+            if (!this.ordersTotal || !this.orders.length) return 0;
+            return (this.ordersPage - 1) * this.ordersPageSize + 1;
+        },
+        ordersRowTo: function() {
+            if (!this.ordersTotal) return 0;
+            return (this.ordersPage - 1) * this.ordersPageSize + this.orders.length;
+        },
+        withdrawalStatusFilterOptions: function() {
+            var keys = ['awaiting_signatures', 'ready_to_broadcast', 'broadcast_submitted', 'confirmed', 'failed'];
+            var self = this;
+            return keys.map(function(k) {
+                return { value: k, label: self.$t('main.dashboard.withdrawal_status_' + k) };
+            });
+        },
+        activeStatusFilterChips: function() {
+            var self = this;
+            return (this.ordersSelectedStatuses || []).map(function(code) {
+                return { value: code, label: self.$t('main.dashboard.withdrawal_status_' + code) };
+            });
+        },
+        ordersStatusDropdownLabel: function() {
+            var arr = this.ordersSelectedStatuses || [];
+            var n = arr.length;
+            if (!n) return this.$t('main.dashboard.orders_filter_all');
+            if (n === 1) return this.$t('main.dashboard.withdrawal_status_' + arr[0]);
+            return this.$t('main.dashboard.orders_filter_n_selected', { n: n });
+        },
         canShare: function() {
             return typeof navigator !== 'undefined' && !!navigator.share;
         },
@@ -545,11 +843,92 @@ Vue.component('orders-table', {
             var p = this.driftDetailOrder && this.driftDetailOrder.payload;
             if (!p || !p.actors_drift) return false;
             return this.driftModalActorsOnlyInMetaArr.length > 0 || this.driftModalActorsOnlyInSpaceArr.length > 0;
+        },
+        ordersEmptyMessage: function() {
+            var q = (this.ordersSearch || '').trim();
+            if (q || (this.ordersSelectedStatuses && this.ordersSelectedStatuses.length)) {
+                return this.$t('main.dashboard.no_orders_match');
+            }
+            return this.$t('main.dashboard.ephemeral_no_orders');
         }
     },
     template: `
       <div>
         <div class="cmc-card overflow-hidden mb-10">
+          <div class="px-4 py-3 border-b border-[#eff2f5] flex flex-col gap-3">
+            <div class="flex flex-col lg:flex-row lg:items-stretch gap-3">
+              <div class="relative shrink-0 w-full max-w-xs">
+                <span class="block text-xs font-semibold text-[#58667e] mb-1.5" id="orders-status-dropdown-label">[[ $t('main.dashboard.orders_filter_status') ]]</span>
+                <button
+                  type="button"
+                  id="orders-status-dropdown-trigger"
+                  class="w-full flex items-center justify-between gap-2 rounded-lg border border-[#eff2f5] bg-white px-3 py-2 text-left text-sm text-[#191d23] shadow-sm hover:bg-[#f8fafd] focus:outline-none focus:ring-2 focus:ring-main-blue/20 min-h-[42px] touch-manipulation"
+                  :aria-expanded="ordersStatusDropdownOpen ? 'true' : 'false'"
+                  aria-haspopup="listbox"
+                  aria-controls="orders-status-dropdown-panel"
+                  @click="toggleOrdersStatusDropdown"
+                >
+                  <span class="truncate min-w-0">[[ ordersStatusDropdownLabel ]]</span>
+                  <svg class="w-4 h-4 shrink-0 text-[#58667e] transition-transform" :class="ordersStatusDropdownOpen ? 'rotate-180' : ''" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                  </svg>
+                </button>
+                <template v-if="ordersStatusDropdownOpen">
+                  <div
+                    class="fixed inset-0 z-40 cursor-default"
+                    style="background: transparent;"
+                    aria-hidden="true"
+                    @click="closeOrdersStatusDropdown"
+                  ></div>
+                  <div
+                    id="orders-status-dropdown-panel"
+                    class="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-y-auto rounded-lg border border-[#eff2f5] bg-white py-2 shadow-xl"
+                    role="listbox"
+                    :aria-multiselectable="true"
+                    @click.stop
+                  >
+                    <label
+                      v-for="opt in withdrawalStatusFilterOptions"
+                      :key="'stf-cb-' + opt.value"
+                      class="flex items-start gap-2.5 cursor-pointer px-3 py-2 text-sm text-[#191d23] hover:bg-[#f8fafd] touch-manipulation"
+                    >
+                      <input
+                        type="checkbox"
+                        class="mt-0.5 rounded border-[#cfd6e4] text-main-blue focus:ring-main-blue/25 shrink-0"
+                        :checked="ordersSelectedStatuses.indexOf(opt.value) >= 0"
+                        @change="onOrderStatusCheckboxChange(opt.value, $event)"
+                      />
+                      <span class="leading-snug">[[ opt.label ]]</span>
+                    </label>
+                  </div>
+                </template>
+              </div>
+              <div class="flex-1 min-h-[3rem] min-w-0 rounded-lg border-2 border-main-blue bg-main-blue/5 px-3 py-2 flex flex-wrap items-center gap-2 content-start">
+                <template v-if="activeStatusFilterChips.length">
+                  <span
+                    v-for="chip in activeStatusFilterChips"
+                    :key="'chip-' + chip.value"
+                    class="inline-flex items-center gap-1 rounded-full bg-white border border-main-blue/35 px-2.5 py-1 text-xs font-semibold text-[#191d23] shadow-sm"
+                  >
+                    [[ chip.label ]]
+                    <button
+                      type="button"
+                      class="p-0.5 rounded-full hover:bg-main-blue/10 text-[#58667e] leading-none"
+                      :aria-label="$t('main.dashboard.orders_filter_remove')"
+                      @click="removeOrderStatusFilter(chip.value)"
+                    >
+                      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  </span>
+                </template>
+                <span v-else class="text-xs text-main-blue/90 font-medium">[[ $t('main.dashboard.orders_filter_active_none') ]]</span>
+              </div>
+              <div class="relative w-full lg:w-80 lg:shrink-0">
+                <input v-model="ordersSearch" type="search" :placeholder="$t('main.dashboard.orders_search_placeholder')" class="w-full pl-3 pr-4 py-2 bg-white border border-[#eff2f5] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-main-blue/20" autocomplete="off" />
+              </div>
+            </div>
+          </div>
+          <div v-if="ordersError" class="px-4 py-2 border-b border-rose-100 bg-rose-50 text-xs text-rose-800">[[ $t('main.dashboard.orders_load_error') ]]</div>
           <div class="overflow-x-auto">
             <table class="w-full text-left border-collapse">
               <thead>
@@ -565,13 +944,13 @@ Vue.component('orders-table', {
                 </tr>
               </thead>
               <tbody>
-                <template v-if="loading">
+                <template v-if="ordersLoading">
                   <tr v-for="i in 5" :key="'ord-sk-' + i" class="animate-pulse">
                     <td colspan="8" class="cmc-table-cell h-16 bg-gray-50/50"></td>
                   </tr>
                 </template>
                 <tr v-else-if="orders.length === 0">
-                  <td colspan="8" class="cmc-table-cell text-center py-12 text-cmc-muted">[[ $t('main.dashboard.ephemeral_no_orders') ]]</td>
+                  <td colspan="8" class="cmc-table-cell text-center py-12 text-cmc-muted">[[ ordersEmptyMessage ]]</td>
                 </tr>
                 <tr v-else v-for="(order, i) in orders" :key="'api-ord-' + order.id"
                   class="border-b border-[#eff2f5] last:border-0 transition-all duration-200"
@@ -580,7 +959,7 @@ Vue.component('orders-table', {
                   @click="onApiOrderRowClick(order)"
                   @keydown.enter.prevent="onApiOrderRowClick(order)"
                 >
-                  <td class="cmc-table-cell text-cmc-muted font-medium">[[ i + 1 ]]</td>
+                  <td class="cmc-table-cell text-cmc-muted font-medium">[[ (ordersPage - 1) * ordersPageSize + i + 1 ]]</td>
                   <td class="cmc-table-cell align-middle">
                     <div v-if="isWithdrawalOrder(order) && withdrawalSignTokenFromOrder(order)" class="flex flex-wrap items-center gap-1.5 sm:gap-2">
                       <a
@@ -701,7 +1080,24 @@ Vue.component('orders-table', {
               </tbody>
             </table>
           </div>
-          <div class="px-4 py-2 border-t border-[#eff2f5] text-xs text-cmc-muted">[[ $t('main.dashboard.showing_api_orders', { count: orders.length, total: orders.length }) ]]</div>
+          <div class="px-4 py-2 border-t border-[#eff2f5] flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-2 text-xs text-cmc-muted">
+            <span>[[ $t('main.dashboard.showing_api_orders_range', { from: ordersRowFrom, to: ordersRowTo, total: ordersTotal }) ]]</span>
+            <div v-if="ordersTotal > 0" class="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                class="inline-flex items-center rounded-md border border-[#eff2f5] bg-white px-2 py-1 text-xs font-semibold text-[#58667e] hover:bg-[#f8fafd] disabled:opacity-40 disabled:cursor-not-allowed"
+                :disabled="ordersPage <= 1 || ordersLoading"
+                @click="ordersGoPrevPage"
+              >[[ $t('main.dashboard.orders_pagination_prev') ]]</button>
+              <span class="tabular-nums">[[ $t('main.dashboard.orders_page_indicator', { page: ordersPage, totalPages: totalPages }) ]]</span>
+              <button
+                type="button"
+                class="inline-flex items-center rounded-md border border-[#eff2f5] bg-white px-2 py-1 text-xs font-semibold text-[#58667e] hover:bg-[#f8fafd] disabled:opacity-40 disabled:cursor-not-allowed"
+                :disabled="ordersPage >= totalPages || ordersLoading"
+                @click="ordersGoNextPage"
+              >[[ $t('main.dashboard.orders_pagination_next') ]]</button>
+            </div>
+          </div>
         </div>
 
         <transition name="fade">

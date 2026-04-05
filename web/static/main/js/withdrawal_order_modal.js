@@ -210,8 +210,14 @@
                     });
             },
             fetchOrdersParent: function() {
-                if (this.$parent && typeof this.$parent.fetchOrders === 'function') {
-                    this.$parent.fetchOrders();
+                var p = this.$parent;
+                if (!p) return;
+                if (typeof p.refreshOrdersTable === 'function') {
+                    p.refreshOrdersTable({ resetPage: true });
+                    return;
+                }
+                if (typeof p.fetchOrders === 'function') {
+                    p.fetchOrders();
                 }
             }
         },

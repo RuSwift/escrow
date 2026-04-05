@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
 from core.exceptions import SpacePermissionDenied
 from services.order import OrderService, WithdrawalDeleteForbidden
@@ -25,12 +27,31 @@ router = APIRouter(tags=["orders"])
 @router.get("/spaces/{space}/orders", response_model=OrderListResponse)
 async def list_space_orders(
     space: str,
+    page: int = Query(1, ge=1, description="Номер страницы с 1"),
+    page_size: int = Query(10, ge=1, le=100, description="Размер страницы"),
+    order_status: Optional[str] = Query(
+        None,
+        alias="status",
+        description="Пусто/all — все; один или несколько статусов вывода через запятую (IN)",
+    ),
+    q: Optional[str] = Query(
+        None,
+        max_length=512,
+        description="Поиск по dedupe_key и полям payload",
+    ),
     wallet_address: str = Depends(get_required_wallet_address_for_space),
     svc: OrderService = Depends(get_order_service),
 ):
     """Список эфемерных и заявок на вывод по ramp-кошелькам спейса (владелец спейса)."""
     try:
-        rows = await svc.list_for_space(space, wallet_address)
+        rows, total = await svc.list_for_space_paginated(
+            space,
+            wallet_address,
+            page=page,
+            page_size=page_size,
+            status=order_status,
+            q=q,
+        )
     except SpacePermissionDenied as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -43,6 +64,7 @@ async def list_space_orders(
         ) from e
     return OrderListResponse(
         items=[OrderItem.model_validate(r.model_dump()) for r in rows],
+        total=total,
     )
 
 

@@ -61,24 +61,18 @@ Vue.component('dashboard', {
                 { id: 'esc-005', title: 'Hardware batch', description: 'Miners delivery', amount: 150000, currency: 'USDT', status: 'funded', buyer_id: '0x71C...8976F', seller_id: '0x42A...1122C', created_at: '2026-03-12T08:45:00' }
             ],
             mockLoading: false,
-            apiOrders: [],
-            ordersLoading: false,
-            ordersError: null,
-            ordersSearch: '',
             ratiosRaw: null,
             ratiosLoading: false,
             ratiosError: null,
             ratiosModalOpen: false,
             spaceRole: '',
-            showWithdrawalModal: false,
-            rampWalletByTron: {},
-            rampWalletById: {},
-            signatoryTronLabelByAddress: {},
-            /** Периодическое обновление таблицы заявок (в т.ч. статус выводов после подписи на /o/{token}). */
-            ordersPollTimer: null
+            showWithdrawalModal: false
         };
     },
     computed: {
+        currentSpace: function() {
+            return (typeof window !== 'undefined' && window.__CURRENT_SPACE__) ? String(window.__CURRENT_SPACE__).trim() : '';
+        },
         canCreateWithdrawal: function() {
             var r = (this.spaceRole || '').trim();
             return r === 'owner' || r === 'operator';
@@ -99,38 +93,6 @@ Vue.component('dashboard', {
                 var maxVal = vals.length ? Math.max.apply(null, vals) : null;
                 var ratioText = maxVal != null ? String(Number(maxVal).toFixed(2)).replace(/\.?0+$/, '') : '—';
                 return { pair: r.base + '/' + r.quote, ratioText: ratioText };
-            });
-        },
-        filteredApiOrders: function() {
-            var self = this;
-            var q = (this.ordersSearch || '').toLowerCase();
-            var items = this.apiOrders || [];
-            
-            // Предварительно вычисляем отображение подписантов для каждого ордера
-            items.forEach(function(order) {
-                if (order.payload && order.payload.kind === 'withdrawal_request') {
-                    order._signatoriesDisplay = self.withdrawalSignatoriesDisplay(order);
-                    order._signatorySegments = self.withdrawalSignatorySegments(order);
-                }
-            });
-
-            if (!q) return items;
-            return items.filter(function(row) {
-                var p = row.payload || {};
-                var blob = [
-                    String(row.dedupe_key || ''),
-                    String(p.kind || ''),
-                    String(p.wallet_name || ''),
-                    String(p.multisig_setup_status || ''),
-                    String(p.tron_address || ''),
-                    String(p.status || ''),
-                    String(p.destination_address || ''),
-                    String(p.purpose || ''),
-                    String((p.token && p.token.symbol) || ''),
-                    String(row._signatoriesDisplay || ''),
-                    String((row.payload && row.payload.offchain_signed_addresses) || '')
-                ].join(' ').toLowerCase();
-                return blob.indexOf(q) !== -1;
             });
         },
         filteredEscrows: function() {
@@ -159,13 +121,13 @@ Vue.component('dashboard', {
             this.spaceRole = String(window.__SPACE_ROLE__).trim();
         }
         this.fetchRatios();
-        this.fetchOrders();
-        this.startOrdersPoll();
-    },
-    beforeDestroy: function() {
-        this.stopOrdersPoll();
     },
     methods: {
+        refreshOrdersTable: function(opts) {
+            if (this.$refs.ordersTable && typeof this.$refs.ordersTable.refresh === 'function') {
+                this.$refs.ordersTable.refresh(opts || {});
+            }
+        },
         fetchRatios: function() {
             var self = this;
             self.ratiosLoading = true;
@@ -192,194 +154,6 @@ Vue.component('dashboard', {
                 .finally(function() {
                     self.ratiosLoading = false;
                 });
-        },
-        fetchOrders: function(opts) {
-            var silent = !!(opts && opts.silent);
-            var self = this;
-            var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__) ? String(window.__CURRENT_SPACE__).trim() : '';
-            if (!space) {
-                self.apiOrders = [];
-                self.rampWalletByTron = {};
-                self.rampWalletById = {};
-                self.signatoryTronLabelByAddress = {};
-                return;
-            }
-            if (silent) {
-                fetch('/v1/spaces/' + encodeURIComponent(space) + '/orders', {
-                    method: 'GET',
-                    headers: authHeadersMain(),
-                    credentials: 'include'
-                })
-                    .then(function(res) {
-                        if (!res.ok) throw new Error('HTTP ' + res.status);
-                        return res.json();
-                    })
-                    .then(function(data) {
-                        self.apiOrders = (data && data.items && Array.isArray(data.items)) ? data.items : [];
-                    })
-                    .catch(function() {});
-                return;
-            }
-            self.ordersLoading = true;
-            self.ordersError = null;
-            var walletsPromise = self.fetchRampWalletsForSignatories();
-            var labelsPromise = self.fetchSignatoryTronLabels();
-            var ordersPromise = fetch('/v1/spaces/' + encodeURIComponent(space) + '/orders', {
-                method: 'GET',
-                headers: authHeadersMain(),
-                credentials: 'include'
-            })
-                .then(function(res) {
-                    if (!res.ok) throw new Error('HTTP ' + res.status);
-                    return res.json();
-                })
-                .then(function(data) {
-                    self.apiOrders = (data && data.items && Array.isArray(data.items)) ? data.items : [];
-                })
-                .catch(function() {
-                    self.ordersError = true;
-                    self.apiOrders = [];
-                });
-            Promise.all([ordersPromise, walletsPromise, labelsPromise]).finally(function() {
-                self.ordersLoading = false;
-            });
-        },
-        startOrdersPoll: function() {
-            this.stopOrdersPoll();
-            var self = this;
-            this.ordersPollTimer = setInterval(function() {
-                if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-                self.fetchOrders({ silent: true });
-            }, 5000);
-        },
-        stopOrdersPoll: function() {
-            if (this.ordersPollTimer != null) {
-                clearInterval(this.ordersPollTimer);
-                this.ordersPollTimer = null;
-            }
-        },
-        fetchSignatoryTronLabels: function() {
-            var self = this;
-            var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__) ? String(window.__CURRENT_SPACE__).trim() : '';
-            if (!space) {
-                self.signatoryTronLabelByAddress = {};
-                return Promise.resolve();
-            }
-            return fetch('/v1/spaces/' + encodeURIComponent(space) + '/signatory-tron-labels', {
-                method: 'GET',
-                headers: authHeadersMain(),
-                credentials: 'include'
-            })
-                .then(function(res) {
-                    if (!res.ok) throw new Error('HTTP ' + res.status);
-                    return res.json();
-                })
-                .then(function(data) {
-                    var items = (data && data.items && Array.isArray(data.items)) ? data.items : [];
-                    var m = {};
-                    items.forEach(function(row) {
-                        var addr = (row.tron_address || '').trim();
-                        var nick = (row.nickname || '').trim();
-                        if (addr && nick) m[addr] = nick;
-                    });
-                    self.signatoryTronLabelByAddress = m;
-                })
-                .catch(function() {
-                    self.signatoryTronLabelByAddress = {};
-                });
-        },
-        fetchRampWalletsForSignatories: function() {
-            var self = this;
-            var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__) ? String(window.__CURRENT_SPACE__).trim() : '';
-            if (!space) {
-                self.rampWalletByTron = {};
-                self.rampWalletById = {};
-                return Promise.resolve();
-            }
-            return fetch('/v1/spaces/' + encodeURIComponent(space) + '/exchange-wallets', {
-                method: 'GET',
-                headers: authHeadersMain(),
-                credentials: 'include'
-            })
-                .then(function(res) {
-                    if (!res.ok) throw new Error('HTTP ' + res.status);
-                    return res.json();
-                })
-                .then(function(data) {
-                    var items = (data && data.items) ? data.items : [];
-                    var byTron = {};
-                    var byId = {};
-                    items.forEach(function(w) {
-                        var t = (w.tron_address || '').trim();
-                        if (t) byTron[t] = w;
-                        if (w.id != null) byId[Number(w.id)] = w;
-                    });
-                    self.rampWalletByTron = byTron;
-                    self.rampWalletById = byId;
-                })
-                .catch(function() {
-                    self.rampWalletByTron = {};
-                    self.rampWalletById = {};
-                });
-        },
-        displayNameForTronAddress: function(addr) {
-            var a = String(addr || '').trim();
-            if (!a) return '—';
-            var w = this.rampWalletByTron[a];
-            if (w && (w.name || '').trim()) return (w.name || '').trim();
-            var lab = this.signatoryTronLabelByAddress[a];
-            if (lab) return lab;
-            return this.shortenAddress(a);
-        },
-        shortenAddress: function(addr) {
-            var s = String(addr || '').trim();
-            if (!s) return '—';
-            if (s.length <= 12) return s;
-            return s.slice(0, 4) + '…' + s.slice(-4);
-        },
-        withdrawalSignatorySegments: function(order) {
-            var p = order.payload || {};
-            if ((p.wallet_role || '').trim() !== 'multisig') return [];
-            var actors = Array.isArray(p.actors_snapshot) ? p.actors_snapshot : [];
-            if (!actors.length) return [];
-            var signedRaw = Array.isArray(p.offchain_signed_addresses) ? p.offchain_signed_addresses : [];
-            var signedSet = {};
-            signedRaw.forEach(function(a) {
-                var s = String(a || '').trim();
-                if (s) signedSet[s] = true;
-            });
-            var self = this;
-            return actors.map(function(a) {
-                var addr = String(a || '').trim();
-                return {
-                    address: addr,
-                    signed: !!signedSet[addr],
-                    label: self.displayNameForTronAddress(addr)
-                };
-            });
-        },
-        withdrawalSignatoriesDisplay: function(order) {
-            var p = order.payload || {};
-            var role = (p.wallet_role || '').trim();
-            if (role === 'external') {
-                var wid = order.space_wallet_id;
-                if (wid != null && this.rampWalletById[Number(wid)]) {
-                    var rw = this.rampWalletById[Number(wid)];
-                    if ((rw.name || '').trim()) return (rw.name || '').trim();
-                }
-                var extAddr = (p.tron_address || '').trim();
-                return extAddr ? this.displayNameForTronAddress(extAddr) : '—';
-            }
-            if (role === 'multisig') {
-                var actors = Array.isArray(p.actors_snapshot) ? p.actors_snapshot : [];
-                if (!actors.length) return '—';
-                var self = this;
-                var parts = actors.map(function(a) {
-                    return self.displayNameForTronAddress(a);
-                });
-                return parts.join(', ');
-            }
-            return '—';
         },
         onNewRequestSelect: function(e) {
             var el = e && e.target;
@@ -488,25 +262,19 @@ Vue.component('dashboard', {
           <span class="hidden sm:inline">[[ $t('main.dashboard.ratios_expand') ]]</span>
         </div>
       </div>
-      <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-        <div class="flex flex-wrap items-center gap-2 min-w-0">
-          <h1 class="text-2xl font-bold">[[ $t('main.dashboard.title') ]]</h1>
-          <button
-            type="button"
-            @click="fetchOrders"
-            :disabled="ordersLoading"
-            class="inline-flex items-center gap-1.5 rounded-lg border border-[#eff2f5] bg-white px-3 py-1.5 text-xs font-bold text-[#3861fb] hover:bg-[#f8fafd] disabled:opacity-50 disabled:cursor-not-allowed transition-colors shrink-0"
-            :aria-label="$t('main.dashboard.orders_refresh')"
-          >
-            <svg class="w-4 h-4 shrink-0" :class="ordersLoading ? 'animate-spin text-[#3861fb]' : 'text-[#3861fb]'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-            </svg>
-            <span>[[ $t('main.dashboard.orders_refresh') ]]</span>
-          </button>
-        </div>
-        <div class="relative w-full md:w-80 md:shrink-0">
-          <input v-model="ordersSearch" type="text" :placeholder="$t('main.dashboard.orders_search_placeholder')" class="w-full pl-10 pr-4 py-2 bg-white border border-[#eff2f5] rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-main-blue/20" />
-        </div>
+      <div class="flex flex-wrap items-center gap-2 min-w-0 mb-6">
+        <h1 class="text-2xl font-bold">[[ $t('main.dashboard.title') ]]</h1>
+        <button
+          type="button"
+          @click="refreshOrdersTable"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-[#eff2f5] bg-white px-3 py-1.5 text-xs font-bold text-[#3861fb] hover:bg-[#f8fafd] transition-colors shrink-0"
+          :aria-label="$t('main.dashboard.orders_refresh')"
+        >
+          <svg class="w-4 h-4 shrink-0 text-[#3861fb]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+          <span>[[ $t('main.dashboard.orders_refresh') ]]</span>
+        </button>
       </div>
       <div v-if="canCreateWithdrawal" class="flex flex-wrap items-center gap-2 mb-4">
         <label class="text-xs font-semibold text-[#58667e] shrink-0" for="dash-new-request-select">[[ $t('main.dashboard.new_request_label') ]]</label>
@@ -520,13 +288,10 @@ Vue.component('dashboard', {
           <option value="invoice" disabled>[[ $t('main.dashboard.new_request_invoice') ]]</option>
         </select>
       </div>
-      <div v-if="ordersError" class="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-800">[[ $t('main.dashboard.orders_load_error') ]]</div>
-      
       <orders-table
-        :orders="filteredApiOrders"
-        :loading="ordersLoading"
+        ref="ordersTable"
+        :space="currentSpace"
         :can-manage="canCreateWithdrawal"
-        @refresh="fetchOrders"
       ></orders-table>
 
       <div class="mt-12 grid grid-cols-1 md:grid-cols-3 gap-8">

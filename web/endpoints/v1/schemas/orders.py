@@ -25,3 +25,4 @@ class OrderItem(BaseModel):
 
 class OrderListResponse(BaseModel):
     items: List[OrderItem] = Field(default_factory=list)
+    total: int = Field(0, description="Число записей по фильтрам (для пагинации)")

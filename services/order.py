@@ -46,6 +46,37 @@ WITHDRAWAL_STATUS_BROADCAST_SUBMITTED = "broadcast_submitted"
 WITHDRAWAL_STATUS_CONFIRMED = "confirmed"
 WITHDRAWAL_STATUS_FAILED = "failed"
 
+# Фильтр списка ордеров (GET /spaces/{space}/orders) по статусу заявки на вывод.
+WITHDRAWAL_LIST_STATUS_FILTERS = frozenset(
+    {
+        WITHDRAWAL_STATUS_AWAITING_SIGNATURES,
+        WITHDRAWAL_STATUS_READY_TO_BROADCAST,
+        WITHDRAWAL_STATUS_BROADCAST_SUBMITTED,
+        WITHDRAWAL_STATUS_CONFIRMED,
+        WITHDRAWAL_STATUS_FAILED,
+    }
+)
+
+
+def _parse_order_status_query(raw: Optional[str]) -> Optional[List[str]]:
+    """Параметр status: пусто/all — без фильтра; один статус или несколько через запятую."""
+    if raw is None:
+        return None
+    s = (raw or "").strip()
+    if not s or s.lower() == "all":
+        return None
+    parts = [p.strip().lower() for p in s.split(",") if p.strip()]
+    parts = list(dict.fromkeys(parts))
+    if not parts:
+        return None
+    bad = [p for p in parts if p not in WITHDRAWAL_LIST_STATUS_FILTERS]
+    if bad:
+        raise ValueError(
+            "Invalid status filter; use all or comma-separated: "
+            + ", ".join(sorted(WITHDRAWAL_LIST_STATUS_FILTERS))
+        )
+    return parts
+
 
 def _offchain_times_from_signed_tx(
     signed: Dict[str, Any],
@@ -142,6 +173,28 @@ class OrderService:
         merged: List[OrderResource.Get] = list(ephemeral) + list(withdrawal)
         merged.sort(key=lambda x: x.updated_at, reverse=True)
         return merged
+
+    async def list_for_space_paginated(
+        self,
+        space: str,
+        actor_wallet_address: str,
+        *,
+        page: int = 1,
+        page_size: int = 10,
+        status: Optional[str] = None,
+        q: Optional[str] = None,
+    ) -> Tuple[List[OrderResource.Get], int]:
+        """Список ордеров спейса с пагинацией и фильтрами (см. репозиторий)."""
+        await self._space.ensure_actor_in_space(space, actor_wallet_address)
+        owner_did = await self._owner_did_for_space(space)
+        status_list = _parse_order_status_query(status)
+        return await self._orders.list_merged_for_space_paginated(
+            owner_did,
+            page=page,
+            page_size=page_size,
+            status_filters=status_list,
+            q=q,
+        )
 
     async def refresh_ephemeral(self) -> Dict[str, int]:
         """
