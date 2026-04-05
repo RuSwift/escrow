@@ -59,6 +59,26 @@
         methods: {
             connect: function() {
                 var self = this;
+                var isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
+                if (isMobile && !window.tronWeb) {
+                    var params = {
+                        action: "open",
+                        url: window.location.href,
+                        protocol: "TronLink",
+                        version: "1.0"
+                    };
+                    var deepLink = "tronlinkoutside://pull.activity?param=" + encodeURIComponent(JSON.stringify(params));
+                    window.location.href = deepLink;
+
+                    setTimeout(function() {
+                        if (confirm(self.$t('main.tron.install_tronlink_prompt'))) {
+                            window.location.href = "https://www.tronlink.org/";
+                        }
+                    }, 2000);
+                    return;
+                }
+
                 self.loading = true;
                 self.error = '';
                 getTronWeb().then(function(tronWeb) {

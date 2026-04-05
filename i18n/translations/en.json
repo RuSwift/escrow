@@ -53,6 +53,7 @@
   "main.tron.error_verify": "Signature verification error",
   "main.tron.error_prefix": "Error: ",
   "main.tron.user_rejected": "Connection cancelled",
+  "main.tron.install_tronlink_prompt": "TronLink app did not open. Go to the download page?",
   "main.space.choose_space": "Choose a space to sign in",
   "main.space.init_prompt": "Create your profile: enter a nickname (space)",
   "main.space.nickname_placeholder": "Nickname",
@@ -898,6 +899,7 @@
   "node.login.error_verify": "Signature verification error",
   "node.login.error_prefix": "Error: ",
   "node.login.user_rejected": "Connection cancelled",
+  "node.login.install_tronlink_prompt": "TronLink app did not open. Go to the download page?",
 
   "notify.ramp_wallet_created": "A corporate wallet «{wallet_name}» (id {wallet_id}, {role}) was added to the space. TRON: {tron_address}",
   "notify.ramp_wallet_deleted": "Corporate wallet «{wallet_name}» (id {wallet_id}, {role}) was removed from the space. TRON: {tron_address}",

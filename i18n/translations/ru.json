@@ -53,6 +53,7 @@
   "main.tron.error_verify": "Ошибка верификации подписи",
   "main.tron.error_prefix": "Ошибка: ",
   "main.tron.user_rejected": "Подключение отменено",
+  "main.tron.install_tronlink_prompt": "Приложение TronLink не открылось. Перейти на страницу загрузки?",
   "main.space.choose_space": "Выберите Space для входа",
   "main.space.init_prompt": "Создайте профиль: укажите никнейм (Space)",
   "main.space.nickname_placeholder": "Никнейм",
@@ -898,6 +899,7 @@
   "node.login.error_verify": "Ошибка верификации подписи",
   "node.login.error_prefix": "Ошибка: ",
   "node.login.user_rejected": "Подключение отменено",
+  "node.login.install_tronlink_prompt": "Приложение TronLink не открылось. Перейти на страницу загрузки?",
 
   "notify.ramp_wallet_created": "В спейсе добавлен корпоративный кошелёк «{wallet_name}» (id {wallet_id}, {role}). TRON: {tron_address}",
   "notify.ramp_wallet_deleted": "Из спейса удалён корпоративный кошелёк «{wallet_name}» (id {wallet_id}, {role}). TRON: {tron_address}",
