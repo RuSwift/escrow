@@ -110,6 +110,7 @@ Vue.component('dashboard', {
             items.forEach(function(order) {
                 if (order.payload && order.payload.kind === 'withdrawal_request') {
                     order._signatoriesDisplay = self.withdrawalSignatoriesDisplay(order);
+                    order._signatorySegments = self.withdrawalSignatorySegments(order);
                 }
             });
 
@@ -126,7 +127,8 @@ Vue.component('dashboard', {
                     String(p.destination_address || ''),
                     String(p.purpose || ''),
                     String((p.token && p.token.symbol) || ''),
-                    String(row._signatoriesDisplay || '')
+                    String(row._signatoriesDisplay || ''),
+                    String((row.payload && row.payload.offchain_signed_addresses) || '')
                 ].join(' ').toLowerCase();
                 return blob.indexOf(q) !== -1;
             });
@@ -334,6 +336,27 @@ Vue.component('dashboard', {
             if (!s) return '—';
             if (s.length <= 12) return s;
             return s.slice(0, 4) + '…' + s.slice(-4);
+        },
+        withdrawalSignatorySegments: function(order) {
+            var p = order.payload || {};
+            if ((p.wallet_role || '').trim() !== 'multisig') return [];
+            var actors = Array.isArray(p.actors_snapshot) ? p.actors_snapshot : [];
+            if (!actors.length) return [];
+            var signedRaw = Array.isArray(p.offchain_signed_addresses) ? p.offchain_signed_addresses : [];
+            var signedSet = {};
+            signedRaw.forEach(function(a) {
+                var s = String(a || '').trim();
+                if (s) signedSet[s] = true;
+            });
+            var self = this;
+            return actors.map(function(a) {
+                var addr = String(a || '').trim();
+                return {
+                    address: addr,
+                    signed: !!signedSet[addr],
+                    label: self.displayNameForTronAddress(addr)
+                };
+            });
         },
         withdrawalSignatoriesDisplay: function(order) {
             var p = order.payload || {};

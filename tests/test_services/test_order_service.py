@@ -17,6 +17,9 @@ from services.order import (
     ORDER_KIND_MULTISIG_PIPELINE,
     ORDER_KIND_MULTISIG_SPACE_DRIFT,
     WITHDRAWAL_KIND,
+    WITHDRAWAL_STATUS_AWAITING_SIGNATURES,
+    WITHDRAWAL_STATUS_BROADCAST_SUBMITTED,
+    WITHDRAWAL_STATUS_READY_TO_BROADCAST,
     OrderService,
 )
 
@@ -344,6 +347,9 @@ async def test_clear_offchain_signatures_multisig(
             "actors_snapshot": [_SIGNER_OTHER, _SPACE_TRON],
             "long_expiration_ms": True,
             "broadcast_tx_id": None,
+            "offchain_expiration_ms": 9_999_000_000_000,
+            "offchain_timestamp_ms": 9_998_000_000_000,
+            "offchain_signed_addresses": [_SIGNER_OTHER],
         },
     )
     await repo.upsert_withdrawal_signature(
@@ -359,6 +365,9 @@ async def test_clear_offchain_signatures_multisig(
     assert out.payload is not None
     assert out.payload.get("status") == "awaiting_signatures"
     assert out.payload.get("broadcast_tx_id") is None
+    assert out.payload.get("offchain_expiration_ms") is None
+    assert out.payload.get("offchain_timestamp_ms") is None
+    assert out.payload.get("offchain_signed_addresses") is None
     sigs = await repo.list_withdrawal_signatures(int(created.id))
     assert sigs == []
 
@@ -416,3 +425,311 @@ async def test_clear_offchain_signatures_rejects_external(
         await order_service.clear_offchain_signatures(
             "clr_ext_space", _SPACE_TRON, int(created.id)
         )
+
+
+@pytest.mark.asyncio
+async def test_submit_signed_multisig_two_of_two_then_broadcast(
+    order_service: OrderService,
+    test_db,
+    test_redis,
+    test_settings,
+):
+    """Multisig 2/2: первый submit — awaiting_signatures, второй — ready_to_broadcast (broadcast в cron)."""
+    owner = WalletUser(
+        nickname="sub_ms_space",
+        wallet_address=_SPACE_TRON,
+        blockchain="tron",
+        did="did:web:escrow.ruswift.ru:sub_ms_space",
+    )
+    test_db.add(owner)
+    await test_db.commit()
+    await test_db.refresh(owner)
+
+    w_ms = Wallet(
+        name="ms_sub",
+        encrypted_mnemonic="enc",
+        role="multisig",
+        tron_address="TLrJJkGK4puQGZLFbrPxK2icPgADaNTq5B",
+        owner_did=owner.did,
+        multisig_setup_status=MULTISIG_STATUS_ACTIVE,
+        multisig_setup_meta={
+            **default_meta_dict(),
+            "actors": [_SIGNER_OTHER, _SPACE_TRON],
+            "threshold_n": 2,
+            "threshold_m": 2,
+        },
+    )
+    test_db.add(w_ms)
+    await test_db.commit()
+    await test_db.refresh(w_ms)
+
+    repo = OrderRepository(session=test_db, redis=test_redis, settings=test_settings)
+    tok = "submittok_multisig_22_abc12345"
+    dk = withdrawal_dedupe_key(tok)
+    created = await repo.insert_withdrawal_order(
+        dedupe_key=dk,
+        space_wallet_id=w_ms.id,
+        payload={
+            "kind": WITHDRAWAL_KIND,
+            "status": WITHDRAWAL_STATUS_AWAITING_SIGNATURES,
+            "wallet_role": "multisig",
+            "wallet_id": w_ms.id,
+            "tron_address": w_ms.tron_address,
+            "token": {"type": "native", "symbol": "TRX", "decimals": 6},
+            "amount_raw": 1000,
+            "destination_address": _SIGNER_OTHER,
+            "threshold_n": 2,
+            "threshold_m": 2,
+            "actors_snapshot": sorted([_SIGNER_OTHER, _SPACE_TRON]),
+            "long_expiration_ms": True,
+            "active_permission_id": 3,
+            "broadcast_tx_id": None,
+        },
+    )
+    await test_db.commit()
+
+    raw1 = {"expiration": 2_000_000_000_000, "timestamp": 1_999_000_000_000}
+    out1 = await order_service.submit_signed_transaction(
+        tok,
+        {"txID": "pending1", "signature": ["a"], "raw_data": raw1},
+        _SIGNER_OTHER,
+    )
+    assert out1.payload is not None
+    assert out1.payload.get("status") == WITHDRAWAL_STATUS_AWAITING_SIGNATURES
+    assert out1.payload.get("broadcast_tx_id") is None
+    assert out1.payload.get("offchain_expiration_ms") == 2_000_000_000_000
+    assert out1.payload.get("offchain_timestamp_ms") == 1_999_000_000_000
+    assert out1.payload.get("offchain_signed_addresses") == [_SIGNER_OTHER]
+
+    raw2 = {"expiration": 2_000_000_000_001, "timestamp": 2_000_000_000_000}
+    out2 = await order_service.submit_signed_transaction(
+        tok,
+        {"txID": "finaltxid", "signature": ["a", "b"], "raw_data": raw2},
+        _SPACE_TRON,
+    )
+    assert out2.payload is not None
+    assert out2.payload.get("status") == WITHDRAWAL_STATUS_READY_TO_BROADCAST
+    assert out2.payload.get("broadcast_tx_id") is None
+    assert out2.payload.get("offchain_signed_addresses") == [_SIGNER_OTHER, _SPACE_TRON]
+    assert out2.payload.get("offchain_expiration_ms") == 2_000_000_000_001
+    assert out2.payload.get("offchain_timestamp_ms") == 2_000_000_000_000
+
+
+@pytest.mark.asyncio
+async def test_broadcast_ready_withdrawals_success(
+    order_service: OrderService,
+    test_db,
+    test_redis,
+    test_settings,
+    monkeypatch,
+):
+    """ready_to_broadcast + мок TronGrid: broadcast_submitted и txid из signed tx."""
+
+    class FakeTronGrid:
+        def __init__(self, settings=None):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def broadcast_transaction(self, signed):
+            assert signed.get("txID") == "finaltxid"
+            return {"result": True}
+
+        monkeypatch.setattr(
+            "services.order.TronGridClient",
+            lambda settings=None: FakeTronGrid(),
+        )
+
+    owner = WalletUser(
+        nickname="sub_ms_bcast_space",
+        wallet_address=_SPACE_TRON,
+        blockchain="tron",
+        did="did:web:escrow.ruswift.ru:sub_ms_bcast_space",
+    )
+    test_db.add(owner)
+    await test_db.commit()
+    await test_db.refresh(owner)
+
+    w_ms = Wallet(
+        name="ms_bcast",
+        encrypted_mnemonic="enc",
+        role="multisig",
+        tron_address="TLrJJkGK4puQGZLFbrPxK2icPgADaNTq5C",
+        owner_did=owner.did,
+        multisig_setup_status=MULTISIG_STATUS_ACTIVE,
+        multisig_setup_meta={
+            **default_meta_dict(),
+            "actors": [_SIGNER_OTHER, _SPACE_TRON],
+            "threshold_n": 2,
+            "threshold_m": 2,
+        },
+    )
+    test_db.add(w_ms)
+    await test_db.commit()
+    await test_db.refresh(w_ms)
+
+    repo = OrderRepository(session=test_db, redis=test_redis, settings=test_settings)
+    tok = "submittok_multisig_bcast_ok_xyz"
+    dk = withdrawal_dedupe_key(tok)
+    created = await repo.insert_withdrawal_order(
+        dedupe_key=dk,
+        space_wallet_id=w_ms.id,
+        payload={
+            "kind": WITHDRAWAL_KIND,
+            "status": WITHDRAWAL_STATUS_AWAITING_SIGNATURES,
+            "wallet_role": "multisig",
+            "wallet_id": w_ms.id,
+            "tron_address": w_ms.tron_address,
+            "token": {"type": "native", "symbol": "TRX", "decimals": 6},
+            "amount_raw": 1000,
+            "destination_address": _SIGNER_OTHER,
+            "threshold_n": 2,
+            "threshold_m": 2,
+            "actors_snapshot": sorted([_SIGNER_OTHER, _SPACE_TRON]),
+            "long_expiration_ms": True,
+            "active_permission_id": 3,
+            "broadcast_tx_id": None,
+        },
+    )
+    await test_db.commit()
+
+    raw1 = {"expiration": 2_000_000_000_000, "timestamp": 1_999_000_000_000}
+    await order_service.submit_signed_transaction(
+        tok,
+        {"txID": "pending1", "signature": ["a"], "raw_data": raw1},
+        _SIGNER_OTHER,
+    )
+    raw2 = {"expiration": 2_000_000_000_001, "timestamp": 2_000_000_000_000}
+    await order_service.submit_signed_transaction(
+        tok,
+        {"txID": "finaltxid", "signature": ["a", "b"], "raw_data": raw2},
+        _SPACE_TRON,
+    )
+
+    stats = await order_service.broadcast_ready_withdrawals()
+    assert stats.get("broadcasted") == 1
+    assert stats.get("broadcast_errors") == 0
+    await test_db.commit()
+
+    final = await repo.get_by_id(int(created.id))
+    assert final is not None
+    assert final.payload is not None
+    assert final.payload.get("status") == WITHDRAWAL_STATUS_BROADCAST_SUBMITTED
+    assert final.payload.get("broadcast_tx_id") == "finaltxid"
+
+
+@pytest.mark.asyncio
+async def test_submit_signed_multisig_rejects_signer_not_in_actors(
+    order_service: OrderService,
+    test_db,
+    test_redis,
+    test_settings,
+):
+    owner = WalletUser(
+        nickname="sub_ms_rej_space",
+        wallet_address=_SPACE_TRON,
+        blockchain="tron",
+        did="did:web:escrow.ruswift.ru:sub_ms_rej_space",
+    )
+    test_db.add(owner)
+    await test_db.commit()
+    await test_db.refresh(owner)
+
+    w_ms = Wallet(
+        name="ms_rej",
+        encrypted_mnemonic="enc",
+        role="multisig",
+        tron_address="TLrJJkGK4puQGZLFbrPxK2icPgADaNTq5B",
+        owner_did=owner.did,
+        multisig_setup_status=MULTISIG_STATUS_ACTIVE,
+        multisig_setup_meta=default_meta_dict(),
+    )
+    test_db.add(w_ms)
+    await test_db.commit()
+    await test_db.refresh(w_ms)
+
+    repo = OrderRepository(session=test_db, redis=test_redis, settings=test_settings)
+    tok = "submittok_multisig_reject_xyz"
+    await repo.insert_withdrawal_order(
+        dedupe_key=withdrawal_dedupe_key(tok),
+        space_wallet_id=w_ms.id,
+        payload={
+            "kind": WITHDRAWAL_KIND,
+            "status": WITHDRAWAL_STATUS_AWAITING_SIGNATURES,
+            "wallet_role": "multisig",
+            "tron_address": w_ms.tron_address,
+            "threshold_n": 2,
+            "threshold_m": 2,
+            "actors_snapshot": [_SIGNER_OTHER],
+            "long_expiration_ms": True,
+        },
+    )
+    await test_db.commit()
+
+    with pytest.raises(ValueError, match="actors"):
+        await order_service.submit_signed_transaction(
+            tok,
+            {"txID": "x"},
+            _SPACE_TRON,
+        )
+
+
+@pytest.mark.asyncio
+async def test_submit_signed_external_single_signer_broadcast(
+    order_service: OrderService,
+    test_db,
+    test_redis,
+    test_settings,
+):
+    """External: один подписант — сразу broadcast_submitted."""
+    owner = WalletUser(
+        nickname="sub_ext_space",
+        wallet_address=_SPACE_TRON,
+        blockchain="tron",
+        did="did:web:escrow.ruswift.ru:sub_ext_space",
+    )
+    test_db.add(owner)
+    await test_db.commit()
+    await test_db.refresh(owner)
+
+    w_ext = Wallet(
+        name="ext_sub",
+        encrypted_mnemonic=None,
+        role="external",
+        tron_address=_SIGNER_OTHER,
+        owner_did=owner.did,
+    )
+    test_db.add(w_ext)
+    await test_db.commit()
+    await test_db.refresh(w_ext)
+
+    repo = OrderRepository(session=test_db, redis=test_redis, settings=test_settings)
+    tok = "submittok_external_one"
+    await repo.insert_withdrawal_order(
+        dedupe_key=withdrawal_dedupe_key(tok),
+        space_wallet_id=w_ext.id,
+        payload={
+            "kind": WITHDRAWAL_KIND,
+            "status": WITHDRAWAL_STATUS_AWAITING_SIGNATURES,
+            "wallet_role": "external",
+            "tron_address": w_ext.tron_address,
+            "threshold_n": 1,
+            "threshold_m": 1,
+            "actors_snapshot": [],
+            "long_expiration_ms": False,
+        },
+    )
+    await test_db.commit()
+
+    out = await order_service.submit_signed_transaction(
+        tok,
+        {"txID": "exttx1"},
+        _SIGNER_OTHER,
+    )
+    assert out.payload is not None
+    assert out.payload.get("status") == WITHDRAWAL_STATUS_BROADCAST_SUBMITTED
+    assert out.payload.get("broadcast_tx_id") == "exttx1"

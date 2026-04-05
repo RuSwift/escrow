@@ -124,6 +124,47 @@ Vue.component('orders-table', {
             if (st === 'confirmed' || st === 'failed') return false;
             return true;
         },
+        withdrawalOffchainExpirationUtc: function(order) {
+            var p = (order && order.payload) || {};
+            var ms = p.offchain_expiration_ms;
+            if (ms == null) return '';
+            var S = window.EscrowWithdrawalSign;
+            if (S && typeof S.formatUtcFromMs === 'function') {
+                return S.formatUtcFromMs(ms);
+            }
+            var d = new Date(Number(ms));
+            if (isNaN(d.getTime())) return '';
+            return d.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+        },
+        withdrawalOffchainExpired: function(order) {
+            var p = (order && order.payload) || {};
+            var st = (p.status || '').trim();
+            if (st === 'broadcast_submitted' || st === 'confirmed' || st === 'failed' || st === 'ready_to_broadcast') {
+                return false;
+            }
+            var ms = p.offchain_expiration_ms;
+            if (ms == null || !isFinite(Number(ms))) return false;
+            return Date.now() > Number(ms);
+        },
+        withdrawalStatusShowsOffchainExpiry: function(order) {
+            if (!this.isWithdrawalOrder(order)) return false;
+            var p = (order && order.payload) || {};
+            if ((p.wallet_role || '').trim() !== 'multisig') return false;
+            var st = (p.status || '').trim();
+            if (st !== 'awaiting_signatures') return false;
+            return p.offchain_expiration_ms != null;
+        },
+        withdrawalStatusShowsBroadcastQueue: function(order) {
+            if (!this.isWithdrawalOrder(order)) return false;
+            var p = (order && order.payload) || {};
+            if ((p.wallet_role || '').trim() !== 'multisig') return false;
+            return (p.status || '').trim() === 'ready_to_broadcast';
+        },
+        withdrawalCronBroadcastError: function(order) {
+            var p = (order && order.payload) || {};
+            if ((p.status || '').trim() !== 'ready_to_broadcast') return '';
+            return String((p.last_error || '')).trim();
+        },
         ephemeralMultisigStatusLabel: function(order) {
             var p = (order && order.payload) || {};
             var st = (p.multisig_setup_status != null) ? String(p.multisig_setup_status) : '';
@@ -234,6 +275,9 @@ Vue.component('orders-table', {
         orderRowDescTooltip: function(order) {
             if (this.isWithdrawalOrder(order)) return this.withdrawalRowDescTitle(order);
             return this.orderRowDesc(order);
+        },
+        withdrawalSignatorySegments: function(order) {
+            return Array.isArray(order._signatorySegments) ? order._signatorySegments : [];
         },
         withdrawalSignatoriesDisplay: function(order) {
             if (!this.isWithdrawalOrder(order)) return '—';
@@ -537,7 +581,7 @@ Vue.component('orders-table', {
                   @keydown.enter.prevent="onApiOrderRowClick(order)"
                 >
                   <td class="cmc-table-cell text-cmc-muted font-medium">[[ i + 1 ]]</td>
-                  <td class="cmc-table-cell align-middle" @click.stop>
+                  <td class="cmc-table-cell align-middle">
                     <div v-if="isWithdrawalOrder(order) && withdrawalSignTokenFromOrder(order)" class="flex flex-wrap items-center gap-1.5 sm:gap-2">
                       <a
                         :href="withdrawalSignHref(order)"
@@ -602,12 +646,22 @@ Vue.component('orders-table', {
                     <span v-if="isWithdrawalOrder(order)">[[ withdrawalAmountDisplay(order) ]]</span>
                     <span v-else>—</span>
                   </td>
-                  <td class="cmc-table-cell">
-                    <div v-if="isWithdrawalOrder(order)" class="flex items-center gap-1 min-w-0">
-                      <div :class="['inline-flex items-center gap-1.5 min-w-0 max-w-full rounded-md pl-2 pr-1.5 py-0.5', withdrawalBadgeClass(order)]">
+                  <td class="cmc-table-cell align-top">
+                    <div v-if="isWithdrawalOrder(order)" class="flex flex-col gap-1 min-w-0 max-w-[200px] sm:max-w-[240px]">
+                      <div :class="['inline-flex items-center gap-1.5 min-w-0 max-w-full rounded-md pl-2 pr-1.5 py-0.5 w-fit', withdrawalBadgeClass(order)]">
                         <span class="text-[10px] font-bold uppercase truncate">[[ withdrawalStatusLabel(order) ]]</span>
                         <svg v-if="withdrawalSpinnerVisible(order)" class="w-3.5 h-3.5 shrink-0 animate-spin opacity-90 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                       </div>
+                      <p v-if="withdrawalStatusShowsOffchainExpiry(order)" class="text-[10px] text-[#58667e] leading-snug break-words">
+                        <span class="font-semibold text-[#30384a]">[[ $t('main.dashboard.withdrawal_offchain_expires_label') ]]</span>
+                        [[ withdrawalOffchainExpirationUtc(order) ]]
+                      </p>
+                      <p v-if="withdrawalOffchainExpired(order)" class="text-[10px] font-semibold text-amber-900 rounded-md bg-amber-50 border border-amber-100 px-1.5 py-1 leading-snug">
+                        [[ $t('main.dashboard.withdrawal_offchain_expired_notice') ]]
+                      </p>
+                      <p v-if="withdrawalStatusShowsBroadcastQueue(order) && !withdrawalCronBroadcastError(order)" class="text-[10px] text-sky-900 leading-snug rounded-md bg-sky-50 border border-sky-100 px-1.5 py-1">
+                        [[ $t('main.dashboard.withdrawal_broadcast_queue_hint') ]]
+                      </p>
                     </div>
                     <div v-else class="flex items-center gap-1 min-w-0">
                       <div :class="['inline-flex items-center gap-1.5 min-w-0 max-w-full rounded-md pl-2 pr-1.5 py-0.5', ephemeralMultisigBadgeClass(order)]">
@@ -618,7 +672,19 @@ Vue.component('orders-table', {
                   </td>
                   <td class="cmc-table-cell text-cmc-muted">[[ formatDate(order.updated_at) ]]</td>
                   <td class="cmc-table-cell text-cmc-muted text-xs min-w-0 max-w-[220px]">
-                    <span v-if="isWithdrawalOrder(order)" class="block truncate" :title="withdrawalSignatoriesTitle(order)">[[ withdrawalSignatoriesDisplay(order) ]]</span>
+                    <span v-if="isWithdrawalOrder(order) && withdrawalSignatorySegments(order).length" class="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+                      <span
+                        v-for="(seg, si) in withdrawalSignatorySegments(order)"
+                        :key="'sg-' + order.id + '-' + si"
+                        class="inline-flex items-baseline gap-0"
+                      >
+                        <span
+                          :class="seg.signed ? 'font-semibold text-emerald-700' : 'text-cmc-muted'"
+                          :title="seg.address"
+                        >[[ seg.label ]]</span><span v-if="si < withdrawalSignatorySegments(order).length - 1" class="text-cmc-muted">,</span>
+                      </span>
+                    </span>
+                    <span v-else-if="isWithdrawalOrder(order)" class="block truncate" :title="withdrawalSignatoriesTitle(order)">[[ withdrawalSignatoriesDisplay(order) ]]</span>
                     <span v-else>—</span>
                   </td>
                   <td class="cmc-table-cell text-right align-middle" @click.stop>

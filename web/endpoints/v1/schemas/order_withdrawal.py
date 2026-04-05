@@ -55,7 +55,23 @@ class OrderSignContextResponse(BaseModel):
     threshold_n: Optional[int] = None
     threshold_m: Optional[int] = None
     actors_snapshot: List[str] = Field(default_factory=list)
+    active_permission_id: Optional[int] = Field(
+        default=None,
+        description="ID active permission на цепи (TRON multisig) для multiSign / permission_id в tx",
+    )
     long_expiration_ms: bool = False
+    offchain_expiration_ms: Optional[int] = Field(
+        default=None,
+        description="Срок действия off-chain tx (raw_data.expiration), мс с epoch",
+    )
+    offchain_timestamp_ms: Optional[int] = Field(
+        default=None,
+        description="Время сборки tx (raw_data.timestamp), мс с epoch",
+    )
+    offchain_signed_addresses: List[str] = Field(
+        default_factory=list,
+        description="Адреса подписантов по порядку записи off-chain подписей",
+    )
     signatures: List[Dict[str, Any]] = Field(default_factory=list)
     broadcast_tx_id: Optional[str] = None
     last_error: Optional[str] = Field(
@@ -68,5 +84,8 @@ class OrderSignSubmitRequest(BaseModel):
     signer_address: str = Field(..., min_length=26, max_length=64)
     signed_transaction: Dict[str, Any] = Field(
         ...,
-        description="Подписанная транзакция Tron (объект для broadcast)",
+        description=(
+            "Вариант A: объект транзакции Tron (после trx.sign или trx.multiSign). "
+            "Для multisig накапливаются подписи в signature[]; broadcast — только при достижении порога."
+        ),
     )
