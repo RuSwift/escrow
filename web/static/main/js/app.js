@@ -70,9 +70,12 @@
     var spaceRole = (el.getAttribute('data-space-role') || '').trim();
     var spaceSubsCount = parseInt(el.getAttribute('data-space-subs-count'), 10);
     if (isNaN(spaceSubsCount)) spaceSubsCount = -1;
+    var spaceWalletsCount = parseInt(el.getAttribute('data-space-wallets-count'), 10);
+    if (isNaN(spaceWalletsCount)) spaceWalletsCount = -1;
     var spaceProfileFilled = (el.getAttribute('data-space-profile-filled') || 'false') === 'true';
     window.__SPACE_ROLE__ = spaceRole;
     window.__SPACE_SUBS_COUNT__ = spaceSubsCount;
+    window.__SPACE_WALLETS_COUNT__ = spaceWalletsCount;
     window.__SPACE_PROFILE_FILLED__ = spaceProfileFilled;
     window.__SPACE_OWNER_TRON__ = (el.getAttribute('data-space-owner-tron') || '').trim();
     

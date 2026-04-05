@@ -223,6 +223,16 @@ Vue.component('dashboard', {
             if (sidebar && sidebar.__vue__) sidebar.__vue__.go('space-roles');
             if (window.__mainApp) window.__mainApp.currentPage = 'space-roles';
         },
+        walletsPageHref: function() {
+            var space = window.__CURRENT_SPACE__ || '';
+            var base = space ? '/' + encodeURIComponent(space) : '/app';
+            return base + '?initial_page=my-business';
+        },
+        goToWallets: function() {
+            var sidebar = document.querySelector('#sidebar-main');
+            if (sidebar && sidebar.__vue__) sidebar.__vue__.go('my-business');
+            if (window.__mainApp) window.__mainApp.currentPage = 'my-business';
+        },
         profilePageHref: function() {
             var space = window.__CURRENT_SPACE__ || '';
             var base = space ? '/' + encodeURIComponent(space) : '/app';
@@ -282,6 +292,10 @@ Vue.component('dashboard', {
       <div v-if="typeof window !== 'undefined' && window.__SPACE_ROLE__ === 'owner' && window.__SPACE_SUBS_COUNT__ === 0" class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-6 text-amber-800 text-sm font-medium flex flex-wrap items-center gap-x-2 gap-y-1">
         <span>[[ $t(\'main.dashboard.no_roles_warning\') ]]</span>
         <a :href="rolesPageHref()" @click.prevent="goToRoles()" class="font-semibold text-main-blue hover:underline">[[ $t(\'main.dashboard.go_to_roles\') ]]</a>
+      </div>
+      <div v-if="typeof window !== 'undefined' && window.__SPACE_ROLE__ === 'owner' && window.__SPACE_WALLETS_COUNT__ === 0" class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-6 text-amber-800 text-sm font-medium flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span>[[ $t(\'main.dashboard.no_corp_wallets_warning\') ]]</span>
+        <a :href="walletsPageHref()" @click.prevent="goToWallets()" class="font-semibold text-main-blue hover:underline">[[ $t(\'main.dashboard.go_to_wallets\') ]]</a>
       </div>
       <div v-if="typeof window !== \'undefined\' && window.__SPACE_ROLE__ === \'owner\' && window.__SPACE_PROFILE_FILLED__ === false" class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-6 text-amber-800 text-sm font-medium flex flex-wrap items-center gap-x-2 gap-y-1">
         <span>[[ $t(\'main.dashboard.no_profile_warning\') ]]</span>

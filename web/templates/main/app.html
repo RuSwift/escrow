@@ -8,6 +8,7 @@
      data-space-primary-wallet='{{ space_primary_wallet | tojson if space_primary_wallet else "{}" }}'
      data-space-role="{{ space_role | default('') }}"
      data-space-subs-count="{{ space_subs_count | default(-1) }}"
+     data-space-wallets-count="{{ space_wallets_count | default(-1) }}"
      data-space-profile-filled="{{ 'true' if (space_profile_filled | default(true)) else 'false' }}"
      data-space-owner-tron="{{ space_owner_wallet_tron | default('') }}"
      data-tron-network="{{ tron_network | default('mainnet') | e }}"

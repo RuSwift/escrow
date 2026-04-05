@@ -18,6 +18,7 @@ from i18n.context import get_request_locale, set_request_locale
 from i18n.translations import get_translations_for_locale
 from settings import Settings
 from web.endpoints.dependencies import (
+    get_exchange_wallet_service,
     get_invite_service,
     get_order_service,
     get_required_wallet_address_for_space,
@@ -182,6 +183,7 @@ def create_app() -> FastAPI:
         wallet_address: str = Depends(get_required_wallet_address_for_space),
         wallet_service=Depends(get_wallet_user_service),
         space_service=Depends(get_space_service),
+        exchange_wallet_service=Depends(get_exchange_wallet_service),
     ):
         """Приложение в контексте space (nickname). Доступ только если JWT и space в списке spaces пользователя."""
         space_clean = (space or "").strip()
@@ -222,9 +224,15 @@ def create_app() -> FastAPI:
             space_subs_count = len(subs)
             profile = await space_service.get_space_profile(space_clean, wallet_address)
             space_profile_filled = space_service.get_space_profile_filled(profile)
+            
+            wallets = await exchange_wallet_service.list_wallets(
+                space_clean, wallet_address
+            )
+            space_wallets_count = len(wallets)
         else:
             space_subs_count = -1
             space_profile_filled = True
+            space_wallets_count = -1
 
         valid = (
             "dashboard",
@@ -258,6 +266,7 @@ def create_app() -> FastAPI:
                 "space_company_name": space_company_name,
                 "space_role": space_role.value,
                 "space_subs_count": space_subs_count,
+                "space_wallets_count": space_wallets_count,
                 "space_profile_filled": space_profile_filled,
                 "space_owner_wallet_tron": space_owner_wallet_tron,
                 "space_primary_wallet": space_primary_wallet,
