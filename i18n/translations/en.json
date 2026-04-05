@@ -914,5 +914,8 @@
   "notify.ramp_wallet_deleted": "Corporate wallet «{wallet_name}» (id {wallet_id}, {role}) was removed from the space. TRON: {tron_address}",
   "notify.multisig_configured_active": "Multisig wallet «{wallet_name}» (id {wallet_id}) is configured and active on-chain. Address: {tron_address}",
   "notify.multisig_reconfigured_active": "Multisig «{wallet_name}» (id {wallet_id}): permission reconfiguration completed. Address: {tron_address}",
-  "notify.multisig_reconfigured_noop": "Multisig «{wallet_name}» (id {wallet_id}): configuration already matches the blockchain; no changes were required. Address: {tron_address}"
+  "notify.multisig_reconfigured_noop": "Multisig «{wallet_name}» (id {wallet_id}): configuration already matches the blockchain; no changes were required. Address: {tron_address}",
+  "notify.withdrawal_created": "Withdrawal request created: {amount} {symbol} to {destination}. Wallet: {wallet_name}.",
+  "notify.withdrawal_confirmed": "Withdrawal confirmed: {amount} {symbol} successfully sent to {destination}. TxID: {txid}.",
+  "notify.withdrawal_failed": "Withdrawal failed {amount} {symbol} to {destination}: {error}."
 }

@@ -31,6 +31,9 @@ _EVENT_I18N_KEY: dict[str, str] = {
     "multisig_configured_active": "notify.multisig_configured_active",
     "multisig_reconfigured_active": "notify.multisig_reconfigured_active",
     "multisig_reconfigured_noop": "notify.multisig_reconfigured_noop",
+    "withdrawal_created": "notify.withdrawal_created",
+    "withdrawal_confirmed": "notify.withdrawal_confirmed",
+    "withdrawal_failed": "notify.withdrawal_failed",
 }
 
 
@@ -42,6 +45,9 @@ class RampNotifyEvent(StrEnum):
     MULTISIG_CONFIGURED_ACTIVE = "multisig_configured_active"
     MULTISIG_RECONFIGURED_ACTIVE = "multisig_reconfigured_active"
     MULTISIG_RECONFIGURED_NOOP = "multisig_reconfigured_noop"
+    WITHDRAWAL_CREATED = "withdrawal_created"
+    WITHDRAWAL_CONFIRMED = "withdrawal_confirmed"
+    WITHDRAWAL_FAILED = "withdrawal_failed"
 
 
 class NotifyRecipient(TypedDict):
@@ -141,6 +147,11 @@ class NotifyService:
             "wallet_id": _p(payload, "wallet_id"),
             "role": _p(payload, "role"),
             "tron_address": _p(payload, "tron_address"),
+            "amount": _p(payload, "amount"),
+            "symbol": _p(payload, "symbol"),
+            "destination": _p(payload, "destination"),
+            "txid": _p(payload, "txid"),
+            "error": _p(payload, "error"),
         }
         return get_translation(msg_key, lang, **params)
 

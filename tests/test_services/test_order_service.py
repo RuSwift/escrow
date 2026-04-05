@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from unittest.mock import patch, MagicMock
 import pytest
 from redis.asyncio import Redis
 
@@ -610,9 +611,19 @@ async def test_broadcast_ready_withdrawals_success(
         _SPACE_TRON,
     )
 
-    stats = await order_service.broadcast_ready_withdrawals()
-    assert stats.get("broadcasted") == 1
-    assert stats.get("broadcast_errors") == 0
+    with patch("services.order.NotifyService", autospec=True) as mock_notify_cls:
+        mock_notify = mock_notify_cls.return_value
+        async def fake_send(*args, **kwargs): pass
+        mock_notify.send_message.side_effect = fake_send
+        mock_notify._message_for_event.return_value = "Broadcast ok"
+        mock_notify._language_for_scope.return_value = "ru"
+
+        stats = await order_service.broadcast_ready_withdrawals()
+        assert stats.get("broadcasted") == 1
+        assert stats.get("broadcast_errors") == 0
+        # No notification on success broadcast (it's not confirmed yet)
+        assert not mock_notify.send_message.called
+
     await test_db.commit()
 
     final = await repo.get_by_id(int(created.id))
@@ -733,3 +744,84 @@ async def test_submit_signed_external_single_signer_broadcast(
     assert out.payload is not None
     assert out.payload.get("status") == WITHDRAWAL_STATUS_BROADCAST_SUBMITTED
     assert out.payload.get("broadcast_tx_id") == "exttx1"
+
+
+@pytest.mark.asyncio
+async def test_broadcast_ready_withdrawals_notifies_on_error(
+    order_service: OrderService,
+    test_db,
+    test_redis,
+    test_settings,
+    monkeypatch,
+):
+    """broadcast_ready_withdrawals: если нода вернула ошибку, отправляем уведомление."""
+
+    class FakeTronGridError:
+        def __init__(self, settings=None): pass
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): return False
+        async def broadcast_transaction(self, signed):
+            return {"result": False, "message": "OUT_OF_ENERGY"}
+
+    monkeypatch.setattr("services.order.TronGridClient", lambda settings=None: FakeTronGridError())
+
+    owner = WalletUser(
+        nickname="bcast_err_space",
+        wallet_address=_SPACE_TRON,
+        blockchain="tron",
+        did="did:web:escrow.ruswift.ru:bcast_err_space",
+    )
+    test_db.add(owner)
+    await test_db.commit()
+
+    w_ms = Wallet(
+        name="ms_err",
+        encrypted_mnemonic="enc",
+        role="multisig",
+        tron_address="TLrJJkGK4puQGZLFbrPxK2icPgADaNTq5C",
+        owner_did=owner.did,
+        multisig_setup_status=MULTISIG_STATUS_ACTIVE,
+        multisig_setup_meta={
+            **default_meta_dict(),
+            "actors": [_SIGNER_OTHER, _SPACE_TRON],
+            "threshold_n": 1,
+            "threshold_m": 2,
+        },
+    )
+    test_db.add(w_ms)
+    await test_db.commit()
+
+    repo = OrderRepository(session=test_db, redis=test_redis, settings=test_settings)
+    tok = "tok_bcast_err"
+    await repo.insert_withdrawal_order(
+        dedupe_key=withdrawal_dedupe_key(tok),
+        space_wallet_id=w_ms.id,
+        payload={
+            "kind": WITHDRAWAL_KIND,
+            "status": WITHDRAWAL_STATUS_READY_TO_BROADCAST,
+            "wallet_role": "multisig",
+            "wallet_id": w_ms.id,
+            "tron_address": w_ms.tron_address,
+            "token": {"type": "native", "symbol": "TRX", "decimals": 6},
+            "amount_raw": 1000,
+            "destination_address": _SIGNER_OTHER,
+            "threshold_n": 1,
+            "threshold_m": 2,
+            "actors_snapshot": [_SIGNER_OTHER, _SPACE_TRON],
+        },
+    )
+    await test_db.commit()
+
+    with patch("services.order.NotifyService", autospec=True) as mock_notify_cls:
+        mock_notify = mock_notify_cls.return_value
+        async def fake_send(*args, **kwargs): pass
+        mock_notify.send_message.side_effect = fake_send
+        mock_notify._message_for_event.return_value = "Error text"
+        mock_notify._language_for_scope.return_value = "ru"
+
+        stats = await order_service.broadcast_ready_withdrawals()
+        assert stats.get("broadcast_errors") == 1
+        
+        assert mock_notify.send_message.called
+        args, _ = mock_notify.send_message.call_args
+        assert args[1] == "Error text"

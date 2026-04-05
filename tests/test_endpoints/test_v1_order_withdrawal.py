@@ -1,6 +1,6 @@
 """POST withdrawal, GET order-sign по dedupe_key в БД, DELETE заявки, submit подписи external."""
 
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 import pytest_asyncio
@@ -167,34 +167,52 @@ async def test_create_withdrawal_201(main_app_withdrawal, test_redis):
         transport=ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        r = await client.post(
-            "/v1/spaces/wd_space/orders/withdrawal",
-            json={
-                "wallet_id": wallet_id,
-                "token_type": "native",
-                "symbol": "TRX",
-                "contract_address": None,
-                "amount_raw": 1_000_000,
-                "destination_address": "TV6ZVcKH24NzWxwdRbCvVD5gqAwaypdkRi",
-                "purpose": "Тестовое назначение",
-            },
-        )
-        assert r.status_code == 201, r.text
-        data = r.json()
-        assert data["order"]["payload"].get("purpose") == "Тестовое назначение"
-        assert "sign_url" in data
-        assert "/o/" in data["sign_url"]
-        assert data["order"]["payload"]["kind"] == "withdrawal_request"
-        assert data["order"]["category"] == ORDER_CATEGORY_WITHDRAWAL
-        dedupe = data["order"]["dedupe_key"]
-        assert dedupe.startswith("withdrawal:")
-        sign_token = dedupe.split("withdrawal:", 1)[1]
-        assert sign_token in data["sign_url"]
-        assert dedupe == withdrawal_dedupe_key(sign_token)
-        r_sign = await client.get(f"/v1/order-sign/{sign_token}")
-        assert r_sign.status_code == 200, r_sign.text
-        assert r_sign.json()["order_id"] == data["order"]["id"]
-        assert r_sign.json().get("purpose") == "Тестовое назначение"
+            with patch("services.order.NotifyService", autospec=True) as mock_notify_cls:
+                mock_notify = mock_notify_cls.return_value
+                
+                # Let's use a simpler way to mock async method
+                async def fake_send(*args, **kwargs): pass
+                mock_notify.send_message.side_effect = fake_send
+                mock_notify._message_for_event.return_value = "Withdrawal created text"
+                mock_notify._language_for_scope.return_value = "ru"
+
+                r = await client.post(
+                    "/v1/spaces/wd_space/orders/withdrawal",
+                    json={
+                        "wallet_id": wallet_id,
+                        "token_type": "native",
+                        "symbol": "TRX",
+                        "contract_address": None,
+                        "amount_raw": 1_000_000,
+                        "destination_address": "TV6ZVcKH24NzWxwdRbCvVD5gqAwaypdkRi",
+                        "purpose": "Тестовое назначение",
+                    },
+                )
+                assert r.status_code == 201, r.text
+                
+                # Check notification
+                assert mock_notify.send_message.called
+                args, _ = mock_notify.send_message.call_args
+                recipients = args[0]
+                text = args[1]
+                assert len(recipients) >= 1
+                assert recipients[0]["scope"] == "wd_space"
+                assert text == "Withdrawal created text"
+                data = r.json()
+                assert data["order"]["payload"].get("purpose") == "Тестовое назначение"
+                assert "sign_url" in data
+                assert "/o/" in data["sign_url"]
+                assert data["order"]["payload"]["kind"] == "withdrawal_request"
+                assert data["order"]["category"] == ORDER_CATEGORY_WITHDRAWAL
+                dedupe = data["order"]["dedupe_key"]
+                assert dedupe.startswith("withdrawal:")
+                sign_token = dedupe.split("withdrawal:", 1)[1]
+                assert sign_token in data["sign_url"]
+                assert dedupe == withdrawal_dedupe_key(sign_token)
+                r_sign = await client.get(f"/v1/order-sign/{sign_token}")
+                assert r_sign.status_code == 200, r_sign.text
+                assert r_sign.json()["order_id"] == data["order"]["id"]
+                assert r_sign.json().get("purpose") == "Тестовое назначение"
 
 
 @pytest.mark.asyncio
@@ -311,12 +329,24 @@ async def test_external_withdrawal_mnemonic_submit_then_confirmed_trongrid_mock(
         with patch(
             "services.order.TronGridClient",
             _FakeTronGridForRefresh,
-        ):
+        ), patch("services.order.NotifyService", autospec=True) as mock_notify_cls:
+            mock_notify = mock_notify_cls.return_value
+            async def fake_send(*args, **kwargs): pass
+            mock_notify.send_message.side_effect = fake_send
+            mock_notify._message_for_event.return_value = "Confirmed text"
+            mock_notify._language_for_scope.return_value = "ru"
+
             svc = OrderService(test_db, test_redis, test_settings)
             # Force commit before refresh
             await test_db.commit()
             stats = await svc.refresh_withdrawal_statuses()
             await test_db.commit()
+            
+            # Check notification
+            assert mock_notify.send_message.called
+            args, _ = mock_notify.send_message.call_args
+            assert args[1] == "Confirmed text"
+
         assert stats.get("updated", 0) >= 1
 
         r_list = await client.get("/v1/spaces/wd_ext_mnem/orders")

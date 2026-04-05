@@ -25,6 +25,7 @@ from services.multisig_wallet.constants import (
     SPACE_DRIFT_ELIGIBLE_STATUSES,
     TERMINAL_STATUSES,
 )
+from services.notify import NotifyService, RampNotifyEvent
 from services.space import SpaceService
 from services.tron.grid_client import TronGridClient
 from services.tron.utils import is_valid_tron_address
@@ -426,6 +427,7 @@ class OrderService:
             payload=payload,
         )
         await self._session.commit()
+        await self._notify_withdrawal(int(created.id), RampNotifyEvent.WITHDRAWAL_CREATED)
         return created, sign_token, f"/o/{sign_token}"
 
     async def resolve_order_by_sign_token(self, token: str) -> Optional[Tuple[int, str]]:
@@ -726,6 +728,9 @@ class OrderService:
                     continue
                 if ok is True:
                     p["status"] = WITHDRAWAL_STATUS_CONFIRMED
+                    await self._orders.update_withdrawal_payload(int(m.id), p)
+                    updated += 1
+                    await self._notify_withdrawal(int(m.id), RampNotifyEvent.WITHDRAWAL_CONFIRMED)
                 else:
                     p["status"] = WITHDRAWAL_STATUS_FAILED
                     try:
@@ -740,8 +745,9 @@ class OrderService:
                     p["last_error"] = (
                         detail.strip() or "Транзакция не выполнена в сети."
                     )[:2000]
-                await self._orders.update_withdrawal_payload(int(m.id), p)
-                updated += 1
+                    await self._orders.update_withdrawal_payload(int(m.id), p)
+                    updated += 1
+                    await self._notify_withdrawal(int(m.id), RampNotifyEvent.WITHDRAWAL_FAILED)
         return {"updated": updated}
 
     async def broadcast_ready_withdrawals(self) -> Dict[str, Any]:
@@ -769,6 +775,7 @@ class OrderService:
                     logger.warning(
                         "withdrawal broadcast order_id=%s: %s", int(m.id), err[:200]
                     )
+                    await self._notify_withdrawal(int(m.id), RampNotifyEvent.WITHDRAWAL_FAILED)
                     continue
                 try:
                     out = await client.broadcast_transaction(dict(signed_tx))
@@ -782,6 +789,7 @@ class OrderService:
                         int(m.id),
                         msg[:200],
                     )
+                    await self._notify_withdrawal(int(m.id), RampNotifyEvent.WITHDRAWAL_FAILED)
                     continue
                 if not out.get("result"):
                     p["last_error"] = _broadcast_error_message(out)
@@ -792,6 +800,7 @@ class OrderService:
                         int(m.id),
                         p["last_error"][:200],
                     )
+                    await self._notify_withdrawal(int(m.id), RampNotifyEvent.WITHDRAWAL_FAILED)
                     continue
                 chain_txid = str(
                     signed_tx.get("txID") or signed_tx.get("txid") or ""
@@ -800,6 +809,7 @@ class OrderService:
                     p["last_error"] = "Broadcast ok but signed tx missing txID"
                     await self._orders.update_withdrawal_payload(int(m.id), p)
                     errors += 1
+                    await self._notify_withdrawal(int(m.id), RampNotifyEvent.WITHDRAWAL_FAILED)
                     continue
                 p["status"] = WITHDRAWAL_STATUS_BROADCAST_SUBMITTED
                 p["broadcast_tx_id"] = chain_txid
@@ -807,3 +817,92 @@ class OrderService:
                 await self._orders.update_withdrawal_payload(int(m.id), p)
                 broadcasted += 1
         return {"broadcasted": broadcasted, "broadcast_errors": errors}
+
+    async def _notify_withdrawal(
+        self,
+        order_id: int,
+        event: RampNotifyEvent,
+        extra_payload: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        """
+        Уведомление участников спейса о событии заявки на вывод.
+        Владельцы (owner) получают всегда.
+        Менеджеры (operator) получают только если их адрес в actors_snapshot.
+        """
+        order = await self._orders.get_by_id(order_id)
+        if not order or order.category != ORDER_CATEGORY_WITHDRAWAL:
+            return
+        p = dict(order.payload or {})
+        wid = order.space_wallet_id
+        if wid is None:
+            return
+
+        # Получаем кошелек, чтобы узнать nickname владельца (scope)
+        w_stmt = select(Wallet).where(Wallet.id == wid)
+        w_res = await self._session.execute(w_stmt)
+        wallet = w_res.scalar_one_or_none()
+        if not wallet or not wallet.owner_did:
+            return
+
+        owner_user = await self._wallet_users.get_by_did(wallet.owner_did)
+        if not owner_user:
+            return
+        scope = owner_user.nickname
+
+        # Собираем данные для NotifyService
+        tok = p.get("token") or {}
+        decimals = int(tok.get("decimals") or 6)
+        raw_amt = int(p.get("amount_raw") or 0)
+        amount_human = raw_amt / (10**decimals)
+
+        notify_payload = {
+            "wallet_name": wallet.name,
+            "wallet_id": wallet.id,
+            "role": p.get("wallet_role"),
+            "tron_address": p.get("tron_address"),
+            "amount": f"{amount_human:g}",
+            "symbol": tok.get("symbol"),
+            "destination": p.get("destination_address"),
+            "txid": p.get("broadcast_tx_id"),
+            "error": p.get("last_error"),
+        }
+        if extra_payload:
+            notify_payload.update(extra_payload)
+
+        # Собираем получателей
+        subs = await self._wallet_users.list_subs(owner_user.id)
+        recipients: List[Dict[str, Any]] = []
+        seen_did = set()
+
+        # 1. Владелец спейса
+        from core.utils import get_user_did
+        owner_did = get_user_did(owner_user.wallet_address, owner_user.blockchain)
+        recipients.append({"did": owner_did, "scope": scope})
+        seen_did.add(owner_did)
+
+        # 2. Субаккаунты
+        actors_snapshot = set(p.get("actors_snapshot") or [])
+        for sub in subs:
+            if sub.is_blocked:
+                continue
+            
+            is_owner = "owner" in [r.value if hasattr(r, "value") else str(r) for r in sub.roles]
+            is_participating_operator = False
+            if "operator" in [r.value if hasattr(r, "value") else str(r) for r in sub.roles]:
+                if sub.wallet_address in actors_snapshot:
+                    is_participating_operator = True
+            
+            if is_owner or is_participating_operator:
+                did = get_user_did(sub.wallet_address, sub.blockchain)
+                if did not in seen_did:
+                    recipients.append({"did": did, "scope": scope})
+                    seen_did.add(did)
+
+        try:
+            ns = NotifyService(self._session, self._redis, self._settings)
+            # Используем _message_for_event для получения текста на языке спейса
+            lang = await ns._language_for_scope(scope)
+            text = ns._message_for_event(event, notify_payload, language=lang)
+            await ns.send_message(recipients, text)
+        except Exception:
+            logger.exception("Failed to send withdrawal notification order_id=%s", order_id)
