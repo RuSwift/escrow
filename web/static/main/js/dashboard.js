@@ -66,7 +66,8 @@ Vue.component('dashboard', {
             ratiosError: null,
             ratiosModalOpen: false,
             spaceRole: '',
-            showWithdrawalModal: false
+            showWithdrawalModal: false,
+            appDebug: typeof window !== 'undefined' && window.__DEBUG__ === true
         };
     },
     computed: {
@@ -294,7 +295,17 @@ Vue.component('dashboard', {
         :can-manage="canCreateWithdrawal"
       ></orders-table>
 
-      <div class="mt-12 grid grid-cols-1 md:grid-cols-3 gap-8">
+      <div
+        v-if="appDebug"
+        class="mt-12 rounded-xl border border-dashed border-amber-300/90 bg-amber-50/50 p-4 sm:p-6 shadow-sm ring-1 ring-amber-200/40"
+        role="region"
+        :aria-label="$t('main.dashboard.app_debug_region_aria')"
+      >
+        <div class="mb-6 flex flex-wrap items-center gap-2 gap-y-1 border-b border-amber-200/80 pb-4">
+          <span class="inline-flex shrink-0 items-center rounded-md bg-amber-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider text-amber-950 ring-1 ring-inset ring-amber-400/50">[[ $t('main.dashboard.app_debug_badge') ]]</span>
+          <span class="min-w-0 text-xs leading-snug text-amber-900/85">[[ $t('main.dashboard.app_debug_hint') ]]</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
         <div class="flex gap-4">
           <div class="w-12 h-12 rounded-2xl bg-main-blue/10 flex items-center justify-center text-main-blue shrink-0">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
@@ -322,8 +333,8 @@ Vue.component('dashboard', {
             <p class="text-sm text-cmc-muted leading-relaxed">[[ $t('main.dashboard.info_arbitration') ]]</p>
           </div>
         </div>
-      </div>
-      <div class="mt-14">
+        </div>
+        <div class="mt-10 border-t border-amber-200/70 pt-8">
         <h2 class="text-lg font-bold text-[#191d23] mb-2">[[ $t('main.dashboard.mocker_orders_title') ]]</h2>
         <p class="text-xs text-cmc-muted mb-4">[[ $t('main.dashboard.mocker_orders_subtitle') ]]</p>
         <div class="flex flex-wrap items-center gap-4 mb-6">
@@ -398,6 +409,7 @@ Vue.component('dashboard', {
               </tbody>
             </table>
           </div>
+        </div>
         </div>
       </div>
       <transition name="fade">

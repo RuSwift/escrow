@@ -9,7 +9,8 @@
      data-space-subs-count="{{ space_subs_count | default(-1) }}"
      data-space-profile-filled="{{ 'true' if (space_profile_filled | default(true)) else 'false' }}"
      data-space-owner-tron="{{ space_owner_wallet_tron | default('') }}"
-     data-tron-network="{{ tron_network | default('mainnet') | e }}">
+     data-tron-network="{{ tron_network | default('mainnet') | e }}"
+     data-debug="{{ 'true' if (settings_debug | default(false)) else 'false' }}">
   <div class="p-8 bg-[#f8fafd] flex-1 overflow-y-auto flex items-center justify-center">
     <p class="text-[#58667e] text-sm">{{ _('main.loading') }}</p>
   </div>
