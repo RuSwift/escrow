@@ -69,20 +69,11 @@ Vue.component('dashboard', {
             ratiosLoading: false,
             ratiosError: null,
             ratiosModalOpen: false,
-            showDashboardMultisigWizard: false,
-            dashboardMultisigWizardWallet: null,
-            dashboardMultisigFetching: false,
-            driftDetailModalOpen: false,
-            driftDetailOrder: null,
             spaceRole: '',
             showWithdrawalModal: false,
-            showWithdrawalDetailModal: false,
-            withdrawalDetailOrder: null,
             rampWalletByTron: {},
             rampWalletById: {},
             signatoryTronLabelByAddress: {},
-            ordersSignLinkCopiedId: null,
-            _ordersSignLinkCopyTimer: null,
             /** Периодическое обновление таблицы заявок (в т.ч. статус выводов после подписи на /o/{token}). */
             ordersPollTimer: null
         };
@@ -159,29 +150,6 @@ Vue.component('dashboard', {
                     (escrow.seller_id || '').toLowerCase().indexOf(participantFilter) !== -1;
                 return matchesSearch && matchesStatus && matchesParticipant;
             });
-        },
-        /** Блоки расхождений в модалке — только если есть ненулевые списки отличий */
-        driftModalShowOwnersBlock: function() {
-            var p = this.driftDetailOrder && this.driftDetailOrder.payload;
-            if (!p || !p.owners_drift) return false;
-            var m = p.owners_only_in_meta;
-            var s = p.owners_only_in_space;
-            return (Array.isArray(m) && m.length > 0) || (Array.isArray(s) && s.length > 0);
-        },
-        driftModalActorsOnlyInMetaArr: function() {
-            var p = this.driftDetailOrder && this.driftDetailOrder.payload;
-            if (!p) return [];
-            return Array.isArray(p.actors_only_in_meta) ? p.actors_only_in_meta : (Array.isArray(p.only_in_meta) ? p.only_in_meta : []);
-        },
-        driftModalActorsOnlyInSpaceArr: function() {
-            var p = this.driftDetailOrder && this.driftDetailOrder.payload;
-            if (!p) return [];
-            return Array.isArray(p.actors_only_in_space) ? p.actors_only_in_space : (Array.isArray(p.only_in_space) ? p.only_in_space : []);
-        },
-        driftModalShowActorsBlock: function() {
-            var p = this.driftDetailOrder && this.driftDetailOrder.payload;
-            if (!p || !p.actors_drift) return false;
-            return this.driftModalActorsOnlyInMetaArr.length > 0 || this.driftModalActorsOnlyInSpaceArr.length > 0;
         }
     },
     mounted: function() {
@@ -194,10 +162,6 @@ Vue.component('dashboard', {
     },
     beforeDestroy: function() {
         this.stopOrdersPoll();
-        if (this._ordersSignLinkCopyTimer) {
-            clearTimeout(this._ordersSignLinkCopyTimer);
-            this._ordersSignLinkCopyTimer = null;
-        }
     },
     methods: {
         fetchRatios: function() {
@@ -394,52 +358,6 @@ Vue.component('dashboard', {
             }
             return '—';
         },
-        withdrawalSignAbsoluteUrl: function(order) {
-            var dk = String((order && order.dedupe_key) || '').trim();
-            var prefix = 'withdrawal:';
-            if (dk.indexOf(prefix) !== 0) return '';
-            var t = dk.slice(prefix.length).trim();
-            if (!t) return '';
-            var path = '/o/' + encodeURIComponent(t);
-            if (typeof window !== 'undefined' && window.location && window.location.origin) {
-                return window.location.origin + path;
-            }
-            return path;
-        },
-        copyWithdrawalSignLink: function(order, ev) {
-            if (ev && ev.stopPropagation) ev.stopPropagation();
-            var url = this.withdrawalSignAbsoluteUrl(order);
-            if (!url) return;
-            var self = this;
-            function afterCopy() {
-                self.ordersSignLinkCopiedId = order.id;
-                if (self._ordersSignLinkCopyTimer) clearTimeout(self._ordersSignLinkCopyTimer);
-                self._ordersSignLinkCopyTimer = setTimeout(function() {
-                    self.ordersSignLinkCopiedId = null;
-                }, 2000);
-            }
-            if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(url).then(afterCopy).catch(function() {
-                    self.copyWithdrawalSignLinkFallback(url, afterCopy);
-                });
-            } else {
-                this.copyWithdrawalSignLinkFallback(url, afterCopy);
-            }
-        },
-        copyWithdrawalSignLinkFallback: function(text, done) {
-            try {
-                var ta = document.createElement('textarea');
-                ta.value = text;
-                ta.setAttribute('readonly', '');
-                ta.style.position = 'fixed';
-                ta.style.left = '-9999px';
-                document.body.appendChild(ta);
-                ta.select();
-                document.execCommand('copy');
-                document.body.removeChild(ta);
-                if (done) done();
-            } catch (e) {}
-        },
         onNewRequestSelect: function(e) {
             var el = e && e.target;
             var v = el ? el.value : '';
@@ -450,209 +368,6 @@ Vue.component('dashboard', {
         },
         closeWithdrawalModal: function() {
             this.showWithdrawalModal = false;
-        },
-        closeWithdrawalDetailModal: function() {
-            this.showWithdrawalDetailModal = false;
-            this.withdrawalDetailOrder = null;
-        },
-        onWithdrawalDetailDeleted: function() {
-            this.fetchOrders();
-            this.closeWithdrawalDetailModal();
-        },
-        onWithdrawalDetailUpdated: function() {
-            this.fetchOrders();
-        },
-        deleteWithdrawalOrder: function(order, ev) {
-            if (ev && ev.stopPropagation) ev.stopPropagation();
-            var self = this;
-            var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__) ? String(window.__CURRENT_SPACE__).trim() : '';
-            if (!space) return;
-            function runDelete() {
-                fetch('/v1/spaces/' + encodeURIComponent(space) + '/orders/' + encodeURIComponent(order.id), {
-                    method: 'DELETE',
-                    headers: authHeadersMain(),
-                    credentials: 'include'
-                })
-                    .then(function(res) {
-                        if (res.ok) {
-                            self.fetchOrders();
-                            return;
-                        }
-                        if (res.status === 400) {
-                            return res.json().then(function(d) {
-                                var msg = (d && typeof d.detail === 'string') ? d.detail : self.$t('main.withdrawal_detail.delete_order_forbidden');
-                                if (typeof window.showAlert === 'function') {
-                                    window.showAlert({
-                                        title: self.$t('main.dialog.error_title'),
-                                        message: msg
-                                    });
-                                } else {
-                                    alert(msg);
-                                }
-                            });
-                        }
-                        throw new Error('HTTP ' + res.status);
-                    })
-                    .catch(function() {
-                        if (typeof window.showAlert === 'function') {
-                            window.showAlert({
-                                title: self.$t('main.dialog.error_title'),
-                                message: self.$t('main.dashboard.orders_delete_error')
-                            });
-                        } else {
-                            alert(self.$t('main.dashboard.orders_delete_error'));
-                        }
-                    });
-            }
-            if (typeof window.showConfirm === 'function') {
-                window.showConfirm({
-                    title: self.$t('main.dashboard.orders_delete_confirm_title'),
-                    message: self.$t('main.dashboard.orders_delete_confirm'),
-                    danger: true,
-                    onConfirm: runDelete
-                });
-            } else {
-                if (!confirm(self.$t('main.dashboard.orders_delete_confirm'))) return;
-                runDelete();
-            }
-        },
-        onApiOrderRowClick: function(order) {
-            if (order.payload && order.payload.kind === 'withdrawal_request') {
-                this.withdrawalDetailOrder = order;
-                this.showWithdrawalDetailModal = true;
-                return;
-            }
-            var k = order && order.payload && order.payload.kind;
-            var isMultisigEphemeral = (k === 'multisig_pipeline' || k === 'multisig_space_drift');
-            if (!isMultisigEphemeral || this.dashboardMultisigFetching) return;
-            if (k === 'multisig_space_drift') {
-                this.openDriftDetailModal(order);
-                return;
-            }
-            this.openDashboardMultisigWizardFromOrder(order);
-        },
-        openDashboardMultisigWizardFromOrder: function(order) {
-            var p = (order && order.payload) || {};
-            var wid = order.space_wallet_id != null ? order.space_wallet_id : p.wallet_id;
-            if (wid == null) return;
-            var self = this;
-            var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__)
-                ? String(window.__CURRENT_SPACE__).trim()
-                : '';
-            if (!space) return;
-            self.dashboardMultisigFetching = true;
-            fetch(
-                '/v1/spaces/' + encodeURIComponent(space) + '/exchange-wallets?role=multisig',
-                {
-                    method: 'GET',
-                    headers: authHeadersMain(),
-                    credentials: 'include'
-                }
-            )
-                .then(function(res) {
-                    if (!res.ok) throw new Error('HTTP ' + res.status);
-                    return res.json();
-                })
-                .then(function(data) {
-                    var items = (data && data.items) || [];
-                    var rw = null;
-                    for (var i = 0; i < items.length; i++) {
-                        if (items[i].id === wid) {
-                            rw = items[i];
-                            break;
-                        }
-                    }
-                    if (!rw) {
-                        if (typeof window.showAlert === 'function') {
-                            window.showAlert({
-                                title: self.$t('main.dialog.error_title'),
-                                message: self.$t('main.dashboard.multisig_modal_load_error')
-                            });
-                        }
-                        return;
-                    }
-                    self.dashboardMultisigWizardWallet = rw;
-                    self.showDashboardMultisigWizard = true;
-                })
-                .catch(function() {
-                    if (typeof window.showAlert === 'function') {
-                        window.showAlert({
-                            title: self.$t('main.dialog.error_title'),
-                            message: self.$t('main.dashboard.multisig_modal_load_error')
-                        });
-                    }
-                })
-                .finally(function() {
-                    self.dashboardMultisigFetching = false;
-                });
-        },
-        closeDashboardMultisigWizard: function() {
-            this.showDashboardMultisigWizard = false;
-            this.dashboardMultisigWizardWallet = null;
-        },
-        onDashboardMultisigConfigSaved: function() {
-            this.fetchOrders();
-        },
-        openDriftDetailModal: function(order) {
-            this.driftDetailOrder = order;
-            this.driftDetailModalOpen = true;
-        },
-        closeDriftDetailModal: function() {
-            this.driftDetailModalOpen = false;
-            this.driftDetailOrder = null;
-        },
-        /** PATCH multisig_begin_reconfigure, затем открыть multisig-config-modal (как beginMultisigReconfigure в my_business.js). */
-        beginDashboardMultisigReconfigureFromDrift: function() {
-            var order = this.driftDetailOrder;
-            var p = (order && order.payload) || {};
-            var wid = order && order.space_wallet_id != null ? order.space_wallet_id : p.wallet_id;
-            if (wid == null) return;
-            var self = this;
-            var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__)
-                ? String(window.__CURRENT_SPACE__).trim()
-                : '';
-            if (!space) return;
-            self.dashboardMultisigFetching = true;
-            var headers = Object.assign({}, authHeadersMain(), { 'Content-Type': 'application/json' });
-            fetch(
-                '/v1/spaces/' + encodeURIComponent(space) + '/exchange-wallets/' + encodeURIComponent(String(wid)),
-                {
-                    method: 'PATCH',
-                    headers: headers,
-                    credentials: 'include',
-                    body: JSON.stringify({ multisig_begin_reconfigure: true })
-                }
-            )
-                .then(function(res) {
-                    if (!res.ok) {
-                        return res.json().then(function(j) {
-                            var d = j && j.detail;
-                            var msg = typeof d === 'string' ? d : (d ? JSON.stringify(d) : String(res.status));
-                            throw new Error(msg);
-                        });
-                    }
-                    return res.json();
-                })
-                .then(function(data) {
-                    self.closeDriftDetailModal();
-                    self.dashboardMultisigWizardWallet = data;
-                    self.showDashboardMultisigWizard = true;
-                })
-                .catch(function(e) {
-                    if (typeof window.showAlert === 'function') {
-                        window.showAlert({
-                            title: self.$t('main.dialog.error_title'),
-                            message: (e && e.message) ? e.message : self.$t('main.dashboard.multisig_modal_load_error')
-                        });
-                    }
-                })
-                .finally(function() {
-                    self.dashboardMultisigFetching = false;
-                });
-        },
-        driftAddrList: function(arr) {
-            if (!arr || !Array.isArray(arr) || !arr.length) return '—';
-            return arr.join(', ');
         },
         formatUsd: function(amount, currency) {
             if (currency === 'USDT' && amount) return '≈ $' + (amount).toLocaleString();
@@ -681,12 +396,6 @@ Vue.component('dashboard', {
             var d = new Date(tsSeconds * 1000);
             if (isNaN(d.getTime())) return '—';
             return d.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
-        },
-        driftOrderTitle: function(order) {
-            var p = (order && order.payload) || {};
-            if (p.kind === 'withdrawal_request') return this.$t('main.dashboard.order_kind_withdrawal');
-            var wid = order.space_wallet_id != null ? order.space_wallet_id : (p.wallet_id != null ? p.wallet_id : null);
-            return (p.wallet_name || '').trim() || ('#' + (wid != null ? wid : (order.id || '')));
         },
         goToDetail: function(escrowId) {
             if (!escrowId || !window.__mainApp) return;
@@ -793,11 +502,8 @@ Vue.component('dashboard', {
       <orders-table
         :orders="filteredApiOrders"
         :loading="ordersLoading"
-        :copied-id="ordersSignLinkCopiedId"
         :can-manage="canCreateWithdrawal"
-        @row-click="onApiOrderRowClick"
-        @delete-order="deleteWithdrawalOrder"
-        @copy-link="copyWithdrawalSignLink"
+        @refresh="fetchOrders"
       ></orders-table>
 
       <div class="mt-12 grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -940,91 +646,10 @@ Vue.component('dashboard', {
           </div>
         </div>
       </transition>
-      <transition name="fade">
-        <div v-if="driftDetailModalOpen && driftDetailOrder" class="fixed inset-0 z-[95] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm" @click.self="closeDriftDetailModal">
-          <div class="bg-white rounded-xl shadow-xl border border-[#eff2f5] w-full max-w-lg max-h-[85vh] flex flex-col" role="dialog" aria-modal="true" @click.stop>
-            <div class="flex items-center justify-between gap-4 px-4 py-3 border-b border-[#eff2f5] shrink-0">
-              <h2 class="text-lg font-bold text-[#191d23] pr-2">[[ $t('main.dashboard.drift_modal_title') ]]</h2>
-              <button type="button" class="p-2 rounded-lg text-[#58667e] hover:bg-[#eff2f5] transition-colors shrink-0" @click="closeDriftDetailModal" :aria-label="$t('main.dashboard.drift_modal_close')">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-            </div>
-            <div class="overflow-auto p-4 flex-1 min-h-0 space-y-5">
-              <p class="text-xs text-[#58667e] leading-relaxed">[[ $t('main.dashboard.drift_modal_intro') ]]</p>
-              <div class="text-xs text-[#58667e]">
-                <span class="font-semibold text-[#191d23]">[[ driftOrderTitle(driftDetailOrder) ]]</span>
-                <span v-if="driftDetailOrder.payload && driftDetailOrder.payload.tron_address" class="font-mono break-all block mt-1">[[ driftDetailOrder.payload.tron_address ]]</span>
-              </div>
-              <div v-if="driftModalShowOwnersBlock" class="rounded-xl border border-violet-100 bg-violet-50/90 p-3 space-y-2">
-                <h3 class="text-xs font-bold text-violet-900 uppercase tracking-wide">[[ $t('main.dashboard.drift_modal_section_owners') ]]</h3>
-                <p class="text-xs text-[#58667e] leading-relaxed">[[ $t('main.dashboard.drift_modal_owners_comment') ]]</p>
-                <dl class="mt-2 space-y-2 text-xs">
-                  <div v-if="(driftDetailOrder.payload.owners_only_in_meta || []).length">
-                    <dt class="font-semibold text-[#191d23]">[[ $t('main.dashboard.drift_modal_owners_diff_meta') ]]</dt>
-                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftDetailOrder.payload.owners_only_in_meta) ]]</dd>
-                  </div>
-                  <div v-if="(driftDetailOrder.payload.owners_only_in_space || []).length">
-                    <dt class="font-semibold text-[#191d23]">[[ $t('main.dashboard.drift_modal_owners_diff_space') ]]</dt>
-                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftDetailOrder.payload.owners_only_in_space) ]]</dd>
-                  </div>
-                  <div>
-                    <dt class="font-semibold text-[#58667e]">[[ $t('main.dashboard.drift_modal_snapshot_meta_owners') ]]</dt>
-                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftDetailOrder.payload.meta_owners) ]]</dd>
-                  </div>
-                  <div>
-                    <dt class="font-semibold text-[#58667e]">[[ $t('main.dashboard.drift_modal_snapshot_space_admins') ]]</dt>
-                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftDetailOrder.payload.space_tron_admins) ]]</dd>
-                  </div>
-                </dl>
-              </div>
-              <div v-if="driftModalShowActorsBlock" class="rounded-xl border border-violet-100 bg-violet-50/90 p-3 space-y-2">
-                <h3 class="text-xs font-bold text-violet-900 uppercase tracking-wide">[[ $t('main.dashboard.drift_modal_section_actors') ]]</h3>
-                <p class="text-xs text-[#58667e] leading-relaxed">[[ $t('main.dashboard.drift_modal_actors_comment') ]]</p>
-                <dl class="mt-2 space-y-2 text-xs">
-                  <div v-if="driftModalActorsOnlyInMetaArr.length">
-                    <dt class="font-semibold text-[#191d23]">[[ $t('main.dashboard.drift_modal_actors_diff_meta') ]]</dt>
-                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftModalActorsOnlyInMetaArr) ]]</dd>
-                  </div>
-                  <div v-if="driftModalActorsOnlyInSpaceArr.length">
-                    <dt class="font-semibold text-[#191d23]">[[ $t('main.dashboard.drift_modal_actors_diff_space') ]]</dt>
-                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftModalActorsOnlyInSpaceArr) ]]</dd>
-                  </div>
-                  <div>
-                    <dt class="font-semibold text-[#58667e]">[[ $t('main.dashboard.drift_modal_snapshot_meta_actors') ]]</dt>
-                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftDetailOrder.payload.actors) ]]</dd>
-                  </div>
-                  <div>
-                    <dt class="font-semibold text-[#58667e]">[[ $t('main.dashboard.drift_modal_snapshot_space_signers') ]]</dt>
-                    <dd class="font-mono text-[11px] text-[#30384a] break-all mt-0.5">[[ driftAddrList(driftDetailOrder.payload.space_tron_owner_operator) ]]</dd>
-                  </div>
-                </dl>
-              </div>
-            </div>
-            <div class="px-4 py-3 border-t border-[#eff2f5] flex flex-wrap justify-end gap-2 shrink-0">
-              <button type="button" class="px-4 py-2 text-sm font-semibold rounded-lg border border-[#eff2f5] bg-white text-[#191d23] hover:bg-[#f8fafd] disabled:opacity-50 disabled:cursor-not-allowed transition-colors" :disabled="dashboardMultisigFetching" @click="beginDashboardMultisigReconfigureFromDrift">[[ $t('main.dashboard.drift_modal_edit_multisig') ]]</button>
-              <button type="button" class="px-4 py-2 text-sm font-semibold rounded-lg bg-main-blue text-white hover:opacity-90 transition-opacity" @click="closeDriftDetailModal">[[ $t('main.dashboard.drift_modal_close') ]]</button>
-            </div>
-          </div>
-        </div>
-      </transition>
-      <multisig-config-modal
-        :show="showDashboardMultisigWizard"
-        :wallet="dashboardMultisigWizardWallet"
-        @close="closeDashboardMultisigWizard"
-        @saved="onDashboardMultisigConfigSaved"
-      ></multisig-config-modal>
       <withdrawal-order-modal
         :show="showWithdrawalModal"
         @close="closeWithdrawalModal"
       ></withdrawal-order-modal>
-      <withdrawal-order-detail-modal
-        :show="showWithdrawalDetailModal"
-        :order="withdrawalDetailOrder"
-        :can-manage="canCreateWithdrawal"
-        @close="closeWithdrawalDetailModal"
-        @deleted="onWithdrawalDetailDeleted"
-        @updated="onWithdrawalDetailUpdated"
-      ></withdrawal-order-detail-modal>
     </div>
     `
 });
