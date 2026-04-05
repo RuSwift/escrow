@@ -80,6 +80,8 @@
         window.__TRON_NETWORK__ = tronNetAttr;
     }
 
+    window.__DEBUG__ = (el.getAttribute('data-debug') || 'false') === 'true';
+
     var initialPage = (el.getAttribute('data-initial-page') || 'dashboard').trim();
     var validPages = [
         'dashboard',

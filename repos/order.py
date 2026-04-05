@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import delete, select, update
+from sqlalchemy import Text, and_, cast, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
@@ -233,6 +233,79 @@ class OrderRepository(BaseRepository):
                 }
             )
         return out
+
+    async def list_merged_for_space_paginated(
+        self,
+        owner_did: str,
+        *,
+        page: int = 1,
+        page_size: int = 10,
+        status_filters: Optional[List[str]] = None,
+        q: Optional[str] = None,
+    ) -> Tuple[List[OrderResource.Get], int]:
+        """
+        Эфемерные + withdrawal ордера спейса (по owner_did ramp-кошельков), сортировка по updated_at desc.
+
+        При непустом status_filters — только withdrawal с payload.status IN (…).
+        None / пустой список — эфемерные и все выводы.
+        q — поиск по dedupe_key и текстовому представлению payload (ILIKE).
+        """
+        od = (owner_did or "").strip()
+        if not od:
+            return [], 0
+        page = max(1, int(page))
+        page_size = min(max(1, int(page_size)), 100)
+        offset = (page - 1) * page_size
+
+        join_cond = OrderModel.space_wallet_id == Wallet.id
+        clauses: List[Any] = [Wallet.owner_did == od]
+
+        sf_list = [x.strip().lower() for x in (status_filters or []) if (x or "").strip()]
+        if sf_list:
+            sf_list = list(dict.fromkeys(sf_list))
+
+        if sf_list:
+            clauses.append(OrderModel.category == ORDER_CATEGORY_WITHDRAWAL)
+            clauses.append(OrderModel.payload["status"].astext.in_(sf_list))
+        else:
+            clauses.append(
+                or_(
+                    OrderModel.category == ORDER_CATEGORY_EPHEMERAL,
+                    OrderModel.category == ORDER_CATEGORY_WITHDRAWAL,
+                )
+            )
+
+        qq = (q or "").strip()
+        if qq:
+            pattern = f"%{qq}%"
+            clauses.append(
+                or_(
+                    OrderModel.dedupe_key.ilike(pattern),
+                    cast(OrderModel.payload, Text).ilike(pattern),
+                )
+            )
+
+        where_clause = and_(*clauses)
+
+        count_stmt = (
+            select(func.count(OrderModel.id))
+            .select_from(OrderModel)
+            .join(Wallet, join_cond)
+            .where(where_clause)
+        )
+        total = int((await self._session.execute(count_stmt)).scalar_one() or 0)
+
+        list_stmt = (
+            select(OrderModel)
+            .join(Wallet, join_cond)
+            .where(where_clause)
+            .order_by(OrderModel.updated_at.desc())
+            .limit(page_size)
+            .offset(offset)
+        )
+        res = await self._session.execute(list_stmt)
+        items = [_order_model_to_get(m) for m in res.scalars().all()]
+        return items, total
 
     async def delete_withdrawal_signatures(self, order_id: int) -> int:
         stmt = delete(OrderWithdrawalSignatureModel).where(

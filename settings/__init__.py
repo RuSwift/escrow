@@ -407,7 +407,11 @@ class Settings(BaseSettings):
     
     debug: bool = Field(
         default=False,
-        description="Режим отладки"
+        description=(
+            "Режим отладки (dev-UI). Только env APP_DEBUG; переменная DEBUG не используется "
+            "(её подмешивает IDE/отладчик и она конфликтовала с .env)."
+        ),
+        validation_alias="APP_DEBUG",
     )
     
     # Secret key for encryption/signing

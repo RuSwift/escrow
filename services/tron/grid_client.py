@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import json as _json
+import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 import aiohttp
+from tronpy import keys as tron_keys
 from tronpy.keys import PrivateKey as TronPrivateKey
 
 from settings import Settings
+
+logger = logging.getLogger(__name__)
 
 from services.multisig_wallet.constants import DEFAULT_ACTIVE_OPERATIONS_HEX
 
 # Tron owner permission: 1-of-N по ключам спейса (см. AccountPermissionUpdate).
 OWNER_PERMISSION_THRESHOLD = 1
-
 
 class TronGridClient:
     """
@@ -24,6 +27,7 @@ class TronGridClient:
         async with TronGridClient(settings=settings) as client:
             acc = await client.get_account("T...")
             ok  = await client.get_transaction_success(tx_id)
+            err = await client.get_transaction_failure_detail(tx_id)  # при провале on-chain
     """
 
     # ---- class-level URL map -----------------------------------------------
@@ -33,6 +37,12 @@ class TronGridClient:
         "shasta":  "https://api.shasta.trongrid.io",
         "nile":    "https://api.nile.trongrid.io",
     }
+
+    _FAILURE_DETAIL_MAX = 2000
+    _TRC20_REVERT_HINT = (
+        "Для вызова контракта (TRC-20 и др.) частая причина REVERT — недостаточный баланс "
+        "токена на адресе отправителя, заморозка адреса (USDT) или иные ограничения контракта."
+    )
 
     # ---- construction / context manager ------------------------------------
 
@@ -177,6 +187,58 @@ class TronGridClient:
             raise RuntimeError(f"TronGrid getaccount: {err.strip()[:300]}")
         return data
 
+    async def get_account_trx_balance_sun(self, address_base58: str) -> Optional[int]:
+        """Баланс TRX в SUN (getaccount.balance) или None при ошибке."""
+        addr = (address_base58 or "").strip()
+        if not addr:
+            return None
+        try:
+            data = await self.get_account(addr)
+        except Exception as e:
+            logger.warning("get_account_trx_balance_sun %s: %s", addr[:12], e)
+            return None
+        b = data.get("balance")
+        if b is None:
+            return 0
+        try:
+            return int(b)
+        except (TypeError, ValueError):
+            return None
+
+    async def trigger_constant_balance_of(
+        self,
+        owner_base58: str,
+        contract_base58: str,
+    ) -> Optional[int]:
+        """TRC-20 balanceOf(owner) raw uint256 или None при ошибке вызова."""
+        owner = (owner_base58 or "").strip()
+        contract = (contract_base58 or "").strip()
+        if not owner or not contract:
+            return None
+        try:
+            param = tron_keys.to_tvm_address(owner).hex().rjust(64, "0")
+            data = await self.post(
+                "/wallet/triggerconstantcontract",
+                {
+                    "owner_address": owner,
+                    "contract_address": contract,
+                    "function_selector": "balanceOf(address)",
+                    "parameter": param,
+                    "call_value": 0,
+                    "visible": True,
+                },
+            )
+        except Exception as e:
+            logger.warning("trigger_constant_balance_of: %s", e)
+            return None
+        constant_result = data.get("constant_result") or []
+        if not constant_result:
+            return None
+        try:
+            return int(str(constant_result[0]), 16)
+        except (TypeError, ValueError):
+            return None
+
     async def get_transaction_info(self, tx_id: str) -> Dict[str, Any]:
         """gettransactioninfobyid."""
         return await self.post(
@@ -196,7 +258,7 @@ class TronGridClient:
         r = receipt.get("result")
         if r == "SUCCESS":
             return True
-        if r in ("FAILED", "REVERT", "OUT_OF_TIME"):
+        if r in ("FAILED", "REVERT", "OUT_OF_TIME", "OUT_OF_ENERGY"):
             return False
         if data.get("id") and not receipt:
             return None
@@ -212,9 +274,135 @@ class TronGridClient:
                 cr = ret[0].get("contractRet")
                 if cr == "SUCCESS":
                     return True
-                if cr in ("REVERT", "OUT_OF_TIME", "FAILED"):
+                if cr in ("REVERT", "OUT_OF_TIME", "FAILED", "OUT_OF_ENERGY"):
                     return False
         return None
+
+    @staticmethod
+    def describe_trx_resource_failure(
+        info: Dict[str, Any],
+        txwrap: Optional[Dict[str, Any]] = None,
+    ) -> Optional[str]:
+        """
+        Текст про нехватку энергии / TRX на оплату ресурсов (OUT_OF_ENERGY и аналоги).
+        """
+        receipt = info.get("receipt") if isinstance(info.get("receipt"), dict) else {}
+        rr = receipt.get("result")
+        if rr == "OUT_OF_ENERGY":
+            return (
+                "Ресурсы сети: не хватило энергии (OUT_OF_ENERGY). "
+                "Нужен TRX для оплаты энергии или заморозка TRX под Energy."
+            )
+        cr = None
+        if txwrap and isinstance(txwrap.get("ret"), list) and txwrap["ret"]:
+            r0 = txwrap["ret"][0]
+            if isinstance(r0, dict):
+                cr = r0.get("contractRet")
+        if cr == "OUT_OF_ENERGY":
+            return (
+                "Ресурсы сети: не хватило энергии (OUT_OF_ENERGY). "
+                "Пополните TRX или заморозьте TRX для получения Energy."
+            )
+        node = TronGridClient._decode_res_message_hex(info.get("resMessage"))
+        if node and "OUT OF ENERGY" in node.upper():
+            return (
+                "Сообщение сети указывает на нехватку энергии; пополните TRX "
+                "или заморозьте TRX под Energy."
+            )
+        return None
+
+    @staticmethod
+    def _decode_res_message_hex(raw: Any) -> Optional[str]:
+        """Декодирует resMessage из gettransactioninfobyid (часто hex → ASCII)."""
+        if raw is None:
+            return None
+        if not isinstance(raw, str):
+            raw = str(raw)
+        s = raw.strip()
+        if len(s) < 2 or len(s) % 2 != 0:
+            return None
+        try:
+            b = bytes.fromhex(s)
+        except ValueError:
+            return None
+        if not b:
+            return None
+        try:
+            text = b.decode("utf-8")
+        except UnicodeDecodeError:
+            return None
+        if not text.strip():
+            return None
+        for ch in text:
+            o = ord(ch)
+            if o < 32 and ch not in "\t\n\r":
+                return None
+        return text.strip()
+
+    @staticmethod
+    def build_transaction_failure_message(
+        info: Dict[str, Any],
+        txwrap: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """
+        Человекочитаемое описание неуспешной tx по ответам gettransactioninfobyid
+        и опционально gettransactionbyid.
+        """
+        parts: List[str] = []
+        receipt = info.get("receipt") if isinstance(info.get("receipt"), dict) else {}
+        rr = receipt.get("result")
+        if isinstance(rr, str) and rr.strip():
+            parts.append(f"Итог в чеке: {rr.strip()}")
+
+        node_msg = TronGridClient._decode_res_message_hex(info.get("resMessage"))
+        if node_msg:
+            parts.append(f"Сообщение ноды: {node_msg}")
+        elif isinstance(info.get("resMessage"), str) and info.get("resMessage", "").strip():
+            parts.append(f"resMessage: {str(info.get('resMessage')).strip()[:300]}")
+
+        top = info.get("result")
+        if isinstance(top, str) and top.strip():
+            parts.append(f"Статус: {top.strip()}")
+
+        if txwrap and isinstance(txwrap.get("ret"), list) and txwrap["ret"]:
+            r0 = txwrap["ret"][0]
+            if isinstance(r0, dict):
+                cr = r0.get("contractRet")
+                if isinstance(cr, str) and cr.strip() and cr.strip() != "SUCCESS":
+                    parts.append(f"contractRet: {cr.strip()}")
+
+        cr_list = info.get("contract_result")
+        if isinstance(cr_list, list) and cr_list:
+            non_empty = [x for x in cr_list if isinstance(x, str) and x.strip()]
+            if non_empty:
+                parts.append(f"contract_result: {non_empty[0][:200]}")
+
+        ca = info.get("contract_address")
+        if isinstance(ca, str) and ca.strip() and rr == "REVERT":
+            parts.append(TronGridClient._TRC20_REVERT_HINT)
+
+        if not parts:
+            return "Транзакция не выполнена в сети (подробности недоступны)."
+
+        return "\n".join(parts)[: TronGridClient._FAILURE_DETAIL_MAX]
+
+    async def get_transaction_failure_detail(self, tx_id: str) -> str:
+        """Текст для last_error при failed on-chain (gettransactioninfobyid + при необходимости gettransactionbyid)."""
+        tid = (tx_id or "").strip()
+        if not tid:
+            return "Транзакция не выполнена в сети."
+        data = await self.get_transaction_info(tid)
+        if not isinstance(data, dict) or not data:
+            return "Транзакция не выполнена в сети (ответ от узла пустой)."
+        txwrap: Optional[Dict[str, Any]] = None
+        receipt = data.get("receipt") if isinstance(data.get("receipt"), dict) else {}
+        r = receipt.get("result")
+        if data.get("blockNumber") and r is None:
+            try:
+                txwrap = await self.post("/wallet/gettransactionbyid", {"value": tid})
+            except Exception:
+                txwrap = None
+        return self.build_transaction_failure_message(data, txwrap)
 
     async def get_chain_parameters(self) -> Dict[str, Any]:
         """getchainparameters."""

@@ -84,6 +84,7 @@ def create_app() -> FastAPI:
             "translations_json": json.dumps(translations, ensure_ascii=False),
             "initial_page": initial_page,
             "tron_network": tron_net,
+            "settings_debug": settings.debug,
         }
 
     @app.get("/", response_class=HTMLResponse)

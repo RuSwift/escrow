@@ -243,13 +243,16 @@ async def _loop_orders_withdrawal(redis: Redis, settings: Settings) -> None:
             else:
                 async with session_factory() as session:
                     svc = OrderService(session, redis, settings)
+                    bcast = await svc.broadcast_ready_withdrawals()
                     stats = await svc.refresh_withdrawal_statuses()
                     await session.commit()
                     elapsed_ms = (time.perf_counter() - t0) * 1000
                     logger.info(
-                        "cron task=%s: refresh done in %.0fms | updated=%s",
+                        "cron task=%s: done in %.0fms | broadcasted=%s broadcast_err=%s poll_updated=%s",
                         task,
                         elapsed_ms,
+                        bcast.get("broadcasted"),
+                        bcast.get("broadcast_errors"),
                         stats.get("updated"),
                     )
         except Exception:

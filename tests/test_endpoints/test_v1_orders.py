@@ -6,8 +6,8 @@ from httpx import ASGITransport, AsyncClient
 
 from db import get_db
 from db.models import Order, Wallet, WalletUser
-from repos.order import ORDER_CATEGORY_EPHEMERAL
-from services.order import ORDER_KIND_MULTISIG_PIPELINE
+from repos.order import ORDER_CATEGORY_EPHEMERAL, ORDER_CATEGORY_WITHDRAWAL
+from services.order import ORDER_KIND_MULTISIG_PIPELINE, WITHDRAWAL_KIND
 from web.endpoints.dependencies import (
     get_redis,
     get_required_wallet_address_for_space,
@@ -49,6 +49,30 @@ async def main_app_orders(test_db, test_redis, test_settings):
             dedupe_key=f"ephemeral:multisig_pipeline:{w.id}",
             space_wallet_id=w.id,
             payload={"kind": ORDER_KIND_MULTISIG_PIPELINE, "wallet_id": w.id},
+        )
+    )
+    test_db.add(
+        Order(
+            category=ORDER_CATEGORY_WITHDRAWAL,
+            dedupe_key="withdrawal:apitest_tok_confirmed",
+            space_wallet_id=w.id,
+            payload={
+                "kind": WITHDRAWAL_KIND,
+                "status": "confirmed",
+                "tron_address": "TTest1111111111111111111111111111",
+            },
+        )
+    )
+    test_db.add(
+        Order(
+            category=ORDER_CATEGORY_WITHDRAWAL,
+            dedupe_key="withdrawal:apitest_tok_failed",
+            space_wallet_id=w.id,
+            payload={
+                "kind": WITHDRAWAL_KIND,
+                "status": "failed",
+                "tron_address": "TTest2222222222222222222222222222222",
+            },
         )
     )
     await test_db.commit()
@@ -95,3 +119,100 @@ async def test_list_space_orders_200(main_app_orders):
     assert "items" in body
     assert len(body["items"]) >= 1
     assert body["items"][0]["payload"]["kind"] == ORDER_KIND_MULTISIG_PIPELINE
+    assert body.get("total") == 3
+
+
+@pytest.mark.asyncio
+async def test_list_space_orders_pagination(main_app_orders):
+    async with AsyncClient(
+        transport=ASGITransport(app=main_app_orders),
+        base_url="http://test",
+    ) as client:
+        r = await client.get(
+            "/v1/spaces/orders_api_space/orders",
+            params={"page": 1, "page_size": 1},
+        )
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body["items"]) == 1
+    assert body["total"] == 3
+
+
+@pytest.mark.asyncio
+async def test_list_space_orders_filter_status_withdrawal(main_app_orders):
+    async with AsyncClient(
+        transport=ASGITransport(app=main_app_orders),
+        base_url="http://test",
+    ) as client:
+        r = await client.get(
+            "/v1/spaces/orders_api_space/orders",
+            params={"status": "confirmed"},
+        )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    assert len(body["items"]) == 1
+    assert body["items"][0]["payload"]["status"] == "confirmed"
+
+
+@pytest.mark.asyncio
+async def test_list_space_orders_filter_status_excludes_ephemeral(main_app_orders):
+    async with AsyncClient(
+        transport=ASGITransport(app=main_app_orders),
+        base_url="http://test",
+    ) as client:
+        r = await client.get(
+            "/v1/spaces/orders_api_space/orders",
+            params={"status": "failed"},
+        )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    for it in body["items"]:
+        assert it["category"] == ORDER_CATEGORY_WITHDRAWAL
+
+
+@pytest.mark.asyncio
+async def test_list_space_orders_invalid_status_400(main_app_orders):
+    async with AsyncClient(
+        transport=ASGITransport(app=main_app_orders),
+        base_url="http://test",
+    ) as client:
+        r = await client.get(
+            "/v1/spaces/orders_api_space/orders",
+            params={"status": "not_a_real_status"},
+        )
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_list_space_orders_filter_status_comma_separated(main_app_orders):
+    async with AsyncClient(
+        transport=ASGITransport(app=main_app_orders),
+        base_url="http://test",
+    ) as client:
+        r = await client.get(
+            "/v1/spaces/orders_api_space/orders",
+            params={"status": "confirmed,failed"},
+        )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 2
+    statuses = {it["payload"]["status"] for it in body["items"]}
+    assert statuses == {"confirmed", "failed"}
+
+
+@pytest.mark.asyncio
+async def test_list_space_orders_query_q(main_app_orders):
+    async with AsyncClient(
+        transport=ASGITransport(app=main_app_orders),
+        base_url="http://test",
+    ) as client:
+        r = await client.get(
+            "/v1/spaces/orders_api_space/orders",
+            params={"q": "apitest_tok_failed"},
+        )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["total"] == 1
+    assert "failed" in body["items"][0]["dedupe_key"]

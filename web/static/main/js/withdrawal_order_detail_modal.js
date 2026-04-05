@@ -141,8 +141,7 @@
             canSign: function() {
                 if (!this.signToken || !window.EscrowWithdrawalSign) return false;
                 var st = this.liveStatus;
-                if (st !== 'awaiting_signatures' && st !== 'ready_to_broadcast') return false;
-                if (st === 'confirmed' || st === 'failed' || st === 'broadcast_submitted') return false;
+                if (st !== 'awaiting_signatures') return false;
                 return true;
             },
             canClearOffchain: function() {
@@ -218,11 +217,53 @@
                 return true;
             },
             withdrawalStatusErrorDetail: function() {
-                if (this.liveStatus !== 'failed') return '';
+                var st = this.liveStatus;
                 var c = this.signContext;
                 var fromCtx = c && c.last_error != null ? String(c.last_error).trim() : '';
-                if (fromCtx) return fromCtx;
-                return String((this.p.last_error || '')).trim();
+                var fromP = String((this.p.last_error || '')).trim();
+                var err = fromCtx || fromP;
+                if (!err) return '';
+                if (st === 'failed' || st === 'ready_to_broadcast') return err;
+                return '';
+            },
+            offchainExpirationMs: function() {
+                var c = this.signContext;
+                var v = c && c.offchain_expiration_ms != null ? c.offchain_expiration_ms : this.p.offchain_expiration_ms;
+                if (v == null || v === '') return null;
+                var n = Number(v);
+                return isFinite(n) ? n : null;
+            },
+            offchainTimestampMs: function() {
+                var c = this.signContext;
+                var v = c && c.offchain_timestamp_ms != null ? c.offchain_timestamp_ms : this.p.offchain_timestamp_ms;
+                if (v == null || v === '') return null;
+                var n = Number(v);
+                return isFinite(n) ? n : null;
+            },
+            offchainExpirationUtc: function() {
+                var ms = this.offchainExpirationMs;
+                if (ms == null) return '';
+                var S = window.EscrowWithdrawalSign;
+                if (S && typeof S.formatUtcFromMs === 'function') return S.formatUtcFromMs(ms);
+                var d = new Date(ms);
+                return isNaN(d.getTime()) ? '' : d.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+            },
+            offchainTimestampUtc: function() {
+                var ms = this.offchainTimestampMs;
+                if (ms == null) return '';
+                var S = window.EscrowWithdrawalSign;
+                if (S && typeof S.formatUtcFromMs === 'function') return S.formatUtcFromMs(ms);
+                var d = new Date(ms);
+                return isNaN(d.getTime()) ? '' : d.toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+            },
+            showOffchainTxTimes: function() {
+                if (!this.isMultisig) return false;
+                return !!(this.offchainExpirationUtc || this.offchainTimestampUtc);
+            },
+            offchainTxExpired: function() {
+                var ms = this.offchainExpirationMs;
+                if (ms == null) return false;
+                return Date.now() > ms;
             }
         },
         watch: {
@@ -385,7 +426,19 @@
                         self.$emit('updated');
                     })
                     .catch(function(e) {
-                        self.signError = String(e && e.message ? e.message : e);
+                        var msg = String(e && e.message ? e.message : e);
+                        if (e && e.escrowWithdrawalCode === 'SIGNER_NOT_IN_ACTORS') {
+                            if (typeof window.showAlert === 'function') {
+                                window.showAlert({
+                                    title: self.$t('main.dialog.warning_title'),
+                                    message: msg
+                                });
+                            } else {
+                                self.signError = msg;
+                            }
+                            return;
+                        }
+                        self.signError = msg;
                     })
                     .finally(function() {
                         self.signBusy = false;
@@ -522,7 +575,8 @@
             '<svg v-if="withdrawalStatusSpinnerVisible" class="w-3.5 h-3.5 shrink-0 animate-spin opacity-90" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>' +
             '</div>' +
             '<span v-else class="text-[#58667e] text-xs">\u2014</span>' +
-            '<p v-if="withdrawalStatusErrorDetail" class="text-main-red text-xs leading-snug rounded-lg bg-main-red/5 border border-main-red/15 px-2.5 py-1.5 break-words">[[ withdrawalStatusErrorDetail ]]</p>' +
+            '<p v-if="withdrawalStatusErrorDetail" class="text-main-red text-xs leading-snug rounded-lg bg-main-red/5 border border-main-red/15 px-2.5 py-1.5 break-words whitespace-pre-wrap">[[ withdrawalStatusErrorDetail ]]</p>' +
+            '<p v-if="liveStatus === \'ready_to_broadcast\' && !withdrawalStatusErrorDetail" class="text-xs text-sky-900 leading-snug rounded-lg bg-sky-50 border border-sky-100 px-2.5 py-1.5">[[ $t(\'main.withdrawal_detail.broadcast_queue_hint\') ]]</p>' +
             '</dd></div>' +
             '<div class="flex flex-col gap-0.5"><dt class="text-[#58667e] font-semibold">[[ $t(\'main.withdrawal_detail.field_amount\') ]]</dt>' +
             '<dd class="text-[#191d23] font-mono">[[ amountDisplay ]]</dd></div>' +
@@ -552,6 +606,16 @@
             '</dl>' +
             '<div v-if="isMultisig" class="rounded-xl border border-[#eff2f5] bg-[#f8fafd] p-3 space-y-2">' +
             '<p class="text-xs font-bold text-[#191d23] uppercase tracking-wide">[[ thresholdLabel ]]</p>' +
+            '<div v-if="showOffchainTxTimes" class="rounded-lg border border-[#e8ecf3] bg-white px-3 py-2 space-y-1 text-xs">' +
+            '<div v-if="offchainTimestampUtc" class="flex flex-col sm:flex-row sm:items-baseline sm:gap-2 gap-0.5">' +
+            '<span class="text-[#58667e] font-semibold shrink-0">[[ $t(\'main.withdrawal_detail.offchain_tx_timestamp_utc\') ]]</span>' +
+            '<span class="text-[#191d23] font-mono break-all">[[ offchainTimestampUtc ]]</span></div>' +
+            '<div v-if="offchainExpirationUtc" class="flex flex-col sm:flex-row sm:items-baseline sm:gap-2 gap-0.5">' +
+            '<span class="text-[#58667e] font-semibold shrink-0">[[ $t(\'main.withdrawal_detail.offchain_tx_expiration_utc\') ]]</span>' +
+            '<span class="text-[#191d23] font-mono break-all">[[ offchainExpirationUtc ]]</span></div>' +
+            '<p v-if="offchainTxExpired && liveStatus === \'awaiting_signatures\'" class="text-[11px] font-semibold text-amber-900 rounded-md bg-amber-50 border border-amber-100 px-2 py-1.5 mt-1">' +
+            '[[ $t(\'main.withdrawal_detail.offchain_tx_expired_notice\') ]]</p>' +
+            '</div>' +
             '<div class="rounded-lg border border-sky-100 bg-sky-50/80 p-3 space-y-2">' +
             '<p class="text-xs font-semibold text-sky-900">[[ $t(\'main.withdrawal_detail.multisig_offchain_title\') ]]</p>' +
             '<p class="text-sm font-mono text-sky-950">[[ progressLabel ]]</p>' +

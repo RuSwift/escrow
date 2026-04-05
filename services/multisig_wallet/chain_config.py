@@ -76,12 +76,19 @@ def extract_chain_multisig_config(account: Dict[str, Any]) -> Optional[Dict[str,
     permission_name = str(chosen.get("permission_name", "") or "").strip()
     if threshold_m < 1 or threshold_n < 1:
         return None
-    return {
+    out: Dict[str, Any] = {
         "actors": actors_u,
         "threshold_n": threshold_n,
         "threshold_m": threshold_m,
         "permission_name": permission_name,
     }
+    pid = chosen.get("id")
+    if pid is not None:
+        try:
+            out["permission_id"] = int(pid)
+        except (TypeError, ValueError):
+            pass
+    return out
 
 
 def meta_multisig_snapshot(meta: Dict[str, Any]) -> Optional[Dict[str, Any]]:

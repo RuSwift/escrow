@@ -20,11 +20,13 @@ from repos.order import (
     withdrawal_dedupe_key,
 )
 from repos.wallet_user import WalletUserRepository
+from services.multisig_wallet.chain_config import extract_chain_multisig_config
 from services.multisig_wallet.constants import (
     SPACE_DRIFT_ELIGIBLE_STATUSES,
     TERMINAL_STATUSES,
 )
 from services.space import SpaceService
+from services.tron.grid_client import TronGridClient
 from services.tron.utils import is_valid_tron_address
 from settings import Settings
 
@@ -43,6 +45,84 @@ WITHDRAWAL_STATUS_READY_TO_BROADCAST = "ready_to_broadcast"
 WITHDRAWAL_STATUS_BROADCAST_SUBMITTED = "broadcast_submitted"
 WITHDRAWAL_STATUS_CONFIRMED = "confirmed"
 WITHDRAWAL_STATUS_FAILED = "failed"
+
+# Фильтр списка ордеров (GET /spaces/{space}/orders) по статусу заявки на вывод.
+WITHDRAWAL_LIST_STATUS_FILTERS = frozenset(
+    {
+        WITHDRAWAL_STATUS_AWAITING_SIGNATURES,
+        WITHDRAWAL_STATUS_READY_TO_BROADCAST,
+        WITHDRAWAL_STATUS_BROADCAST_SUBMITTED,
+        WITHDRAWAL_STATUS_CONFIRMED,
+        WITHDRAWAL_STATUS_FAILED,
+    }
+)
+
+
+def _parse_order_status_query(raw: Optional[str]) -> Optional[List[str]]:
+    """Параметр status: пусто/all — без фильтра; один статус или несколько через запятую."""
+    if raw is None:
+        return None
+    s = (raw or "").strip()
+    if not s or s.lower() == "all":
+        return None
+    parts = [p.strip().lower() for p in s.split(",") if p.strip()]
+    parts = list(dict.fromkeys(parts))
+    if not parts:
+        return None
+    bad = [p for p in parts if p not in WITHDRAWAL_LIST_STATUS_FILTERS]
+    if bad:
+        raise ValueError(
+            "Invalid status filter; use all or comma-separated: "
+            + ", ".join(sorted(WITHDRAWAL_LIST_STATUS_FILTERS))
+        )
+    return parts
+
+
+def _offchain_times_from_signed_tx(
+    signed: Dict[str, Any],
+) -> Tuple[Optional[int], Optional[int]]:
+    """expiration / timestamp из raw_data Tron (миллисекунды)."""
+    raw = signed.get("raw_data")
+    if not isinstance(raw, dict):
+        return None, None
+    exp_ms: Optional[int] = None
+    ts_ms: Optional[int] = None
+    try:
+        ev = raw.get("expiration")
+        if ev is not None:
+            exp_ms = int(ev)
+    except (TypeError, ValueError):
+        exp_ms = None
+    try:
+        tv = raw.get("timestamp")
+        if tv is not None:
+            ts_ms = int(tv)
+    except (TypeError, ValueError):
+        ts_ms = None
+    return exp_ms, ts_ms
+
+
+def _best_signed_transaction_from_rows(
+    sig_rows: List[Dict[str, Any]],
+) -> Optional[Dict[str, Any]]:
+    """Транзакция с максимальным числом подписей (как на клиенте)."""
+    best: Optional[Dict[str, Any]] = None
+    best_len = -1
+    for row in sig_rows:
+        sd = row.get("signature_data") or {}
+        tx = sd.get("signed_transaction")
+        if not isinstance(tx, dict):
+            continue
+        sig = tx.get("signature")
+        n = len(sig) if isinstance(sig, list) else 0
+        if n > best_len:
+            best_len = n
+            best = tx
+    return best
+
+
+def _broadcast_error_message(out: Dict[str, Any]) -> str:
+    return str(out.get("message") or out.get("code") or out)[:500]
 
 
 class WithdrawalDeleteForbidden(ValueError):
@@ -93,6 +173,28 @@ class OrderService:
         merged: List[OrderResource.Get] = list(ephemeral) + list(withdrawal)
         merged.sort(key=lambda x: x.updated_at, reverse=True)
         return merged
+
+    async def list_for_space_paginated(
+        self,
+        space: str,
+        actor_wallet_address: str,
+        *,
+        page: int = 1,
+        page_size: int = 10,
+        status: Optional[str] = None,
+        q: Optional[str] = None,
+    ) -> Tuple[List[OrderResource.Get], int]:
+        """Список ордеров спейса с пагинацией и фильтрами (см. репозиторий)."""
+        await self._space.ensure_actor_in_space(space, actor_wallet_address)
+        owner_did = await self._owner_did_for_space(space)
+        status_list = _parse_order_status_query(status)
+        return await self._orders.list_merged_for_space_paginated(
+            owner_did,
+            page=page,
+            page_size=page_size,
+            status_filters=status_list,
+            q=q,
+        )
 
     async def refresh_ephemeral(self) -> Dict[str, int]:
         """
@@ -270,6 +372,17 @@ class OrderService:
                     actors.append(a.strip())
         long_expiration = threshold_n > 1
 
+        active_permission_id: Optional[int] = None
+        if row.role == "multisig":
+            ap = row.account_permissions
+            if isinstance(ap, dict):
+                cfg = extract_chain_multisig_config(ap)
+                if cfg and cfg.get("permission_id") is not None:
+                    try:
+                        active_permission_id = int(cfg["permission_id"])
+                    except (TypeError, ValueError):
+                        active_permission_id = None
+
         token_decimals = 6
         if tt == "trc20":
             ca_lookup = (contract_address or "").strip()
@@ -302,6 +415,8 @@ class OrderService:
             "broadcast_tx_id": None,
             "last_error": None,
         }
+        if row.role == "multisig":
+            payload["active_permission_id"] = active_permission_id
 
         sign_token = secrets.token_urlsafe(24)
         dedupe = withdrawal_dedupe_key(sign_token)
@@ -392,6 +507,8 @@ class OrderService:
         p["broadcast_tx_id"] = None
         p.pop("last_signer", None)
         p.pop("signed_at", None)
+        for k in ("offchain_expiration_ms", "offchain_timestamp_ms", "offchain_signed_addresses"):
+            p.pop(k, None)
         await self._orders.update_withdrawal_payload(order_id, p)
         out = await self._orders.get_by_id(order_id)
         if not out:
@@ -428,8 +545,12 @@ class OrderService:
             "threshold_n": p.get("threshold_n"),
             "threshold_m": p.get("threshold_m"),
             "actors_snapshot": p.get("actors_snapshot") or [],
+            "active_permission_id": p.get("active_permission_id"),
             "long_expiration_ms": bool(p.get("long_expiration_ms")),
             "signatures": sigs,
+            "offchain_expiration_ms": p.get("offchain_expiration_ms"),
+            "offchain_timestamp_ms": p.get("offchain_timestamp_ms"),
+            "offchain_signed_addresses": p.get("offchain_signed_addresses") or [],
             "broadcast_tx_id": p.get("broadcast_tx_id"),
             "last_error": p.get("last_error"),
         }
@@ -449,15 +570,23 @@ class OrderService:
             raise ValueError("Order not found")
         p = dict(row.payload or {})
         st = (p.get("status") or "").strip()
-        if st not in (
-            WITHDRAWAL_STATUS_AWAITING_SIGNATURES,
-            WITHDRAWAL_STATUS_READY_TO_BROADCAST,
-        ):
+        if st != WITHDRAWAL_STATUS_AWAITING_SIGNATURES:
             raise ValueError("Order is not awaiting signature")
 
         signer = (signer_address or "").strip()
         if not is_valid_tron_address(signer):
             raise ValueError("Invalid signer address")
+
+        wallet_role = (p.get("wallet_role") or "").strip()
+        if wallet_role == "multisig":
+            actors_raw = p.get("actors_snapshot") or []
+            actors_set: set[str] = set()
+            if isinstance(actors_raw, list):
+                for a in actors_raw:
+                    if isinstance(a, str) and (a or "").strip():
+                        actors_set.add(a.strip())
+            if signer not in actors_set:
+                raise ValueError("Signer is not in the multisig actors list")
 
         await self._orders.upsert_withdrawal_signature(
             order_id,
@@ -465,16 +594,28 @@ class OrderService:
             {"signed_transaction": signed_transaction},
         )
         sigs = await self._orders.list_withdrawal_signatures(order_id)
-        wallet_role = (p.get("wallet_role") or "").strip()
+        signed_addrs: List[str] = []
+        for s in sigs:
+            sa = (s.get("signer_address") or "").strip()
+            if sa:
+                signed_addrs.append(sa)
+        p["offchain_signed_addresses"] = signed_addrs
+        exp_ms, ts_ms = _offchain_times_from_signed_tx(signed_transaction)
+        if exp_ms is not None:
+            p["offchain_expiration_ms"] = exp_ms
+        if ts_ms is not None:
+            p["offchain_timestamp_ms"] = ts_ms
         tn = int(p.get("threshold_n") or 1)
         txid = signed_transaction.get("txID") or signed_transaction.get("txid")
         if wallet_role == "external" or tn <= 1:
             p["status"] = WITHDRAWAL_STATUS_BROADCAST_SUBMITTED
             p["broadcast_tx_id"] = txid
+            p.pop("last_error", None)
         else:
             if len(sigs) >= tn:
-                p["status"] = WITHDRAWAL_STATUS_BROADCAST_SUBMITTED
-                p["broadcast_tx_id"] = txid
+                p["status"] = WITHDRAWAL_STATUS_READY_TO_BROADCAST
+                p["broadcast_tx_id"] = None
+                p.pop("last_error", None)
             else:
                 p["status"] = WITHDRAWAL_STATUS_AWAITING_SIGNATURES
                 p["broadcast_tx_id"] = None
@@ -486,10 +627,82 @@ class OrderService:
         await self._session.commit()
         return out
 
+    async def _withdrawal_onchain_failure_last_error(
+        self,
+        client: TronGridClient,
+        tx_id: str,
+        payload: Dict[str, Any],
+    ) -> str:
+        """
+        Текст last_error: ответ ноды по tx + баланс USDT/TRX отправителя + OUT_OF_ENERGY.
+        """
+        tid = (tx_id or "").strip()
+        extras: List[str] = []
+        info: Dict[str, Any] = {}
+        txwrap: Optional[Dict[str, Any]] = None
+        try:
+            info = await client.get_transaction_info(tid)
+        except Exception as e:
+            logger.warning("withdrawal failure get_transaction_info tx=%s: %s", tid[:16], e)
+            return "Транзакция не выполнена в сети (не удалось получить детали)."
+        if not isinstance(info, dict) or not info:
+            return "Транзакция не выполнена в сети."
+        receipt = info.get("receipt") if isinstance(info.get("receipt"), dict) else {}
+        r = receipt.get("result")
+        if info.get("blockNumber") and r is None:
+            try:
+                txwrap = await client.post(
+                    "/wallet/gettransactionbyid", {"value": tid}
+                )
+            except Exception:
+                txwrap = None
+        base = TronGridClient.build_transaction_failure_message(info, txwrap)
+        res_line = TronGridClient.describe_trx_resource_failure(info, txwrap)
+        if res_line:
+            extras.append(res_line)
+        tok = payload.get("token") if isinstance(payload.get("token"), dict) else {}
+        ttype = (tok.get("type") or "").strip().lower()
+        owner = (payload.get("tron_address") or "").strip()
+        if owner and is_valid_tron_address(owner):
+            if ttype == "trc20":
+                contract = (tok.get("contract_address") or "").strip()
+                sym = (tok.get("symbol") or "USDT").strip().upper() or "USDT"
+                try:
+                    dec = int(tok.get("decimals") if tok.get("decimals") is not None else 6)
+                except (TypeError, ValueError):
+                    dec = 6
+                if contract:
+                    raw_bal = await client.trigger_constant_balance_of(owner, contract)
+                    if raw_bal is not None:
+                        if dec >= 0:
+                            human = raw_bal / (10**dec)
+                        else:
+                            human = float(raw_bal)
+                        extras.append(
+                            f"Баланс {sym} на кошельке отправителя: {human} {sym} "
+                            f"(минимальные единицы: {raw_bal})."
+                        )
+                        if raw_bal == 0:
+                            extras.append(
+                                "Вероятная причина отката контракта — нулевой баланс токена."
+                            )
+            elif ttype == "native":
+                sun = await client.get_account_trx_balance_sun(owner)
+                if sun is not None:
+                    trx_amt = sun / 1_000_000
+                    extras.append(
+                        f"Баланс TRX на кошельке отправителя: {trx_amt:.6f} TRX ({sun} SUN)."
+                    )
+                    if sun == 0:
+                        extras.append(
+                            "Вероятная причина — недостаточно TRX для комиссии или перевода."
+                        )
+        parts = [base] + extras
+        text = "\n".join(parts).strip()
+        return (text or "Транзакция не выполнена в сети.")[:2000]
+
     async def refresh_withdrawal_statuses(self) -> Dict[str, int]:
         """Cron: опрос Tron по txid для ордеров в broadcast_submitted."""
-        from services.tron.grid_client import TronGridClient
-
         stmt = select(OrderModel).where(
             OrderModel.category == ORDER_CATEGORY_WITHDRAWAL,
         )
@@ -515,7 +728,82 @@ class OrderService:
                     p["status"] = WITHDRAWAL_STATUS_CONFIRMED
                 else:
                     p["status"] = WITHDRAWAL_STATUS_FAILED
-                    p["last_error"] = "transaction failed on chain"
+                    try:
+                        detail = await self._withdrawal_onchain_failure_last_error(
+                            client, txid, p
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "withdrawal failure detail tx=%s: %s", txid[:16], e
+                        )
+                        detail = ""
+                    p["last_error"] = (
+                        detail.strip() or "Транзакция не выполнена в сети."
+                    )[:2000]
                 await self._orders.update_withdrawal_payload(int(m.id), p)
                 updated += 1
         return {"updated": updated}
+
+    async def broadcast_ready_withdrawals(self) -> Dict[str, Any]:
+        """
+        Отправка в сеть заявок multisig в статусе ready_to_broadcast (cron).
+        Успех: broadcast_submitted + broadcast_tx_id; ошибка ноды: last_error, статус без изменений.
+        """
+        stmt = select(OrderModel).where(OrderModel.category == ORDER_CATEGORY_WITHDRAWAL)
+        res = await self._session.execute(stmt)
+        models = list(res.scalars().all())
+        broadcasted = 0
+        errors = 0
+        async with TronGridClient(settings=self._settings) as client:
+            for m in models:
+                p = dict(m.payload or {})
+                if p.get("status") != WITHDRAWAL_STATUS_READY_TO_BROADCAST:
+                    continue
+                sigs_raw = await self._orders.list_withdrawal_signatures(int(m.id))
+                signed_tx = _best_signed_transaction_from_rows(sigs_raw)
+                if not signed_tx:
+                    err = "No signed transaction in signatures"
+                    p["last_error"] = err[:500]
+                    await self._orders.update_withdrawal_payload(int(m.id), p)
+                    errors += 1
+                    logger.warning(
+                        "withdrawal broadcast order_id=%s: %s", int(m.id), err[:200]
+                    )
+                    continue
+                try:
+                    out = await client.broadcast_transaction(dict(signed_tx))
+                except Exception as e:
+                    msg = str(e).strip()[:500] or "broadcast failed"
+                    p["last_error"] = msg
+                    await self._orders.update_withdrawal_payload(int(m.id), p)
+                    errors += 1
+                    logger.warning(
+                        "withdrawal broadcast order_id=%s exception: %s",
+                        int(m.id),
+                        msg[:200],
+                    )
+                    continue
+                if not out.get("result"):
+                    p["last_error"] = _broadcast_error_message(out)
+                    await self._orders.update_withdrawal_payload(int(m.id), p)
+                    errors += 1
+                    logger.warning(
+                        "withdrawal broadcast order_id=%s node: %s",
+                        int(m.id),
+                        p["last_error"][:200],
+                    )
+                    continue
+                chain_txid = str(
+                    signed_tx.get("txID") or signed_tx.get("txid") or ""
+                ).strip()
+                if not chain_txid:
+                    p["last_error"] = "Broadcast ok but signed tx missing txID"
+                    await self._orders.update_withdrawal_payload(int(m.id), p)
+                    errors += 1
+                    continue
+                p["status"] = WITHDRAWAL_STATUS_BROADCAST_SUBMITTED
+                p["broadcast_tx_id"] = chain_txid
+                p.pop("last_error", None)
+                await self._orders.update_withdrawal_payload(int(m.id), p)
+                broadcasted += 1
+        return {"broadcasted": broadcasted, "broadcast_errors": errors}

@@ -11,8 +11,10 @@ from sqlalchemy import select
 from db import get_db
 from db.models import Order, Wallet, WalletUser
 from repos.order import ORDER_CATEGORY_WITHDRAWAL, withdrawal_dedupe_key
-from services.order import OrderService
+from services.order import OrderService, WITHDRAWAL_KIND, WITHDRAWAL_STATUS_AWAITING_SIGNATURES
 from services.tron.utils import keypair_from_mnemonic
+from services.multisig_wallet.constants import MULTISIG_STATUS_ACTIVE
+from services.multisig_wallet.meta import default_meta_dict
 from web.endpoints.dependencies import (
     get_redis,
     get_required_wallet_address_for_space,
@@ -22,6 +24,8 @@ from web.endpoints.dependencies import (
 from web.main import create_app
 
 _OWNER_TRON = "TLrJJkGK4puQGZLFbrPxK2icPgADaNTq5A"
+_SIGNER_IN_MS = "TV6ZVcKH24NzWxwdRbCvVD5gqAwaypdkRi"
+_STRANGER_TRON = "TYDkyTwMF7ti5R8VstRruqz4N9mGne2CdF"
 
 
 class _FakeTronGridForRefresh:
@@ -365,3 +369,67 @@ async def test_order_sign_submit_second_time_not_awaiting_400(
         )
     assert r2.status_code == 400
     assert "not awaiting" in r2.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_order_sign_submit_multisig_rejects_signer_not_in_actors(
+    main_app_withdrawal, test_db
+):
+    """POST /order-sign/.../submit: multisig — адрес не из actors_snapshot → 400."""
+    app, _ = main_app_withdrawal
+
+    owner_res = await test_db.execute(
+        select(WalletUser).where(WalletUser.nickname == "wd_space")
+    )
+    owner = owner_res.scalar_one()
+
+    w_ms = Wallet(
+        name="ramp_ms_submit",
+        encrypted_mnemonic="enc",
+        role="multisig",
+        tron_address="TLrJJkGK4puQGZLFbrPxK2icPgADaNTq5B",
+        owner_did=owner.did,
+        multisig_setup_status=MULTISIG_STATUS_ACTIVE,
+        multisig_setup_meta={
+            **default_meta_dict(),
+            "actors": [_SIGNER_IN_MS],
+            "threshold_n": 1,
+            "threshold_m": 1,
+        },
+    )
+    test_db.add(w_ms)
+    await test_db.commit()
+    await test_db.refresh(w_ms)
+
+    sign_tok = "endpoint_ms_actor_test_tok_01"
+    order = Order(
+        category=ORDER_CATEGORY_WITHDRAWAL,
+        dedupe_key=withdrawal_dedupe_key(sign_tok),
+        space_wallet_id=w_ms.id,
+        payload={
+            "kind": WITHDRAWAL_KIND,
+            "status": WITHDRAWAL_STATUS_AWAITING_SIGNATURES,
+            "wallet_role": "multisig",
+            "tron_address": w_ms.tron_address,
+            "threshold_n": 1,
+            "threshold_m": 1,
+            "actors_snapshot": [_SIGNER_IN_MS],
+            "long_expiration_ms": False,
+        },
+    )
+    test_db.add(order)
+    await test_db.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        r = await client.post(
+            f"/v1/order-sign/{sign_tok}/submit",
+            json={
+                "signer_address": _STRANGER_TRON,
+                "signed_transaction": {"txID": "x"},
+            },
+        )
+    assert r.status_code == 400
+    assert "actors" in r.json().get("detail", "").lower()

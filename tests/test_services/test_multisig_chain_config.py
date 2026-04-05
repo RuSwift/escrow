@@ -23,6 +23,7 @@ def test_extract_chain_multisig_custom():
         "active_permission": [
             {
                 "type": 2,
+                "id": 3,
                 "permission_name": "ms_test",
                 "threshold": 2,
                 "keys": [
@@ -38,6 +39,7 @@ def test_extract_chain_multisig_custom():
     assert cfg["threshold_m"] == 2
     assert cfg["permission_name"] == "ms_test"
     assert cfg["actors"] == sorted([_A, _B])
+    assert cfg.get("permission_id") == 3
 
 
 def test_extract_skips_default_active():
