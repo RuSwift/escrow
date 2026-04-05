@@ -14,6 +14,9 @@
                 description: '',
                 company_name: '',
                 icon: '',
+                primary_wallet_address: '',
+                primary_wallet_blockchain: 'tron',
+                showPrimaryWalletTooltip: false,
                 loading: false,
                 error: null,
                 successMessage: null,
@@ -68,6 +71,10 @@
                         self.description = data.description || '';
                         self.company_name = data.company_name || '';
                         self.icon = data.icon || '';
+                        if (data.primary_wallet) {
+                            self.primary_wallet_address = data.primary_wallet.address || '';
+                            self.primary_wallet_blockchain = data.primary_wallet.blockchain || 'tron';
+                        }
                     })
                     .catch(function(e) {
                         self.error = e.message || self.$t('main.space_profile.error_network');
@@ -135,7 +142,11 @@
                 var body = JSON.stringify({
                     description: this.description || null,
                     company_name: this.company_name || null,
-                    icon: this.icon || null
+                    icon: this.icon || null,
+                    primary_wallet: {
+                        address: this.primary_wallet_address || '',
+                        blockchain: this.primary_wallet_blockchain || 'tron'
+                    }
                 });
                 fetch(base, {
                     method: 'PATCH',
@@ -205,6 +216,34 @@
             '          <div>',
             '          <label class="block text-xs font-bold text-[#58667e] uppercase tracking-wider mb-2">[[ $t(\'main.space_profile.form_description\') ]]</label>',
             '          <textarea v-model="description" rows="5" class="w-full px-4 py-3 border border-[#eff2f5] rounded-xl text-sm text-[#191d23] placeholder-[#58667e] focus:outline-none focus:border-[#3861fb] focus:ring-2 focus:ring-[#3861fb]/20 transition-all resize-none" :placeholder="$t(\'main.space_profile.form_description_placeholder\')"></textarea>',
+            '          </div>',
+            '          <div class="pt-4 border-t border-[#eff2f5]">',
+            '            <div class="flex items-center gap-2 mb-4">',
+            '              <h3 class="text-sm font-bold text-[#191d23]">[[ $t(\'main.space_profile.primary_wallet_title\') ]]</h3>',
+            '              <div class="relative inline-block">',
+            '                <button @click="showPrimaryWalletTooltip = !showPrimaryWalletTooltip" class="text-main-blue hover:text-main-blue/80 transition-colors">',
+            '                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>',
+            '                </button>',
+            '                <div v-if="showPrimaryWalletTooltip" class="absolute left-0 bottom-full mb-2 w-48 p-2 bg-[#191d23] text-white text-[10px] rounded-lg shadow-xl z-10 leading-snug font-normal normal-case">',
+            '                  [[ $t(\'main.dashboard.primary_wallet_info\') ]]',
+            '                  <div class="absolute top-full left-2 border-8 border-transparent border-t-[#191d23]"></div>',
+            '                </div>',
+            '              </div>',
+            '            </div>',
+            '            <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">',
+            '              <div class="sm:col-span-1">',
+            '                <label class="block text-xs font-bold text-[#58667e] uppercase tracking-wider mb-2">[[ $t(\'main.space_profile.blockchain\') ]]</label>',
+            '                <select v-model="primary_wallet_blockchain" disabled class="w-full px-4 py-3 border border-[#eff2f5] rounded-xl text-sm text-[#191d23] focus:outline-none focus:border-[#3861fb] focus:ring-2 focus:ring-[#3861fb]/20 transition-all bg-[#f8fafd] cursor-not-allowed">',
+            '                  <option value="tron">TRON</option>',
+            '                  <option value="ethereum">Ethereum</option>',
+            '                </select>',
+            '              </div>',
+            '              <div class="sm:col-span-3">',
+            '                <label class="block text-xs font-bold text-[#58667e] uppercase tracking-wider mb-2">[[ $t(\'main.space_profile.primary_wallet_address\') ]]</label>',
+            '                <input v-model="primary_wallet_address" type="text" maxlength="255" class="w-full px-4 py-3 border border-[#eff2f5] rounded-xl text-sm text-[#191d23] placeholder-[#58667e] focus:outline-none focus:border-[#3861fb] focus:ring-2 focus:ring-[#3861fb]/20 transition-all" :placeholder="$t(\'main.space_profile.primary_wallet_address_placeholder\')" />',
+            '              </div>',
+            '            </div>',
+            '            <p class="mt-2 text-xs text-[#58667e]">[[ $t(\'main.space_profile.primary_wallet_hint\') ]]</p>',
             '          </div>',
             '        </div>',
             '      </div>',

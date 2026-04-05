@@ -16,6 +16,12 @@ from settings import Settings
 logger = logging.getLogger(__name__)
 
 
+class PrimaryWalletSchema(BaseModel):
+    """Primary wallet data for a space."""
+    address: str = Field(..., max_length=255)
+    blockchain: str = Field(..., max_length=20)
+
+
 class WalletUserProfileSchema(BaseModel):
     """Space profile: description, company name, icon (base64). Stored in WalletUser.profile as JSON."""
     description: Optional[str] = None
@@ -26,6 +32,7 @@ class WalletUserProfileSchema(BaseModel):
         max_length=16,
         description="Locale for space notifications (e.g. ru, en); empty = default ru",
     )
+    primary_wallet: Optional[PrimaryWalletSchema] = None
 
 
 class WalletUserResource(BaseResource):

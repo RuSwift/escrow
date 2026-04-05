@@ -1154,3 +1154,36 @@ class GuarantorProfile(Base):
             f"<GuarantorProfile(id={self.id}, wallet_user_id={self.wallet_user_id}, "
             f"space={self.space!r})>"
         )
+
+
+class PrimaryWallet(Base):
+    """Model for storing primary wallet address for a space (one-to-one with WalletUser)"""
+
+    __tablename__ = "primary_wallets"
+
+    id = Column(Integer, primary_key=True, index=True)
+    wallet_user_id = Column(
+        Integer,
+        ForeignKey("wallet_users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+        comment="Reference to owner WalletUser",
+    )
+    address = Column(String(255), nullable=False, comment="Primary wallet address")
+    blockchain = Column(
+        String(20),
+        nullable=False,
+        index=True,
+        comment="Blockchain type: tron, ethereum, etc.",
+    )
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    def __repr__(self):
+        return f"<PrimaryWallet(id={self.id}, address={self.address}, blockchain={self.blockchain})>"

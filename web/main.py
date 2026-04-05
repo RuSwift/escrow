@@ -232,6 +232,10 @@ def create_app() -> FastAPI:
             space_owner_wallet_tron = (
                 await space_service.get_space_owner_tron_wallet(space_clean) or ""
             )
+        
+        # Primary wallet for the space
+        space_primary_wallet = await space_service.get_primary_wallet(space_clean)
+
         return templates.TemplateResponse(
             "main/app.html",
             {
@@ -244,6 +248,7 @@ def create_app() -> FastAPI:
                 "space_subs_count": space_subs_count,
                 "space_profile_filled": space_profile_filled,
                 "space_owner_wallet_tron": space_owner_wallet_tron,
+                "space_primary_wallet": space_primary_wallet,
                 "collateral_stablecoin_tokens_json": _collateral_stablecoin_tokens_json(),
             },
         )

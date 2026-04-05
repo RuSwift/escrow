@@ -5,6 +5,7 @@
      data-initial-page="{{ initial_page | default('dashboard') }}"
      data-escrow-id="{{ escrow_id | default('') }}"
      data-space="{{ space | default('') }}"
+     data-space-primary-wallet='{{ space_primary_wallet | tojson if space_primary_wallet else "{}" }}'
      data-space-role="{{ space_role | default('') }}"
      data-space-subs-count="{{ space_subs_count | default(-1) }}"
      data-space-profile-filled="{{ 'true' if (space_profile_filled | default(true)) else 'false' }}"

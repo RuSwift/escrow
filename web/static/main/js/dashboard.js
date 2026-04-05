@@ -2,6 +2,9 @@
  * Vue 2 компонент: Дашборд (main)
  */
 (function() {
+    var TRONSCAN_BASE = 'https://tronscan.org/#/address/';
+    var ETHERSCAN_BASE = 'https://etherscan.io/address/';
+
     function authHeadersMain() {
         var h = { Accept: 'application/json' };
         var key = (typeof window !== 'undefined' && window.main_auth_token_key) ? window.main_auth_token_key : 'main_auth_token';
@@ -67,6 +70,8 @@ Vue.component('dashboard', {
             ratiosModalOpen: false,
             spaceRole: '',
             showWithdrawalModal: false,
+            primaryWallet: (typeof window !== 'undefined' && window.__SPACE_PRIMARY_WALLET__) ? window.__SPACE_PRIMARY_WALLET__ : { address: '', blockchain: 'tron' },
+            showPrimaryWalletTooltip: false,
             appDebug: typeof window !== 'undefined' && window.__DEBUG__ === true
         };
     },
@@ -227,11 +232,54 @@ Vue.component('dashboard', {
             var sidebar = document.querySelector('#sidebar-main');
             if (sidebar && sidebar.__vue__) sidebar.__vue__.go('space-profile');
             if (window.__mainApp) window.__mainApp.currentPage = 'space-profile';
+        },
+        primaryWalletUrl: function() {
+            if (!this.primaryWallet || !this.primaryWallet.address) return '#';
+            var addr = this.primaryWallet.address;
+            var bc = (this.primaryWallet.blockchain || 'tron').toLowerCase();
+            if (bc === 'ethereum') return ETHERSCAN_BASE + addr;
+            return TRONSCAN_BASE + addr;
         }
     },
     template: `
     <div class="max-w-7xl mx-auto px-4 py-8">
-      <div v-if="typeof window !== \'undefined\' && window.__SPACE_ROLE__ === \'owner\' && window.__SPACE_SUBS_COUNT__ === 0" class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-6 text-amber-800 text-sm font-medium flex flex-wrap items-center gap-x-2 gap-y-1">
+      <div v-if="primaryWallet && primaryWallet.address" class="mb-8 p-6 bg-white rounded-2xl border border-[#eff2f5] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div class="flex items-center gap-4">
+          <div class="w-12 h-12 rounded-2xl bg-main-blue/10 flex items-center justify-center text-main-blue shrink-0">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>
+          </div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-1.5 mb-1">
+              <div class="text-xs font-bold text-[#58667e] uppercase tracking-wider">[[ $t('main.dashboard.primary_wallet') ]]</div>
+              <div class="relative inline-block">
+                <button @click="showPrimaryWalletTooltip = !showPrimaryWalletTooltip" class="text-main-blue hover:text-main-blue/80 transition-colors">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                </button>
+                <div v-if="showPrimaryWalletTooltip" class="absolute left-0 bottom-full mb-2 w-48 p-2 bg-[#191d23] text-white text-[10px] rounded-lg shadow-xl z-10 leading-snug">
+                  [[ $t('main.dashboard.primary_wallet_info') ]]
+                  <div class="absolute top-full left-2 border-8 border-transparent border-t-[#191d23]"></div>
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="font-mono text-sm text-[#191d23] break-all">[[ primaryWallet.address ]]</span>
+              <a :href="primaryWalletUrl()" target="_blank" class="text-main-blue hover:text-main-blue/80 transition-colors shrink-0" :title="$t('main.dashboard.view_on_explorer')">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <div class="px-3 py-1.5 rounded-xl bg-gray-50 border border-[#eff2f5] text-[10px] font-bold text-[#58667e] uppercase tracking-wider">
+            [[ primaryWallet.blockchain ]]
+          </div>
+          <button v-if="spaceRole === 'owner'" @click="goToProfile" class="text-xs font-bold text-main-blue hover:underline">
+            [[ $t('main.dashboard.edit_primary_wallet') ]]
+          </button>
+        </div>
+      </div>
+
+      <div v-if="typeof window !== 'undefined' && window.__SPACE_ROLE__ === 'owner' && window.__SPACE_SUBS_COUNT__ === 0" class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-6 text-amber-800 text-sm font-medium flex flex-wrap items-center gap-x-2 gap-y-1">
         <span>[[ $t(\'main.dashboard.no_roles_warning\') ]]</span>
         <a :href="rolesPageHref()" @click.prevent="goToRoles()" class="font-semibold text-main-blue hover:underline">[[ $t(\'main.dashboard.go_to_roles\') ]]</a>
       </div>

@@ -44,17 +44,22 @@ async def get_space_profile(
     space_service: SpaceServiceDep,
     wallet_address: str = Depends(get_required_wallet_address_for_space),
 ):
-    """Профиль спейса (description, icon). Только owner."""
+    """Профиль спейса (description, icon, primary_wallet). Только owner."""
     try:
         profile = await space_service.get_space_profile(space, wallet_address)
+        if profile is None:
+            return None
+        
+        # Добавляем primary wallet в ответ
+        pw = await space_service.get_primary_wallet(space)
+        profile["primary_wallet"] = pw
+        
+        return WalletUserProfileSchema(**profile)
     except SpacePermissionDenied:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only space owner can get space profile",
         )
-    if profile is None:
-        return None
-    return WalletUserProfileSchema(**profile)
 
 
 @router.patch(
@@ -73,16 +78,36 @@ async def patch_space_profile(
         accept = locale_from_accept_language(
             request.headers.get("accept-language")
         )
+        
+        # Если передан primary_wallet, обновляем его отдельно
+        if data.primary_wallet:
+            await space_service.update_primary_wallet(
+                space, 
+                wallet_address, 
+                data.primary_wallet.address, 
+                data.primary_wallet.blockchain
+            )
+
         result = await space_service.update_space_profile(
             space,
             wallet_address,
             data,
             accept_language=accept,
         )
+        
+        # Добавляем актуальный primary wallet в ответ
+        pw = await space_service.get_primary_wallet(space)
+        result["primary_wallet"] = pw
+        
     except SpacePermissionDenied:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only space owner can update space profile",
+        )
+    except InvalidWalletAddress as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "invalid_wallet_address", "message": str(e)},
         )
     except ValueError as e:
         msg = str(e)

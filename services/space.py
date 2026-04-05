@@ -6,6 +6,7 @@ import re
 from typing import Any, Dict, List, Optional, Union
 
 from redis.asyncio import Redis
+from sqlalchemy import select, update, delete, insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions import (
@@ -14,7 +15,7 @@ from core.exceptions import (
     MissingNickname,
     SpacePermissionDenied,
 )
-from db.models import WalletUserSubRole
+from db.models import WalletUserSubRole, PrimaryWallet, WalletUser
 from repos.wallet_user import (
     WalletUserProfileSchema,
     WalletUserRepository,
@@ -377,6 +378,52 @@ class SpaceService:
             or profile.get("company_name")
             or profile.get("icon")
         )
+
+    async def get_primary_wallet(self, space: str) -> Dict[str, str]:
+        """
+        Возвращает primary wallet для спейса.
+        По умолчанию: WalletUser.wallet_address (blockchain из той же записи).
+        Если есть запись в PrimaryWallet, возвращает её.
+        """
+        owner = await self._repo.get_by_nickname(space)
+        if not owner:
+            raise ValueError("Space not found")
+
+        stmt = select(PrimaryWallet).where(PrimaryWallet.wallet_user_id == owner.id)
+        res = await self._session.execute(stmt)
+        pw = res.scalar_one_or_none()
+
+        if pw:
+            return {"address": pw.address, "blockchain": pw.blockchain}
+
+        return {"address": owner.wallet_address, "blockchain": owner.blockchain}
+
+    async def update_primary_wallet(
+        self, space: str, actor_wallet_address: str, address: str, blockchain: str
+    ) -> Dict[str, str]:
+        """Обновить или создать primary wallet для спейса. Только owner."""
+        owner_id = await self._ensure_owner_and_owner_id(space, actor_wallet_address)
+
+        if not validate_wallet_address(blockchain, address):
+            raise InvalidWalletAddress(f"Invalid wallet address for blockchain {blockchain}")
+
+        stmt = select(PrimaryWallet).where(PrimaryWallet.wallet_user_id == owner_id)
+        res = await self._session.execute(stmt)
+        pw = res.scalar_one_or_none()
+
+        if pw:
+            pw.address = address.strip()
+            pw.blockchain = blockchain.strip().lower()
+        else:
+            pw = PrimaryWallet(
+                wallet_user_id=owner_id,
+                address=address.strip(),
+                blockchain=blockchain.strip().lower(),
+            )
+            self._session.add(pw)
+
+        await self._session.commit()
+        return {"address": pw.address, "blockchain": pw.blockchain}
 
 
 __all__ = [

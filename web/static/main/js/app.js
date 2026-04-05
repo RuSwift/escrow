@@ -75,6 +75,17 @@
     window.__SPACE_SUBS_COUNT__ = spaceSubsCount;
     window.__SPACE_PROFILE_FILLED__ = spaceProfileFilled;
     window.__SPACE_OWNER_TRON__ = (el.getAttribute('data-space-owner-tron') || '').trim();
+    
+    var rawPW = el.getAttribute('data-space-primary-wallet');
+    window.__SPACE_PRIMARY_WALLET__ = { address: '', blockchain: 'tron' };
+    if (rawPW) {
+        try {
+            window.__SPACE_PRIMARY_WALLET__ = JSON.parse(rawPW);
+        } catch (e) {
+            console.error('Failed to parse primary wallet data', e);
+        }
+    }
+
     var tronNetAttr = (el.getAttribute('data-tron-network') || '').trim().toLowerCase();
     if (tronNetAttr) {
         window.__TRON_NETWORK__ = tronNetAttr;
