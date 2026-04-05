@@ -43,6 +43,9 @@ class _FakeTronGridForRefresh:
     async def get_transaction_success(self, _txid: str):
         return True
 
+    async def get_transaction_info(self, _txid: str):
+        return {"receipt": {"result": "SUCCESS"}}
+
 
 @pytest_asyncio.fixture
 async def main_app_withdrawal(test_db, test_redis, test_settings):
@@ -306,10 +309,12 @@ async def test_external_withdrawal_mnemonic_submit_then_confirmed_trongrid_mock(
         assert r_sub.json()["payload"]["broadcast_tx_id"] == fake_tx_id
 
         with patch(
-            "services.tron.grid_client.TronGridClient",
+            "services.order.TronGridClient",
             _FakeTronGridForRefresh,
         ):
             svc = OrderService(test_db, test_redis, test_settings)
+            # Force commit before refresh
+            await test_db.commit()
             stats = await svc.refresh_withdrawal_statuses()
             await test_db.commit()
         assert stats.get("updated", 0) >= 1
