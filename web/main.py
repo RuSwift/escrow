@@ -14,7 +14,7 @@ from fastapi.templating import Jinja2Templates
 from db import init_db
 from db.models import WalletUserSubRole
 from i18n import _
-from i18n.context import get_request_locale
+from i18n.context import get_request_locale, set_request_locale
 from i18n.translations import get_translations_for_locale
 from settings import Settings
 from web.endpoints.dependencies import (
@@ -67,9 +67,15 @@ def create_app() -> FastAPI:
     app.include_router(health_router, prefix="/health")
     app.include_router(v1_router)
 
-    def _main_context(request: Request, initial_page: str = "dashboard"):
+    def _main_context(request: Request, initial_page: str = "dashboard", space_lang: str | None = None):
         settings = Settings()
-        locale = get_request_locale() or settings.default_locale
+        # Приоритет языка: 1. query lang, 2. space profile lang, 3. Accept-Language header, 4. default
+        locale = get_request_locale()
+        if space_lang and not request.query_params.get("lang"):
+            locale = space_lang
+            set_request_locale(locale)
+        
+        locale = locale or settings.default_locale
         translations = get_translations_for_locale(locale)
         tron_net = (settings.tron.network or "mainnet").strip().lower()
         if tron_net not in ("mainnet", "shasta", "nile"):
@@ -88,7 +94,9 @@ def create_app() -> FastAPI:
         }
 
     @app.get("/", response_class=HTMLResponse)
-    async def index(request: Request):
+    async def index(request: Request, space_service=Depends(get_space_service)):
+        # If we have a saved space in cookies or can determine it, we could try to get its lang
+        # but for landing it's better to stick to Accept-Language/query unless a space is specified.
         return templates.TemplateResponse(
             "main/landing.html",
             _main_context(request),
@@ -182,6 +190,10 @@ def create_app() -> FastAPI:
         allowed = await wallet_service.get_spaces_for_address(wallet_address, "tron")
         if space_clean not in allowed:
             return RedirectResponse(url="/", status_code=302)
+        
+        # Determine space language for priority i18n
+        space_lang = await space_service.get_space_language_for_display(space_clean)
+        
         space_company_name = await space_service.get_space_company_name_for_display(
             space_clean
         )
@@ -190,7 +202,7 @@ def create_app() -> FastAPI:
 
         if initial_page in ("space-roles", "space-profile") and not is_owner:
             ctx = {
-                **_main_context(request, "dashboard"),
+                **_main_context(request, "dashboard", space_lang=space_lang),
                 "space": space_clean,
                 "space_company_name": space_company_name,
                 "space_role": space_role.value,
@@ -239,7 +251,7 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(
             "main/app.html",
             {
-                **_main_context(request, page),
+                **_main_context(request, page, space_lang=space_lang),
                 "initial_page": page,
                 "escrow_id": escrow_id.strip() if page == "detail" else "",
                 "space": space_clean,

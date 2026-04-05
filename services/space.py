@@ -331,6 +331,19 @@ class SpaceService:
         stripped = str(cn).strip()
         return stripped if stripped else None
 
+    async def get_space_language_for_display(self, space: str) -> Optional[str]:
+        """
+        language из профиля владельца спейса (для i18n).
+        """
+        owner = await self._repo.get_by_nickname(space)
+        if not owner or not owner.profile:
+            return None
+        lang = owner.profile.language
+        if lang is None:
+            return None
+        stripped = str(lang).strip().lower()
+        return stripped if stripped in ("ru", "en") else None
+
     async def update_space_profile(
         self,
         space: str,

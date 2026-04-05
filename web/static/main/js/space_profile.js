@@ -14,6 +14,7 @@
                 description: '',
                 company_name: '',
                 icon: '',
+                language: '',
                 primary_wallet_address: '',
                 primary_wallet_blockchain: 'tron',
                 showPrimaryWalletTooltip: false,
@@ -71,6 +72,7 @@
                         self.description = data.description || '';
                         self.company_name = data.company_name || '';
                         self.icon = data.icon || '';
+                        self.language = data.language || '';
                         if (data.primary_wallet) {
                             self.primary_wallet_address = data.primary_wallet.address || '';
                             self.primary_wallet_blockchain = data.primary_wallet.blockchain || 'tron';
@@ -147,6 +149,7 @@
                     description: this.description || null,
                     company_name: this.company_name || null,
                     icon: this.icon || null,
+                    language: this.language || null,
                     primary_wallet: {
                         address: this.primary_wallet_address || '',
                         blockchain: this.primary_wallet_blockchain || 'tron'
@@ -216,6 +219,15 @@
             '          <div>',
             '            <label class="block text-xs font-bold text-[#58667e] uppercase tracking-wider mb-2">[[ $t(\'main.space_profile.form_company_name\') ]]</label>',
             '            <input v-model="company_name" type="text" maxlength="255" class="w-full px-4 py-3 border border-[#eff2f5] rounded-xl text-sm text-[#191d23] placeholder-[#58667e] focus:outline-none focus:border-[#3861fb] focus:ring-2 focus:ring-[#3861fb]/20 transition-all" :placeholder="$t(\'main.space_profile.form_company_name_placeholder\')" />',
+            '          </div>',
+            '          <div>',
+            '            <label class="block text-xs font-bold text-[#58667e] uppercase tracking-wider mb-2">[[ $t(\'main.space_profile.form_language\') ]]</label>',
+            '            <select v-model="language" class="w-full px-4 py-3 border border-[#eff2f5] rounded-xl text-sm text-[#191d23] focus:outline-none focus:border-[#3861fb] focus:ring-2 focus:ring-[#3861fb]/20 transition-all bg-white">',
+            '              <option value="">[[ $t(\'main.space_profile.form_language_placeholder\') ]]</option>',
+            '              <option value="ru">[[ $t(\'main.space_profile.language_ru\') ]]</option>',
+            '              <option value="en">[[ $t(\'main.space_profile.language_en\') ]]</option>',
+            '              <option value="zh">中文 (Chinese) - coming soon</option>',
+            '            </select>',
             '          </div>',
             '          <div>',
             '          <label class="block text-xs font-bold text-[#58667e] uppercase tracking-wider mb-2">[[ $t(\'main.space_profile.form_description\') ]]</label>',

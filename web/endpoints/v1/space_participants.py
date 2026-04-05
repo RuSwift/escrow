@@ -62,6 +62,27 @@ async def get_space_profile(
         )
 
 
+@router.get(
+    "/{space}/profile/public",
+    response_model=Optional[WalletUserProfileSchema],
+)
+async def get_space_profile_public(
+    space: str,
+    space_service: SpaceServiceDep,
+):
+    """Публичный профиль спейса (только публичные поля: language, company_name)."""
+    lang = await space_service.get_space_language_for_display(space)
+    company_name = await space_service.get_space_company_name_for_display(space)
+    
+    if lang is None and company_name is None:
+        return None
+        
+    return WalletUserProfileSchema(
+        language=lang,
+        company_name=company_name
+    )
+
+
 @router.patch(
     "/{space}/profile",
     response_model=WalletUserProfileSchema,
