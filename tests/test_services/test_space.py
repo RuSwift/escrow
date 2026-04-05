@@ -486,6 +486,7 @@ async def test_space_profile_only_description(space_with_owner_and_sub, space_se
         "company_name": None,
         "icon": None,
         "language": None,
+        "primary_wallet": {"address": WALLET_OWNER, "blockchain": "tron"},
     }
 
 
