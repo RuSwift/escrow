@@ -53,6 +53,7 @@
     </main>
   </div>
   <div id="support-modal-mount"></div>
+  <div id="logout-confirm-mount"></div>
   {% block scripts %}{% endblock %}
   <script>
     (function() {
@@ -82,10 +83,52 @@
       var logoutEl = document.getElementById('header-logout');
       if (logoutEl) {
         logoutEl.addEventListener('click', function() {
-          document.cookie = 'admin_token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax';
-          window.location.href = '/';
+          if (window.confirmLogout) {
+            window.confirmLogout();
+          } else {
+            // Fallback
+            document.cookie = 'admin_token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax';
+            window.location.href = '/';
+          }
         });
       }
+    })();
+  </script>
+  <script src="/static/node/js/modal.js"></script>
+  <script>
+    (function() {
+      new Vue({
+        el: '#logout-confirm-mount',
+        delimiters: ['[[', ']]'],
+        data: {
+          show: false,
+          title: window.__TRANSLATIONS__['node.logout_confirm_title'] || 'Logout',
+          message: window.__TRANSLATIONS__['node.logout_confirm_message'] || 'Are you sure you want to log out?'
+        },
+        methods: {
+          doLogout: function() {
+            document.cookie = 'admin_token=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax';
+            window.location.href = '/';
+          }
+        },
+        mounted: function() {
+          window.confirmLogout = function() {
+            this.show = true;
+          }.bind(this);
+        },
+        template: \`
+          <modal-dialog 
+            :show="show" 
+            :title="title" 
+            :message="message"
+            confirm-label="${window.__TRANSLATIONS__['node.logout'] || 'Logout'}"
+            cancel-label="${window.__TRANSLATIONS__['main.space_roles.cancel'] || 'Cancel'}"
+            confirm-class="bg-red-600 hover:bg-red-700 text-white"
+            @confirm="doLogout" 
+            @cancel="show = false">
+          </modal-dialog>
+        \`
+      });
     })();
   </script>
 </body>

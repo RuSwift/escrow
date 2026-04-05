@@ -60,11 +60,26 @@
     }
 
     /**
-     * Выход: сбрасывает cookie на сервере и удаляет токен из localStorage. Редирект не выполняет — вызывающий код может перенаправить на /.
+     * Выход: сбрасывает cookie на сервере и удаляет токен из localStorage.
+     * Если dialog.js загружен, запрашивает подтверждение.
      */
-    function logout() {
+    function logout(noConfirm) {
+        var t = window.__TRANSLATIONS__ || {};
+        if (!noConfirm && typeof window.showConfirm === 'function') {
+            window.showConfirm({
+                title: t['main.logout_confirm_title'] || 'Logout',
+                message: t['main.logout_confirm_message'] || 'Are you sure you want to log out?',
+                danger: true,
+                onConfirm: function() {
+                    logout(true);
+                }
+            });
+            return;
+        }
+
         fetch('/v1/auth/logout', { method: 'POST', credentials: 'same-origin' }).finally(function() {
             clearToken();
+            window.location.href = '/';
         });
     }
 

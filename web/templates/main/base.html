@@ -25,6 +25,47 @@
     window.__LOCALE__ = "{{ locale | default('ru') }}";
     window.__TRANSLATIONS__ = {{ translations_json | default('{}') | safe }};
     window.__TRON_NETWORK__ = "{{ tron_network | default('mainnet') | e }}";
+    console.log('Escrow base.html v2 loaded');
+  </script>
+  <script src="/static/main/js/dialog.js"></script>
+  <script>
+    window.handleLogoutClick = function(e) {
+      if (e) { e.preventDefault(); e.stopPropagation(); }
+      console.log('Logout v2 clicked');
+      var t = window.__TRANSLATIONS__ || {};
+      var title = t['main.logout_confirm_title'] || 'Logout';
+      var message = t['main.logout_confirm_message'] || 'Are you sure you want to log out?';
+      
+      if (typeof window.showConfirm === 'function') {
+        window.showConfirm({
+          title: title,
+          message: message,
+          danger: true,
+          onConfirm: function() {
+            console.log('Logout v2 confirmed');
+            try {
+              var redirectToHome = function() { window.location.href = '/'; };
+              if (typeof fetch === 'function') {
+                fetch('/v1/auth/logout', { method: 'POST', credentials: 'same-origin' }).finally(function() {
+                  try { localStorage.removeItem('main_auth_token'); } catch(err){}
+                  redirectToHome();
+                });
+              } else {
+                try { localStorage.removeItem('main_auth_token'); } catch(err){}
+                redirectToHome();
+              }
+            } catch (err) {
+              window.location.href = '/';
+            }
+          }
+        });
+      } else {
+        if (confirm(message)) {
+          try { localStorage.removeItem('main_auth_token'); } catch(err){}
+          window.location.href = '/';
+        }
+      }
+    };
   </script>
   <aside id="sidebar-main" class="fixed inset-y-0 left-0 z-40 w-0 min-w-0 overflow-visible md:static md:z-auto md:w-auto"
          data-initial-page="{{ initial_page | default('dashboard') }}"
@@ -56,10 +97,10 @@
       </div>
       <div class="flex items-center gap-2 sm:gap-3 w-full md:w-auto shrink-0 min-w-0 justify-end border-t border-[#eff2f5] pt-2 md:border-0 md:pt-0">
         <button type="button" id="header-user-did" class="flex-1 md:flex-none min-w-0 md:max-w-[320px] text-left truncate text-[11px] md:text-xs font-mono text-[#58667e] hover:text-[#191d23] bg-transparent border-0 cursor-pointer p-0" title="" aria-label="{{ _('main.copy_did') }}" data-copy-label="{{ _('main.copied') }}"></button>
-        <a href="/" id="header-logout" class="inline-flex items-center gap-2 px-3 py-2 md:px-4 text-[13px] font-medium text-[#58667e] hover:text-main-red hover:bg-[#eff2f5] rounded-lg transition-colors shrink-0" title="{{ _('main.logout') }}" onclick="try{ (typeof logout === 'function' ? logout : function(){ localStorage.removeItem('main_auth_token'); })(); }catch(e){}">
+        <button type="button" id="header-logout-v2" onclick="window.handleLogoutClick(event)" class="inline-flex items-center gap-2 px-3 py-2 md:px-4 text-[13px] font-medium text-[#58667e] hover:text-main-red hover:bg-[#eff2f5] rounded-lg transition-colors shrink-0" title="{{ _('main.logout') }}">
           <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
           <span>{{ _('main.logout') }}</span>
-        </a>
+        </button>
       </div>
     </header>
     <main class="flex-1 overflow-hidden flex flex-col relative">
@@ -69,20 +110,22 @@
       <div class="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_50%_-20%,rgba(56,97,251,0.05),transparent_50%)]" aria-hidden="true"></div>
     </main>
   </div>
-  {% block scripts %}{% endblock %}
+  {% block scripts %}
   <script>
     (function() {
-      var btn = document.getElementById('header-space-badge');
-      var tooltip = document.getElementById('header-space-tooltip');
-      if (!btn || !tooltip) return;
-      btn.addEventListener('click', function(e) {
-        e.stopPropagation();
-        tooltip.classList.toggle('hidden');
-      });
-      document.addEventListener('click', function() {
-        tooltip.classList.add('hidden');
+      // Space badge tooltip logic
+      document.addEventListener('click', function(e) {
+        var btn = e.target.closest('#header-space-badge');
+        var tooltip = document.getElementById('header-space-tooltip');
+        if (btn && tooltip) {
+          e.stopPropagation();
+          tooltip.classList.toggle('hidden');
+        } else if (tooltip) {
+          tooltip.classList.add('hidden');
+        }
       });
     })();
   </script>
+  {% endblock %}
 </body>
 </html>
