@@ -1,0 +1,4554 @@
+meta:
+  schema_version: 1
+  bc_source:
+    file: bc.yaml
+    exported_at: '2026-03-21T15:25:58.674782+00:00'
+forms:
+  AAVE:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  ABUAH:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  ACCRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  ACRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  ADA:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  ADVCEUR:
+    fields:
+    - id: wallet_id
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_id
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  ADVCKZT:
+    fields:
+    - id: wallet_id
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_id
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  ADVCRUB:
+    fields:
+    - id: wallet_id
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_id
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  ADVCTRY:
+    fields:
+    - id: wallet_id
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_id
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  ADVCUAH:
+    fields:
+    - id: wallet_id
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_id
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  ADVCUSD:
+    fields:
+    - id: wallet_id
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_id
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  ALGO:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  ALPCNY:
+    fields:
+    - id: alipay_id
+      type: string
+      required: true
+      label_key: forms.requisite.alipay_id
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+  APT:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  ARB:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  ATMQRBRL:
+    fields:
+    - id: qr_payload
+      type: string
+      required: true
+      label_key: forms.requisite.qr_payload
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  ATMQRTHB:
+    fields:
+    - id: qr_payload
+      type: string
+      required: true
+      label_key: forms.requisite.qr_payload
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  ATMQRVND:
+    fields:
+    - id: qr_payload
+      type: string
+      required: true
+      label_key: forms.requisite.qr_payload
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  ATOM:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  AVAX:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  AVBRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  BAT:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  BCH:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  BKASHBDT:
+    fields:
+    - id: mobile_money_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.mobile_money_phone
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+  BLIKPLN:
+    fields:
+    - id: blik_alias
+      type: string
+      required: true
+      label_key: forms.requisite.blik_alias
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  BLRBBYN:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  BNBBEP2:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  BNBBEP20:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  BPAYUSD:
+    fields:
+    - id: bill_pay_account
+      type: string
+      required: true
+      label_key: forms.requisite.bill_pay_account
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  BRBKZT:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  BSV:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  BTC:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  BTCBEP20:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  BTCLN:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  BTT:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  BUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  CAKE:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  CARDAED:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDAMD:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDARS:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDAZN:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDBGN:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDBRL:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDBYN:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDCAD:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDCNY:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDCZK:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDEUR:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDGBP:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDGEL:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDHUF:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDIDR:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDINR:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDKGS:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDKZT:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDMDL:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDNGN:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDNOK:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDPLN:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDRON:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDRUB:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDSEK:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDTHB:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDTJS:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDTRY:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDUAH:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDUSD:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDUZS:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CARDVND:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CASHAED:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHAMD:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHARS:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHAUD:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHAZN:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHBGN:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHBRL:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHBYN:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHCAD:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHCHF:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHCNY:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHCOP:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHCZK:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHEGP:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHEUR:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHGBP:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHGEL:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHIDR:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHILS:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHINR:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHJPY:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHKGS:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHKRW:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHKZT:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHMDL:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHMXN:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHNGN:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHPLN:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHRON:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHRUB:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHSAR:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHSGD:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHTHB:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHTRY:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHUAH:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHUSD:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CASHVND:
+    fields:
+    - id: city
+      type: string
+      required: true
+      label_key: forms.requisite.city
+    - id: contact_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.contact_phone
+    - id: meeting_notes
+      type: text
+      required: false
+      label_key: forms.requisite.meeting_notes
+  CCBKZT:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CORPCNY:
+    fields:
+    - id: company_name
+      type: string
+      required: true
+      label_key: forms.requisite.company_name
+    - id: tax_id
+      type: string
+      required: false
+      label_key: forms.requisite.tax_id
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+  CORPEUR:
+    fields:
+    - id: company_name
+      type: string
+      required: true
+      label_key: forms.requisite.company_name
+    - id: tax_id
+      type: string
+      required: false
+      label_key: forms.requisite.tax_id
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+  CORPRUB:
+    fields:
+    - id: company_name
+      type: string
+      required: true
+      label_key: forms.requisite.company_name
+    - id: inn
+      type: string
+      required: true
+      label_key: forms.requisite.inn
+    - id: kpp
+      type: string
+      required: false
+      label_key: forms.requisite.kpp
+    - id: settlement_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.settlement_account
+    - id: bik
+      type: bic
+      required: true
+      label_key: forms.requisite.bik
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CORPUAH:
+    fields:
+    - id: company_name
+      type: string
+      required: true
+      label_key: forms.requisite.company_name
+    - id: tax_id
+      type: string
+      required: false
+      label_key: forms.requisite.tax_id
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+  CORPUSD:
+    fields:
+    - id: company_name
+      type: string
+      required: true
+      label_key: forms.requisite.company_name
+    - id: tax_id
+      type: string
+      required: false
+      label_key: forms.requisite.tax_id
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+  CPTSEUR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  CPTSRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  CPTSUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  CRO:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  DAI:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  DASH:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  DOGE:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  DOT:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  ELKGS:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  EOS:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  EPAYUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  EPPKR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  ERIPBYN:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  ERSNBKZT:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  ETC:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  ETH:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  ETHARBTM:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  ETHBEP20:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  ETHOPTM:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  EXMUSDT:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  FFBKZT:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  FIL:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  FPUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  FRTBKZT:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  GCMTRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  GCMTUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  GMUAH:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  GPBRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  HCBRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  HLKBKZT:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  HUMOUZS:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  ICX:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  IDAMD:
+    fields:
+    - id: ewallet_account
+      type: string
+      required: true
+      label_key: forms.requisite.ewallet_account
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  IOTA:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  IZIBUAH:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  JCPKR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  JSNBKZT:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  KAS:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  KSPBKZT:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  LINK:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  LTC:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  LUNA:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  M10AZN:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  MANA:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  MGEUR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  MGUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  MIRCRUB:
+    fields:
+    - id: pan_last_digits
+      type: pan_last_digits
+      required: true
+      label_key: forms.requisite.pan_last_digits
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+  MNGUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  MONOBEUR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  MONOBUAH:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  MONOBUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  MPARS:
+    fields:
+    - id: ewallet_account
+      type: string
+      required: true
+      label_key: forms.requisite.ewallet_account
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+  MTSBRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  MWBYN:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  MWRUB:
+    fields:
+    - id: phone_account
+      type: phone
+      required: true
+      label_key: forms.requisite.phone_account
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+  MWUAH:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  NEAR:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  NEO:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  NFCRUB:
+    fields:
+    - id: device_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.device_phone
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+  NGDBDT:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  NIXUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  NOT:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  NTLREUR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  NTLRUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  OMG:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  ONT:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  OP:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  OPNBRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  OSDBUAH:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  OTPBUAH:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  OZONBRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  P24EUR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  P24UAH:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  P24USD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  PAYTMINR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  PEPE:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  PIXBRBRL:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  PMBBUAH:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  PNREUR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  PNRUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  POL:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  POSTBRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  PPAUD:
+    fields:
+    - id: paypal_email
+      type: email
+      required: true
+      label_key: forms.requisite.paypal_email
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  PPCAD:
+    fields:
+    - id: paypal_email
+      type: email
+      required: true
+      label_key: forms.requisite.paypal_email
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  PPEUR:
+    fields:
+    - id: paypal_email
+      type: email
+      required: true
+      label_key: forms.requisite.paypal_email
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  PPGBP:
+    fields:
+    - id: paypal_email
+      type: email
+      required: true
+      label_key: forms.requisite.paypal_email
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  PPUSD:
+    fields:
+    - id: paypal_email
+      type: email
+      required: true
+      label_key: forms.requisite.paypal_email
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  PSBRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  PSREUR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  PSRUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  PSTRXRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  PSTRXUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  QTUM:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  QWKZT:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  REVBEUR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  REVBGBP:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  REVBUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  RFBRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  RFBUAH:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  RMTFEUR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  RMTFUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  RNKBRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  ROSBRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  RSHBRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  RUSSTRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  RVN:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  SBERQRUB:
+    fields:
+    - id: qr_payload
+      type: string
+      required: true
+      label_key: forms.requisite.qr_payload
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  SBERRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  SBPRUB:
+    fields:
+    - id: sbp_phone
+      type: phone
+      required: true
+      label_key: forms.requisite.sbp_phone
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+  SEPAEUR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: iban
+      type: iban
+      required: true
+      label_key: forms.requisite.iban
+    - id: bic
+      type: bic
+      required: false
+      label_key: forms.requisite.bic
+  SHIBBEP20:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  SHIBERC20:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  SKLEUR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  SKLUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  SNBUAH:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  SOL:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  SUI:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  TBRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  TCSBCRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  TCSBQRUB:
+    fields:
+    - id: qr_payload
+      type: string
+      required: true
+      label_key: forms.requisite.qr_payload
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  TCSBRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  TON:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  TRDEUR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  TRDUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  TRUMP:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  TRX:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  TUSDERC20:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  TUSDTRC20:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  UNI:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  UPCNY:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  UPIINR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  USBUAH:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  USDCARBTM:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDCBEP20:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDCERC20:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDCNEAR:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDCOPTM:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDCPOLYGON:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDCSOL:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDCTRC20:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDP:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDQERC20:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDRERC20:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDTARBTM:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDTAVAXC:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDTBEP20:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDTERC20:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDTNEAR:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDTOMNI:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDTOPTM:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDTPOLYGON:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDTSOL:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDTTON:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USDTTRC20:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  USTMRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  USTMUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  UUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  UZCUZS:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  VET:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  WAVES:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  WBTC:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  WCTCNY:
+    fields:
+    - id: wechat_id
+      type: string
+      required: true
+      label_key: forms.requisite.wechat_id
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+  WETH:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  WIREAED:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREARS:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREAUD:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREBDT:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREBGN:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: iban
+      type: iban
+      required: true
+      label_key: forms.requisite.iban
+    - id: bic
+      type: bic
+      required: false
+      label_key: forms.requisite.bic
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREBYN:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: settlement_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.settlement_account
+    - id: bik
+      type: bic
+      required: true
+      label_key: forms.requisite.bik
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIRECAD:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIRECNY:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIRECZK:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: iban
+      type: iban
+      required: true
+      label_key: forms.requisite.iban
+    - id: bic
+      type: bic
+      required: false
+      label_key: forms.requisite.bic
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREEUR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: iban
+      type: iban
+      required: true
+      label_key: forms.requisite.iban
+    - id: bic
+      type: bic
+      required: false
+      label_key: forms.requisite.bic
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREGBP:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREGEL:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREHKD:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREIDR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREILS:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREINR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREJPY:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREKRW:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREKZT:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREMXN:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREMYR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIRENGN:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIRENZD:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREPHP:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREPKR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREPLN:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: iban
+      type: iban
+      required: true
+      label_key: forms.requisite.iban
+    - id: bic
+      type: bic
+      required: false
+      label_key: forms.requisite.bic
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIRERON:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: iban
+      type: iban
+      required: true
+      label_key: forms.requisite.iban
+    - id: bic
+      type: bic
+      required: false
+      label_key: forms.requisite.bic
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIRERUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: settlement_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.settlement_account
+    - id: bik
+      type: bic
+      required: true
+      label_key: forms.requisite.bik
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIRESEK:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: iban
+      type: iban
+      required: true
+      label_key: forms.requisite.iban
+    - id: bic
+      type: bic
+      required: false
+      label_key: forms.requisite.bic
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIRETHB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIRETRY:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREUAH:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREUSD:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREUYU:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WIREVND:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: account_number
+      type: account_number
+      required: true
+      label_key: forms.requisite.account_number
+    - id: swift_bic
+      type: bic
+      required: true
+      label_key: forms.requisite.swift_bic
+    - id: bank_name
+      type: string
+      required: true
+      label_key: forms.requisite.bank_name
+    - id: bank_address
+      type: text
+      required: false
+      label_key: forms.requisite.bank_address
+    - id: payment_reference
+      type: string
+      required: false
+      label_key: forms.requisite.payment_reference
+  WISEEUR:
+    fields:
+    - id: wise_identifier
+      type: string
+      required: true
+      label_key: forms.requisite.wise_identifier
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  WISEGBP:
+    fields:
+    - id: wise_identifier
+      type: string
+      required: true
+      label_key: forms.requisite.wise_identifier
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  WISEUSD:
+    fields:
+    - id: wise_identifier
+      type: string
+      required: true
+      label_key: forms.requisite.wise_identifier
+    - id: holder_name
+      type: string
+      required: false
+      label_key: forms.requisite.holder_name
+  WME:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  WMZ:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  WUEUR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  WUUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  XAUTERC20:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  XEM:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  XLM:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  XMR:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  XRP:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  XTZ:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  XVG:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  YAMRUB:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: recipient_account
+      type: account_number
+      required: true
+      label_key: forms.requisite.recipient_account
+    - id: routing_code
+      type: string
+      required: false
+      label_key: forms.requisite.routing_code
+    - id: bank_name
+      type: string
+      required: false
+      label_key: forms.requisite.bank_name
+  YFI:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  ZEC:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  ZELLEUSD:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag
+  ZENEUR:
+    fields:
+    - id: holder_name
+      type: string
+      required: true
+      label_key: forms.requisite.holder_name
+    - id: requisite_details
+      type: text
+      required: true
+      label_key: forms.requisite.requisite_details
+  ZRX:
+    fields:
+    - id: wallet_address
+      type: string
+      required: true
+      label_key: forms.requisite.wallet_address
+    - id: memo_tag
+      type: string
+      required: false
+      label_key: forms.requisite.memo_tag

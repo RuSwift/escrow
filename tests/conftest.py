@@ -65,7 +65,12 @@ def test_redis_settings():
 def create_test_database(test_db_settings):
     """
     Создает тестовую БД перед запуском тестов и удаляет после.
+    Для тестов без БД: ``ESCROW_PYTEST_NO_DB=1 pytest …``.
     """
+    if os.environ.get("ESCROW_PYTEST_NO_DB") == "1":
+        yield
+        return
+
     db_settings = DatabaseSettings()
     admin_url = (
         f"postgresql://{db_settings.user}:{db_settings.password.get_secret_value()}"

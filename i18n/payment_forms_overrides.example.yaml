@@ -1,0 +1,15 @@
+# Скопируйте в payment_forms_overrides.yaml и правьте точечно.
+# Скрипт: scripts/build_payment_forms_yaml.py подхватывает i18n/payment_forms_overrides.yaml если файл есть.
+#
+# overrides:
+#   CARDRUB:
+#     fields:
+#       - id: pan_last_digits
+#         type: pan_last_digits
+#         required: true
+#         label_key: forms.requisite.pan_last_digits
+#       - id: holder_name
+#         type: string
+#         required: true
+#         label_key: forms.requisite.holder_name
+overrides: {}

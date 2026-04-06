@@ -45,6 +45,7 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 markers = [
     "network: тесты с реальными HTTP-запросами (pytest -m network)",
+    "no_db: тесты без фикстуры БД (см. ESCROW_PYTEST_NO_DB в tests/conftest.py)",
 ]
 
 [build-system]

@@ -67,6 +67,49 @@ poetry run python scripts/export_bestchange_yaml.py -o bc.yaml --en \
 
 ---
 
+## `build_payment_forms_yaml.py`
+
+Собирает **`forms.yaml`** в корне репозитория (рядом с **`bc.yaml`**): для каждого **`payment_code`** из снимка BestChange — список полей реквизитов (`id`, `type`, `required`, `label_key`). Наборы полей задаются **эвристиками** по коду и валюте (CARD, WIRE, CASH, крипто, SBP, QR и т.д.); при необходимости точечные правки — через overrides.
+
+Подписи полей не хранятся в YAML: **`label_key`** ссылается на **`i18n/translations/ru.json`** и **`en.json`** (префикс **`forms.requisite.*`**).
+
+### Формат `forms.yaml`
+
+| Поле | Содержимое |
+|------|------------|
+| `meta` | `schema_version`, `bc_source` (`file`, `exported_at` из `bc.yaml`) |
+| `forms` | Словарь `payment_code` → `{ fields: [...] }`; каждое поле: `id`, `type`, `required`, `label_key` |
+
+Допустимые **`type`**: см. **`PaymentFormFieldType`** в **`scripts/schemas.py`** (`string`, `text`, `phone`, `iban`, `bic`, `account_number`, `pan_last_digits`, …).
+
+### Overrides
+
+- Шаблон: **`i18n/payment_forms_overrides.example.yaml`** — скопируйте в **`i18n/payment_forms_overrides.yaml`** и задайте блок **`overrides.<PAYMENT_CODE>.fields`**.
+- Если **`payment_forms_overrides.yaml`** существует, скрипт подхватывает его по умолчанию; иначе передайте **`--overrides /path/to.yaml`**.
+
+### Примеры
+
+```bash
+# Пересобрать forms.yaml после обновления bc.yaml
+poetry run python scripts/build_payment_forms_yaml.py -b bc.yaml -o forms.yaml
+
+# Сверка: текущий forms.yaml должен совпадать с пересчётом из bc.yaml
+poetry run python scripts/build_payment_forms_yaml.py -b bc.yaml --check
+
+# Список уникальных label_key (для проверки ключей в i18n)
+poetry run python scripts/build_payment_forms_yaml.py -b bc.yaml --print-label-keys
+```
+
+### Тесты
+
+Проверка покрытия и соответствия генератору: **`tests/test_payment_forms_yaml.py`**. Без поднятого PostgreSQL:
+
+```bash
+ESCROW_PYTEST_NO_DB=1 pytest tests/test_payment_forms_yaml.py -v
+```
+
+---
+
 ## `bestchange_i18n.py`
 
 Модуль не запускается отдельно: его использует **`export_bestchange_yaml.py`** при флаге **`--en`**.
@@ -96,13 +139,17 @@ poetry run python scripts/export_bestchange_yaml.py -o bc.yaml --en \
 
 ## `schemas.py`
 
-Pydantic-модели структуры выгружаемого YAML (тот же формат, что у `bc.yaml`): `BestchangeExportYaml`, вложенные `meta`, `payment_methods`, `cities`. Их же использует **`export_bestchange_yaml.py`** при сборке вывода.
+Pydantic-модели YAML-файлов в корне репозитория:
+
+- **`bc.yaml`**: `BestchangeExportYaml`, вложенные `meta`, `payment_methods`, `cities` — то же использует **`export_bestchange_yaml.py`**.
+- **`forms.yaml`**: `PaymentFormsYaml`, `PaymentForm`, `PaymentFormField`, `PaymentFormFieldType` — то же использует **`build_payment_forms_yaml.py`**.
 
 ```python
 from pathlib import Path
-from scripts.schemas import load_bestchange_export_yaml
+from scripts.schemas import load_bestchange_export_yaml, load_payment_forms_yaml
 
-data = load_bestchange_export_yaml(Path("bc.yaml"))
+bc = load_bestchange_export_yaml(Path("bc.yaml"))
+forms = load_payment_forms_yaml(Path("forms.yaml"))
 ```
 
 ---
