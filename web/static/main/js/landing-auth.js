@@ -31,7 +31,13 @@
                 var getCurrent = window.get_current_user;
                 if (getCurrent) getCurrent().then(function(u) { self.currentUser = u; });
                 document.addEventListener('click', function(e) {
-                    if (self.showSpacePicker && !self.$el.contains(e.target)) self.showSpacePicker = false;
+                    if (self.showSpacePicker && !self.$el.contains(e.target)) {
+                        // На мобилках TronLink клик может срабатывать странно, 
+                        // даем время на срабатывание goToSpace перед закрытием
+                        setTimeout(function() {
+                            self.showSpacePicker = false;
+                        }, 150);
+                    }
                 });
                 window.addEventListener('open-landing-go-to-app', function() {
                     if (self.currentUser) self.showSpacePicker = true;
@@ -71,10 +77,10 @@
                 '        [[ $t(\'main.landing.go_to_app\') ]]' +
                 '        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>' +
                 '      </button>' +
-                '      <div v-if="showSpacePicker && spaces.length" class="absolute top-full left-1/2 -translate-x-1/2 mt-2 z-50 bg-white rounded-xl shadow-lg border border-gray-200 p-3 min-w-[180px]">' +
+                '      <div v-if="showSpacePicker && spaces.length" class="absolute top-full left-1/2 -translate-x-1/2 mt-2 z-[100] bg-white rounded-xl shadow-lg border border-gray-200 p-3 min-w-[180px]">' +
                 '        <p class="text-xs text-gray-500 mb-2">[[ $t(\'main.space.choose_space\') ]]</p>' +
                 '        <div class="space-y-1.5">' +
-                '          <button v-for="s in spaces" :key="s" type="button" @click="goToSpace(s)" class="w-full px-3 py-2 bg-amber-500 text-white rounded-lg text-[13px] font-semibold hover:bg-amber-600 text-left">[[ s ]]</button>' +
+                '          <button v-for="s in spaces" :key="s" type="button" @click.stop="goToSpace(s)" class="w-full px-3 py-2 bg-amber-500 text-white rounded-lg text-[13px] font-semibold hover:bg-amber-600 text-left active:scale-95 transition-transform">[[ s ]]</button>' +
                 '        </div>' +
                 '      </div>' +
                 '      <span class="text-xs text-white/50 font-mono max-w-[140px] text-center" :title="currentUser.did">[[ truncateMiddle(currentUser.did, 28) ]]</span>' +
