@@ -13,10 +13,11 @@ from pathlib import Path
 
 import pytest
 
+from core.bc import load_payment_forms_yaml
 from scripts.build_payment_forms_yaml import build_forms
+from scripts.schemas import load_bestchange_export_yaml
 
 pytestmark = pytest.mark.no_db
-from scripts.schemas import load_bestchange_export_yaml, load_payment_forms_yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 

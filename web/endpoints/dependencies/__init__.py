@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.utils import get_user_did
 from db import get_db
 from db.models import AdminUser
-from repos.bestchange import BestchangeYamlRepository
+from repos.bestchange import BestchangeYamlRepository, PaymentFormsYamlRepository
 from repos.dashboard import DashboardStateRepository
 from repos.guarantor_direction import GuarantorDirectionRepository
 from repos.node import NodeRepository
@@ -265,6 +265,15 @@ def get_bestchange_repository(
     return BestchangeYamlRepository(session=db, redis=redis, settings=settings.settings)
 
 
+def get_payment_forms_repository(
+    db: DbSession,
+    redis: RedisClient,
+    settings: AppSettings,
+) -> PaymentFormsYamlRepository:
+    """PaymentFormsYamlRepository: fields по payment_code из forms.yaml, кеш Redis."""
+    return PaymentFormsYamlRepository(session=db, redis=redis, settings=settings.settings)
+
+
 def get_dashboard_service(
     redis: RedisClient,
     settings: AppSettings,
@@ -344,6 +353,10 @@ InviteServiceDep = Annotated[InviteService, Depends(get_invite_service)]
 WalletServiceDep = Annotated[WalletService, Depends(get_wallet_service)]
 ArbiterServiceDep = Annotated[ArbiterService, Depends(get_arbiter_service)]
 BestchangeRepoDep = Annotated[BestchangeYamlRepository, Depends(get_bestchange_repository)]
+PaymentFormsRepoDep = Annotated[
+    PaymentFormsYamlRepository,
+    Depends(get_payment_forms_repository),
+]
 DashboardServiceDep = Annotated[DashboardService, Depends(get_dashboard_service)]
 DashboardStateRepoDep = Annotated[
     DashboardStateRepository,
@@ -537,6 +550,7 @@ __all__ = [
     "get_node_service",
     "get_admin_service",
     "get_bestchange_repository",
+    "get_payment_forms_repository",
     "get_dashboard_service",
     "get_dashboard_state_repository",
     "get_guarantor_direction_repository",
@@ -557,6 +571,7 @@ __all__ = [
     "InviteServiceDep",
     "ArbiterServiceDep",
     "BestchangeRepoDep",
+    "PaymentFormsRepoDep",
     "DashboardServiceDep",
     "DashboardStateRepoDep",
     "GuarantorDirectionRepoDep",

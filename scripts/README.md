@@ -80,7 +80,7 @@ poetry run python scripts/export_bestchange_yaml.py -o bc.yaml --en \
 | `meta` | `schema_version`, `bc_source` (`file`, `exported_at` из `bc.yaml`) |
 | `forms` | Словарь `payment_code` → `{ fields: [...] }`; каждое поле: `id`, `type`, `required`, `label_key` |
 
-Допустимые **`type`**: см. **`PaymentFormFieldType`** в **`scripts/schemas.py`** (`string`, `text`, `phone`, `iban`, `bic`, `account_number`, `pan_last_digits`, …).
+Допустимые **`type`**: см. **`PaymentFormFieldType`** в **`core/bc.py`** (`string`, `text`, `phone`, `iban`, `bic`, `account_number`, `pan_last_digits`, …).
 
 ### Overrides
 
@@ -142,14 +142,16 @@ ESCROW_PYTEST_NO_DB=1 pytest tests/test_payment_forms_yaml.py -v
 Pydantic-модели YAML-файлов в корне репозитория:
 
 - **`bc.yaml`**: `BestchangeExportYaml`, вложенные `meta`, `payment_methods`, `cities` — то же использует **`export_bestchange_yaml.py`**.
-- **`forms.yaml`**: `PaymentFormsYaml`, `PaymentForm`, `PaymentFormField`, `PaymentFormFieldType` — то же использует **`build_payment_forms_yaml.py`**.
+- **`forms.yaml`**: `PaymentFormsYaml`, `PaymentForm`, `PaymentFormField`, `PaymentFormFieldType` в **`core/bc.py`** (реэкспорт в `scripts/schemas.py`) — то же использует **`build_payment_forms_yaml.py`**.
 
 ```python
 from pathlib import Path
-from scripts.schemas import load_bestchange_export_yaml, load_payment_forms_yaml
+from core.bc import load_payment_forms_yaml
+from scripts.schemas import load_bestchange_export_yaml
 
 bc = load_bestchange_export_yaml(Path("bc.yaml"))
 forms = load_payment_forms_yaml(Path("forms.yaml"))
+# load_payment_forms_yaml также реэкспортируется из scripts.schemas для совместимости
 ```
 
 ---

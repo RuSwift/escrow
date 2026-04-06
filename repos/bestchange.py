@@ -6,6 +6,7 @@
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from typing import Any, Literal
@@ -17,6 +18,7 @@ from redis.asyncio import Redis
 
 from db.models import BestchangeYamlSnapshot
 from i18n.translations import normalize_locale, supported_locales
+from core.bc import PaymentForm, PaymentFormsYaml
 from repos.base import BaseRepository
 from settings import Settings
 
@@ -28,6 +30,9 @@ _REDIS_SID = "bestchange_yaml:sid"
 _REDIS_DATA = "bestchange_yaml:data"
 _REDIS_FOREX_SID = "bestchange_yaml:forex_sid"
 _REDIS_FOREX_CODES = "bestchange_yaml:forex_codes"
+# Кеш ``forms.yaml`` (содержимое по SHA-256)
+_REDIS_PAYMENT_FORMS_SID = "payment_forms:sid"
+_REDIS_PAYMENT_FORMS_DATA = "payment_forms:data"
 # Подстраховка, если БД очищена без сброса Redis
 _CACHE_TTL_SEC = 86400 * 7
 
@@ -437,6 +442,64 @@ class BestchangeYamlRepository(BaseRepository):
         pipe.set(_REDIS_DATA, json.dumps(blob, ensure_ascii=False), ex=_CACHE_TTL_SEC)
         await pipe.execute()
         return built
+
+
+class PaymentFormsYamlRepository(BaseRepository):
+    """
+    Чтение ``forms.yaml`` с диска (путь из Settings), кеш в Redis по SHA-256 файла.
+    """
+
+    async def get_form(self, payment_code: str) -> PaymentForm | None:
+        """Форма реквизитов по ``payment_code`` (ключ как в bc.yaml); нормализация — только strip."""
+        code = (payment_code or "").strip()
+        if not code:
+            return None
+        data = await self._load_all_cached()
+        if data is None:
+            return None
+        return data.forms.get(code)
+
+    async def get_all(self) -> PaymentFormsYaml | None:
+        """Весь документ ``forms.yaml`` или ``None``, если файл отсутствует / битый."""
+        return await self._load_all_cached()
+
+    async def patch(self) -> None:
+        """Сбросить кеш Redis; при следующем запросе файл перечитается с диска."""
+        await self._redis.delete(_REDIS_PAYMENT_FORMS_SID, _REDIS_PAYMENT_FORMS_DATA)
+
+    async def _load_all_cached(self) -> PaymentFormsYaml | None:
+        path = self._settings.payment_forms_yaml_path
+        if not path.is_file():
+            logger.warning("payment_forms: файл не найден: %s", path)
+            await self._redis.delete(_REDIS_PAYMENT_FORMS_SID, _REDIS_PAYMENT_FORMS_DATA)
+            return None
+        try:
+            raw = path.read_bytes()
+        except OSError as exc:
+            logger.warning("payment_forms: не удалось прочитать %s: %s", path, exc)
+            return None
+
+        digest = hashlib.sha256(raw).hexdigest()
+        sid_raw = await self._redis.get(_REDIS_PAYMENT_FORMS_SID)
+        data_raw = await self._redis.get(_REDIS_PAYMENT_FORMS_DATA)
+        if sid_raw == digest and data_raw is not None:
+            try:
+                return PaymentFormsYaml.model_validate(json.loads(data_raw))
+            except (json.JSONDecodeError, TypeError, ValueError) as exc:
+                logger.warning("payment_forms: повреждённый кеш Redis, перечитка: %s", exc)
+
+        try:
+            parsed = PaymentFormsYaml.model_validate_yaml(raw.decode("utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("payment_forms: невалидный YAML %s: %s", path, exc)
+            return None
+
+        payload = json.dumps(parsed.model_dump(mode="json"), ensure_ascii=False)
+        pipe = self._redis.pipeline()
+        pipe.set(_REDIS_PAYMENT_FORMS_SID, digest, ex=_CACHE_TTL_SEC)
+        pipe.set(_REDIS_PAYMENT_FORMS_DATA, payload, ex=_CACHE_TTL_SEC)
+        await pipe.execute()
+        return parsed
 
 
 def _locale_codes() -> tuple[str, ...]:

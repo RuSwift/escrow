@@ -21,17 +21,19 @@ _ROOT = Path(__file__).resolve().parent.parent
 if str(_ROOT) not in sys.path:
     sys.path.insert(0, str(_ROOT))
 
-from scripts.schemas import (  # noqa: E402
-    BestchangeExportYaml,
-    BestchangePaymentMethod,
+from core.bc import (  # noqa: E402
     PaymentForm,
     PaymentFormField,
     PaymentFormFieldType,
     PaymentFormsBcSourceMeta,
     PaymentFormsMeta,
     PaymentFormsYaml,
-    load_bestchange_export_yaml,
     load_payment_forms_yaml,
+)
+from scripts.schemas import (  # noqa: E402
+    BestchangeExportYaml,
+    BestchangePaymentMethod,
+    load_bestchange_export_yaml,
 )
 
 

@@ -3,7 +3,7 @@
 """
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import AliasChoices, BaseModel, Field, SecretStr
 from typing import Optional
 from pathlib import Path
 
@@ -469,6 +469,23 @@ class Settings(BaseSettings):
         default=["RUB", "CNY", "USD", "EUR"],
         description="Коды валют (ISO 4217), используемые в системе",
     )
+
+    payment_forms_yaml: str = Field(
+        default="forms.yaml",
+        description=(
+            "Путь к YAML с полями реквизитов по payment_code; "
+            "относительно корня репозитория или абсолютный"
+        ),
+        validation_alias=AliasChoices("PAYMENT_FORMS_YAML", "payment_forms_yaml"),
+    )
+
+    @property
+    def payment_forms_yaml_path(self) -> Path:
+        """Разрешённый путь к ``forms.yaml``."""
+        p = Path(self.payment_forms_yaml)
+        if p.is_absolute():
+            return p
+        return _REPO_ROOT / p
 
     @property
     def is_node_initialized(self) -> bool:
