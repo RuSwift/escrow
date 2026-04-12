@@ -33,6 +33,10 @@ class ExchangeServiceOut(BaseModel):
     network: str
     contract_address: str
     stablecoin_base_currency: Optional[str] = None
+    space_wallet_id: Optional[int] = Field(
+        None,
+        description="Корпоративный кошелёк спейса (обязателен для off_ramp)",
+    )
     title: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
     payment_code: Optional[str] = None
@@ -63,6 +67,10 @@ class CreateExchangeServiceRequest(BaseModel):
     network: str = Field(..., min_length=1, max_length=64)
     contract_address: str = Field(..., min_length=1, max_length=128)
     stablecoin_base_currency: Optional[str] = Field(None, max_length=3)
+    space_wallet_id: Optional[int] = Field(
+        None,
+        description="Корпоративный кошелёк (обязателен для off_ramp при создании)",
+    )
     title: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
     payment_code: Optional[str] = Field(None, max_length=128)
@@ -92,6 +100,7 @@ class PatchExchangeServiceRequest(BaseModel):
     network: Optional[str] = Field(None, min_length=1, max_length=64)
     contract_address: Optional[str] = Field(None, min_length=1, max_length=128)
     stablecoin_base_currency: Optional[str] = Field(None, max_length=3)
+    space_wallet_id: Optional[int] = None
     title: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
     payment_code: Optional[str] = Field(None, max_length=128)
@@ -132,6 +141,7 @@ def exchange_service_to_out(row, tiers) -> ExchangeServiceOut:
         network=row.network,
         contract_address=row.contract_address,
         stablecoin_base_currency=row.stablecoin_base_currency,
+        space_wallet_id=getattr(row, "space_wallet_id", None),
         title=row.title,
         description=row.description,
         payment_code=row.payment_code,

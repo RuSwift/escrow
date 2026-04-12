@@ -813,6 +813,14 @@ class ExchangeService(Base):
         comment="Базовая валюта привязки стейбла (USD, RUB, …), опционально",
     )
 
+    space_wallet_id = Column(
+        Integer,
+        ForeignKey("wallets.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
+        comment="Корпоративный кошелёк спейса (реквизиты offRamp); NULL для on_ramp",
+    )
+
     title = Column(
         String(255),
         nullable=False,

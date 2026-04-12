@@ -4,6 +4,7 @@
  * Модалка multisig: multisig_config_modal.js → <multisig-config-modal>.
  * Справка по направлению: new_service_help_modal.js → <new-service-help-modal>.
  * Форма реквизитов (просмотр / редактирование): payment_form_preview_modal.js → <payment-form-preview-modal>.
+ * Создание и полное редактирование направления: одна модалка (editingExchangeServiceId → PATCH).
  */
 (function() {
     var PAYMENT_CODE_AC_DEBOUNCE_MS = 280;
@@ -157,6 +158,43 @@
         return null;
     }
 
+    /** Подобрать опцию селекта стейбла по полям API. */
+    function resolveCryptoOptionFromApi(api) {
+        if (!api || typeof api !== 'object') return CRYPTO_OPTIONS[0] || 'USDT TRC20';
+        var sym = (api.stablecoin_symbol || '').trim();
+        var net = (api.network || '').trim().toUpperCase();
+        var ca = (api.contract_address || '').trim();
+        var k;
+        var m;
+        for (k in CRYPTO_META) {
+            if (!Object.prototype.hasOwnProperty.call(CRYPTO_META, k)) continue;
+            m = CRYPTO_META[k];
+            if (m.symbol === sym && String(m.network).toUpperCase() === net && m.contract_address === ca) return k;
+        }
+        for (k in CRYPTO_META) {
+            if (!Object.prototype.hasOwnProperty.call(CRYPTO_META, k)) continue;
+            m = CRYPTO_META[k];
+            if (m.symbol === sym && String(m.network).toUpperCase() === net) return k;
+        }
+        return CRYPTO_OPTIONS[0] || 'USDT TRC20';
+    }
+
+    function isoToDatetimeLocal(iso) {
+        if (!iso) return '';
+        var d = new Date(iso);
+        if (isNaN(d.getTime())) return '';
+        var pad = function(n) { return n < 10 ? '0' + n : String(n); };
+        return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate())
+            + 'T' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+    }
+
+    function datetimeLocalToIso(local) {
+        if (local == null || String(local).trim() === '') return null;
+        var d = new Date(local);
+        if (isNaN(d.getTime())) return null;
+        return d.toISOString();
+    }
+
     function mapExchangeItemFromApi(it) {
         var rt = 'request';
         if (it.rate_mode === 'ratios') rt = 'forex';
@@ -187,6 +225,7 @@
             rate_mode: it.rate_mode,
             cash: cash,
             cashCities: cashCities,
+            spaceWalletId: it.space_wallet_id != null ? it.space_wallet_id : '',
             _api: it
         };
     }
@@ -201,6 +240,8 @@
                     { id: 'p2', name: 'CryptoBridge Ltd', serviceType: 'offRamp (GBP/USDT)', baseCommission: 0.8, myCommission: 0.5, status: 'connected' }
                 ],
                 showCreateModal: false,
+                /** Редактирование существующего exchange_services; null — режим создания. */
+                editingExchangeServiceId: null,
                 showNewServiceHelpModal: false,
                 exchangeServicesLoading: false,
                 exchangeServicesError: null,
@@ -227,7 +268,10 @@
                     cashCities: [],
                     cashCityInput: '',
                     _paymentCodeBackup: '',
-                    requisites_form_schema: {}
+                    requisites_form_schema: {},
+                    manualRate: null,
+                    manualRateValidUntil: '',
+                    spaceWalletId: ''
                 },
                 newPartner: {
                     name: '',
@@ -429,7 +473,19 @@
                     if (!this.createModalFiatIso3) return true;
                     if (!(this.newService.cashCities || []).length) return true;
                 }
+                if (this.newService.type === 'offRamp') {
+                    var sw = this.newService.spaceWalletId;
+                    if (sw === '' || sw === null || sw === undefined) return true;
+                    if (!isFinite(Number(sw))) return true;
+                }
+                if (this.newService.rateType === 'manual') {
+                    var mr = parseFloat(this.newService.manualRate);
+                    if (!isFinite(mr) || mr <= 0) return true;
+                }
                 return false;
+            },
+            isEditExchangeModal: function() {
+                return this.editingExchangeServiceId != null;
             }
         },
         methods: {
@@ -445,6 +501,155 @@
                 this.fiatAutocompleteOpen = false;
                 this.showCreateModal = true;
                 this.fetchCreateModalRatios();
+            },
+            closeCreateModal: function() {
+                this.showCreateModal = false;
+                this.resetNewServiceForm();
+            },
+            hydrateNewServiceFromApi: function(api) {
+                if (!api || typeof api !== 'object') return;
+                var vr = api.verification_requirements && typeof api.verification_requirements === 'object'
+                    ? api.verification_requirements
+                    : {};
+                var cash = vr.cash === true;
+                var cashCities = Array.isArray(vr.cash_cities)
+                    ? vr.cash_cities.map(function(c) {
+                        if (c && typeof c === 'object') {
+                            return { id: c.id, name: String(c.name || '').trim() };
+                        }
+                        if (typeof c === 'string') return { name: c.trim() };
+                        return { name: '' };
+                    }).filter(function(x) { return x.name; })
+                    : [];
+                var rt = 'request';
+                if (api.rate_mode === 'ratios') rt = 'forex';
+                else if (api.rate_mode === 'manual') rt = 'manual';
+                var comm = 1;
+                if (api.fee_tiers && api.fee_tiers.length) {
+                    comm = parseFloat(api.fee_tiers[0].fee_percent) || 1;
+                } else if (api.ratios_commission_percent != null) {
+                    comm = parseFloat(String(api.ratios_commission_percent)) || 1;
+                }
+                if (!isFinite(comm)) comm = 1;
+                var req = api.requisites_form_schema && typeof api.requisites_form_schema === 'object'
+                    ? JSON.parse(JSON.stringify(api.requisites_form_schema))
+                    : {};
+                var mr = api.manual_rate != null ? parseFloat(String(api.manual_rate)) : null;
+                if (!isFinite(mr)) mr = null;
+                this.newService = {
+                    type: api.service_type === 'on_ramp' ? 'onRamp' : 'offRamp',
+                    title: (api.title || '').trim(),
+                    fiatCurrency: (api.fiat_currency_code || '').trim(),
+                    cryptoCurrency: resolveCryptoOptionFromApi(api),
+                    rateType: rt,
+                    commission: comm,
+                    minFiat: parseFloat(String(api.min_fiat_amount)) || 1,
+                    maxFiat: parseFloat(String(api.max_fiat_amount)) || 1000000,
+                    description: api.description || '',
+                    payment_code: api.payment_code || '',
+                    ratiosEngineKey: (api.ratios_engine_key && String(api.ratios_engine_key).trim())
+                        ? String(api.ratios_engine_key).trim()
+                        : 'forex',
+                    cash: cash,
+                    cashCities: cashCities,
+                    cashCityInput: '',
+                    _paymentCodeBackup: '',
+                    requisites_form_schema: req,
+                    manualRate: mr,
+                    manualRateValidUntil: isoToDatetimeLocal(api.manual_rate_valid_until),
+                    spaceWalletId: api.space_wallet_id != null ? api.space_wallet_id : ''
+                };
+                this.syncCreateModalFiatLimitTexts();
+            },
+            openEditExchangeServiceModal: function(s) {
+                if (!s || !s._api) return;
+                this.resetNewServiceForm(true);
+                this.editingExchangeServiceId = s.id;
+                this.hydrateNewServiceFromApi(s._api);
+                this.exchangeServicesError = null;
+                this.fiatAutocompleteOpen = false;
+                this.showCreateModal = true;
+                this.fetchCreateModalRatios();
+            },
+            buildExchangeServicePayload: function(forPatch) {
+                var meta = CRYPTO_META[this.newService.cryptoCurrency] || CRYPTO_META['USDT TRC20'];
+                var rateModeUi = this.newService.rateType;
+                var rateMode = rateModeUi === 'forex' ? 'ratios' : (rateModeUi === 'manual' ? 'manual' : 'on_request');
+                var comm = parseFloat(this.newService.commission);
+                if (isNaN(comm)) comm = 1;
+                var verif = {};
+                if (this.newService.cash && (this.newService.cashCities || []).length) {
+                    verif.cash = true;
+                    verif.cash_cities = (this.newService.cashCities || []).map(function(c) {
+                        var o = { name: String(c.name || '').trim() };
+                        if (c.id != null && c.id !== '') o.id = c.id;
+                        return o;
+                    }).filter(function(x) { return x.name; });
+                }
+                var body = {
+                    service_type: this.newService.type === 'onRamp' ? 'on_ramp' : 'off_ramp',
+                    fiat_currency_code: this.newService.fiatCurrency.trim().toUpperCase(),
+                    stablecoin_symbol: meta.symbol,
+                    network: meta.network,
+                    contract_address: meta.contract_address,
+                    stablecoin_base_currency: meta.base_currency || null,
+                    title: (this.newService.title || '').trim(),
+                    description: (this.newService.description || '').trim() || null,
+                    payment_code: (this.newService.payment_code || '').trim() || null,
+                    rate_mode: rateMode,
+                    min_fiat_amount: this.newService.minFiat,
+                    max_fiat_amount: this.newService.maxFiat,
+                    requisites_form_schema: (this.newService.requisites_form_schema && typeof this.newService.requisites_form_schema === 'object')
+                        ? this.newService.requisites_form_schema
+                        : {},
+                    verification_requirements: verif
+                };
+                if (rateMode === 'ratios') {
+                    body.manual_rate = null;
+                    body.manual_rate_valid_until = null;
+                    body.ratios_engine_key = (this.newService.ratiosEngineKey || '').trim() || 'forex';
+                    body.ratios_commission_percent = comm;
+                    if (forPatch) {
+                        body.replace_fee_tiers = true;
+                        body.fee_tiers = [];
+                    } else {
+                        body.fee_tiers = null;
+                    }
+                } else if (rateMode === 'on_request') {
+                    body.manual_rate = null;
+                    body.manual_rate_valid_until = null;
+                    body.ratios_engine_key = null;
+                    body.ratios_commission_percent = null;
+                    var tier = { fiat_min: 0, fiat_max: 999999999, fee_percent: comm, sort_order: 0 };
+                    if (forPatch) {
+                        body.replace_fee_tiers = true;
+                        body.fee_tiers = [tier];
+                    } else {
+                        body.fee_tiers = [tier];
+                    }
+                } else {
+                    body.ratios_engine_key = null;
+                    body.ratios_commission_percent = null;
+                    var mrv = datetimeLocalToIso(this.newService.manualRateValidUntil);
+                    body.manual_rate = this.newService.manualRate != null ? Number(this.newService.manualRate) : null;
+                    body.manual_rate_valid_until = mrv;
+                    var tierM = { fiat_min: 0, fiat_max: 999999999, fee_percent: comm, sort_order: 0 };
+                    if (forPatch) {
+                        body.replace_fee_tiers = true;
+                        body.fee_tiers = [tierM];
+                    } else {
+                        body.fee_tiers = [tierM];
+                    }
+                }
+                if (!forPatch) {
+                    body.is_active = true;
+                }
+                if (this.newService.type === 'offRamp') {
+                    body.space_wallet_id = parseInt(String(this.newService.spaceWalletId), 10);
+                } else {
+                    body.space_wallet_id = null;
+                }
+                return body;
             },
             fetchCreateModalRatios: function() {
                 var self = this;
@@ -899,7 +1104,7 @@
                 if (!space) return '';
                 return '/v1/spaces/' + encodeURIComponent(space) + '/exchange-services';
             },
-            resetNewServiceForm: function() {
+            resetNewServiceForm: function(keepEditing) {
                 this.newService = {
                     type: 'onRamp',
                     title: '',
@@ -916,8 +1121,14 @@
                     cashCities: [],
                     cashCityInput: '',
                     _paymentCodeBackup: '',
-                    requisites_form_schema: {}
+                    requisites_form_schema: {},
+                    manualRate: null,
+                    manualRateValidUntil: '',
+                    spaceWalletId: ''
                 };
+                if (!keepEditing) {
+                    this.editingExchangeServiceId = null;
+                }
                 this.cashCityAutocompleteOpen = false;
                 this.cashCitySuggestions = [];
                 this.cashCityLoading = false;
@@ -1030,76 +1241,42 @@
                         self.exchangeServicesLoading = false;
                     });
             },
-            addService: function() {
+            saveExchangeService: function() {
                 if (!(this.newService.fiatCurrency || '').trim()) return;
                 if (!(this.newService.title || '').trim()) return;
                 this.applyCreateModalFiatLimitTextsToNumbers();
                 var self = this;
                 var base = this.exchangeServicesApiBase();
                 if (!base) return;
-                var meta = CRYPTO_META[this.newService.cryptoCurrency] || CRYPTO_META['USDT TRC20'];
-                var rateMode = this.newService.rateType === 'forex' ? 'ratios' : 'on_request';
-                var comm = parseFloat(this.newService.commission);
-                if (isNaN(comm)) comm = 1;
-                var verif = {};
-                if (this.newService.cash && (this.newService.cashCities || []).length) {
-                    verif.cash = true;
-                    verif.cash_cities = (this.newService.cashCities || []).map(function(c) {
-                        var o = { name: String(c.name || '').trim() };
-                        if (c.id != null && c.id !== '') o.id = c.id;
-                        return o;
-                    }).filter(function(x) { return x.name; });
-                }
-                var body = {
-                    service_type: this.newService.type === 'onRamp' ? 'on_ramp' : 'off_ramp',
-                    fiat_currency_code: this.newService.fiatCurrency.trim().toUpperCase(),
-                    stablecoin_symbol: meta.symbol,
-                    network: meta.network,
-                    contract_address: meta.contract_address,
-                    stablecoin_base_currency: meta.base_currency || null,
-                    title: (this.newService.title || '').trim(),
-                    description: (this.newService.description || '').trim() || null,
-                    payment_code: (this.newService.payment_code || '').trim() || null,
-                    rate_mode: rateMode,
-                    manual_rate: null,
-                    manual_rate_valid_until: null,
-                    ratios_engine_key: rateMode === 'ratios'
-                        ? ((this.newService.ratiosEngineKey || '').trim() || 'forex')
-                        : null,
-                    ratios_commission_percent: rateMode === 'ratios' ? comm : null,
-                    min_fiat_amount: this.newService.minFiat,
-                    max_fiat_amount: this.newService.maxFiat,
-                    requisites_form_schema: (this.newService.requisites_form_schema && typeof this.newService.requisites_form_schema === 'object')
-                        ? this.newService.requisites_form_schema
-                        : {},
-                    verification_requirements: verif,
-                    is_active: true
-                };
-                if (rateMode === 'on_request') {
-                    body.fee_tiers = [
-                        { fiat_min: 0, fiat_max: 999999999, fee_percent: comm, sort_order: 0 }
-                    ];
-                } else {
-                    body.fee_tiers = null;
+                var editId = this.editingExchangeServiceId;
+                var forPatch = editId != null;
+                var body = this.buildExchangeServicePayload(forPatch);
+                if (forPatch) {
+                    delete body.is_active;
                 }
                 this.exchangeSaving = true;
-                fetch(base, {
-                    method: 'POST',
+                var url = forPatch
+                    ? base + '/' + encodeURIComponent(String(editId))
+                    : base;
+                var method = forPatch ? 'PATCH' : 'POST';
+                fetch(url, {
+                    method: method,
                     headers: this.rampAuthHeaders(),
                     credentials: 'include',
                     body: JSON.stringify(body)
                 })
                     .then(function(r) {
-                        if (!r.ok) return r.json().then(function(d) { throw d; }, function() { throw new Error(String(r.status)); });
-                        return r.json();
+                        if (!r.ok) {
+                            return r.json().then(function(d) { throw d; }, function() { throw new Error(String(r.status)); });
+                        }
+                        return forPatch ? r.json() : r.json();
                     })
                     .then(function() {
-                        self.showCreateModal = false;
-                        self.resetNewServiceForm();
+                        self.closeCreateModal();
                         return self.fetchExchangeServices();
                     })
                     .catch(function(e) {
-                        console.error('exchange-service create', e);
+                        console.error(forPatch ? 'exchange-service patch' : 'exchange-service create', e);
                         self.exchangeServicesError = 'save';
                     })
                     .then(function() {
@@ -1162,13 +1339,21 @@
                 if (!c) return;
                 this.formPreviewCode = c;
                 this.formModalVariant = 'preview';
-                this.formModalServiceId = null;
+                this.formModalServiceId = this.editingExchangeServiceId != null
+                    ? this.editingExchangeServiceId
+                    : null;
                 this.formModalInitialSchema = {};
                 this.showFormPreviewModal = true;
             },
             openFormPreviewForService: function(s) {
                 if (this.serviceCashLockedForCard(s)) return;
-                this.openFormPreview(s && s.payment_code);
+                var c = (s && s.payment_code || '').trim();
+                if (!c) return;
+                this.formPreviewCode = c;
+                this.formModalVariant = 'preview';
+                this.formModalServiceId = s && s.id != null ? s.id : null;
+                this.formModalInitialSchema = {};
+                this.showFormPreviewModal = true;
             },
             openFormEditorNew: function() {
                 if (this.cashLocked) return;
@@ -1176,7 +1361,9 @@
                 if (!c) return;
                 this.formPreviewCode = c;
                 this.formModalVariant = 'edit';
-                this.formModalServiceId = null;
+                this.formModalServiceId = this.editingExchangeServiceId != null
+                    ? this.editingExchangeServiceId
+                    : null;
                 this.formModalInitialSchema = this.newService.requisites_form_schema
                     && typeof this.newService.requisites_form_schema === 'object'
                     ? JSON.parse(JSON.stringify(this.newService.requisites_form_schema))
@@ -1225,6 +1412,11 @@
                     })
                     .then(function() {
                         self.showFormPreviewModal = false;
+                        if (self.editingExchangeServiceId === serviceId) {
+                            self.newService.requisites_form_schema = schema && typeof schema === 'object'
+                                ? schema
+                                : {};
+                        }
                         return self.fetchExchangeServices();
                     })
                     .catch(function() {
@@ -1589,6 +1781,11 @@
                                         key = 'main.my_business.ramp_delete_blocked_trx';
                                     } else if (code === 'forex_unavailable') {
                                         key = 'main.my_business.ramp_delete_blocked_forex';
+                                    } else if (code === 'used_by_exchange_services') {
+                                        var titles = (d && Array.isArray(d.direction_titles))
+                                            ? d.direction_titles.filter(Boolean).join(', ')
+                                            : '';
+                                        throw new Error(self.$t('main.my_business.ramp_delete_blocked_directions', { titles: titles }));
                                     }
                                     throw new Error(self.$t(key));
                                 });
@@ -2014,7 +2211,7 @@
             '      <p v-else-if="exchangeServicesError" class="text-sm text-red-600">[[ $t(\'main.my_business.exchange_error\') ]]</p>',
             '      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">',
             '        <div v-for="service in services" :key="service.id" class="bg-white rounded-2xl border border-[#eff2f5] p-5 hover:border-[#3861fb] transition-all relative overflow-hidden group">',
-            '          <div :class="[\'absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 rounded-full opacity-5 group-hover:opacity-10 transition-opacity\', service.type === \'onRamp\' ? \'bg-blue-500\' : \'bg-purple-500\']"></div>',
+            '          <div :class="[\'pointer-events-none absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 rounded-full opacity-5 group-hover:opacity-10 transition-opacity\', service.type === \'onRamp\' ? \'bg-blue-500\' : \'bg-purple-500\']"></div>',
             '          <div class="flex items-center justify-between mb-4">',
             '            <div :class="[\'p-2 rounded-xl\', service.type === \'onRamp\' ? \'bg-blue-50 text-blue-600\' : \'bg-purple-50 text-purple-600\']">',
             '              <!-- onRamp: Lucide arrow-up-right (lucide-icons/lucide) -->',
@@ -2023,8 +2220,8 @@
             '              <svg v-else class="w-5 h-5 -rotate-90" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M17 7 7 17"/><path d="M17 17H7V7"/></svg>',
             '            </div>',
             '            <div class="flex items-center gap-2">',
-            '              <span :class="[\'text-[10px] font-bold uppercase px-2 py-0.5 rounded-full\', service.status === \'active\' ? \'bg-emerald-50 text-emerald-600\' : \'bg-orange-50 text-orange-600\']">[[ service.status === \'active\' ? $t(\'main.my_business.status_active\') : $t(\'main.my_business.status_paused\') ]]</span>',
-            '              <button type="button" @click="toggleStatus(service.id)" class="p-1.5 hover:bg-gray-100 rounded-lg"><svg class="w-3.5 h-3.5 text-[#58667e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button>',
+            '              <button type="button" @click.stop="toggleStatus(service.id)" :class="[\'inline-flex items-center justify-center min-h-11 shrink-0 text-[10px] font-bold uppercase px-3 py-2 rounded-full cursor-pointer border-0\', service.status === \'active\' ? \'bg-emerald-50 text-emerald-600 hover:bg-emerald-100\' : \'bg-orange-50 text-orange-600 hover:bg-orange-100\']" :title="$t(\'main.my_business.toggle_status_hint\')">[[ service.status === \'active\' ? $t(\'main.my_business.status_active\') : $t(\'main.my_business.status_paused\') ]]</button>',
+            '              <button type="button" @click.stop="openEditExchangeServiceModal(service)" class="inline-flex items-center justify-center min-h-11 min-w-11 shrink-0 p-2 hover:bg-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#3861fb]/30" :title="$t(\'main.my_business.edit_service_open\')" :aria-label="$t(\'main.my_business.edit_service_open\')"><svg class="w-5 h-5 text-[#58667e]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg></button>',
             '            </div>',
             '          </div>',
             '          <div class="space-y-3">',
@@ -2093,23 +2290,23 @@
 
             '  <div v-if="showCreateModal" class="fixed inset-0 z-[100] overflow-y-auto overscroll-contain">',
             '    <div class="min-h-[100dvh] min-h-[100svh] flex items-end justify-center sm:items-center p-0 sm:p-4">',
-            '    <div class="absolute inset-0 bg-black/60" @click="showCreateModal = false"></div>',
+            '    <div class="absolute inset-0 bg-black/60" @click="closeCreateModal"></div>',
             '    <div class="relative z-10 bg-white w-full max-w-full sm:max-w-2xl lg:max-w-3xl rounded-t-3xl sm:rounded-3xl shadow-2xl grid grid-rows-[auto_minmax(0,1fr)_auto] h-[90dvh] max-h-[90dvh] overflow-hidden my-0 sm:my-4">',
             '      <div class="p-6 border-b border-[#eff2f5] flex items-center justify-between gap-3 shrink-0">',
             '        <div class="flex items-center gap-2 min-w-0 flex-1">',
-            '          <h3 class="text-xl font-bold text-[#191d23] truncate">[[ $t(\'main.my_business.modal_new_service_title\') ]]</h3>',
-            '          <button type="button" @click.stop="showNewServiceHelpModal = true" class="shrink-0 w-9 h-9 rounded-full bg-[#3861fb] text-white text-lg font-bold leading-none flex items-center justify-center shadow-md hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[#3861fb] focus:ring-offset-2" :title="$t(\'main.my_business.new_service_help_open\')" :aria-label="$t(\'main.my_business.new_service_help_open\')">?</button>',
+            '          <h3 class="text-xl font-bold text-[#191d23] truncate">[[ isEditExchangeModal ? $t(\'main.my_business.modal_edit_service_title\') : $t(\'main.my_business.modal_new_service_title\') ]]</h3>',
+            '          <button v-if="!isEditExchangeModal" type="button" @click.stop="showNewServiceHelpModal = true" class="shrink-0 w-9 h-9 rounded-full bg-[#3861fb] text-white text-lg font-bold leading-none flex items-center justify-center shadow-md hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[#3861fb] focus:ring-offset-2" :title="$t(\'main.my_business.new_service_help_open\')" :aria-label="$t(\'main.my_business.new_service_help_open\')">?</button>',
             '        </div>',
-            '        <button type="button" @click="showCreateModal = false" class="p-2 hover:bg-gray-100 rounded-full shrink-0"><svg class="w-6 h-6 text-[#58667e] rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg></button>',
+            '        <button type="button" @click="closeCreateModal" class="p-2 hover:bg-gray-100 rounded-full shrink-0"><svg class="w-6 h-6 text-[#58667e] rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg></button>',
             '      </div>',
             '      <div class="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain touch-pan-y p-6 space-y-6 [scrollbar-gutter:stable]">',
             '        <div class="grid grid-cols-2 gap-4">',
-            '          <button type="button" @click="newService.type = \'onRamp\'" :class="[\'p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2\', newService.type === \'onRamp\' ? \'border-[#3861fb] bg-blue-50 text-[#3861fb]\' : \'border-[#eff2f5] hover:border-gray-300\']">',
+            '          <button type="button" :disabled="isEditExchangeModal" @click="newService.type = \'onRamp\'" :class="[\'p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2\', newService.type === \'onRamp\' ? (isEditExchangeModal ? \'border-gray-300 bg-gray-100 text-[#58667e]\' : \'border-[#3861fb] bg-blue-50 text-[#3861fb]\') : (isEditExchangeModal ? \'border-gray-200 bg-gray-50 text-gray-400\' : \'border-[#eff2f5]\'), !isEditExchangeModal && newService.type !== \'onRamp\' ? \'hover:border-gray-300\' : \'\', isEditExchangeModal ? \'cursor-not-allowed\' : \'\']">',
             '            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>',
             '            <span class="text-xs font-bold uppercase">[[ $t(\'main.my_business.on_ramp\') ]]</span>',
             '            <span class="text-[10px] opacity-60">[[ $t(\'main.my_business.on_ramp_desc\') ]]</span>',
             '          </button>',
-            '          <button type="button" @click="newService.type = \'offRamp\'" :class="[\'p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2\', newService.type === \'offRamp\' ? \'border-[#3861fb] bg-blue-50 text-[#3861fb]\' : \'border-[#eff2f5] hover:border-gray-300\']">',
+            '          <button type="button" :disabled="isEditExchangeModal" @click="newService.type = \'offRamp\'" :class="[\'p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2\', newService.type === \'offRamp\' ? (isEditExchangeModal ? \'border-gray-300 bg-gray-100 text-[#58667e]\' : \'border-[#3861fb] bg-blue-50 text-[#3861fb]\') : (isEditExchangeModal ? \'border-gray-200 bg-gray-50 text-gray-400\' : \'border-[#eff2f5]\'), !isEditExchangeModal && newService.type !== \'offRamp\' ? \'hover:border-gray-300\' : \'\', isEditExchangeModal ? \'cursor-not-allowed\' : \'\']">',
             '            <svg class="w-6 h-6 -rotate-90" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M17 7 7 17"/><path d="M17 17H7V7"/></svg>',
             '            <span class="text-xs font-bold uppercase">[[ $t(\'main.my_business.off_ramp\') ]]</span>',
             '            <span class="text-[10px] opacity-60">[[ $t(\'main.my_business.off_ramp_desc\') ]]</span>',
@@ -2172,6 +2369,22 @@
             '            </select>',
             '          </div>',
             '        </div>',
+            '        <div v-if="newService.type === \'onRamp\'" class="create-modal-currency-onramp-hint-row mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-[#eff2f5]">',
+            '          <p class="create-modal-currency-onramp-hint-text text-[11px] text-[#58667e] leading-snug">[[ $t(\'main.my_business.onramp_escrow_requisites_hint\') ]]</p>',
+            '        </div>',
+            '        <div v-if="newService.type === \'offRamp\'" class="create-modal-currency-wallet-row mt-2 sm:mt-3 pt-2 sm:pt-3 border-t border-[#eff2f5]">',
+            '          <div class="min-w-0 space-y-1">',
+            '            <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.space_wallet_label\') ]]</label>',
+            '            <select v-model="newService.spaceWalletId" class="w-full min-w-0 max-w-full px-4 py-3 bg-white border border-[#eff2f5] rounded-xl text-sm shadow-sm focus:outline-none focus:border-[#3861fb]">',
+            '              <option disabled value="">[[ $t(\'main.my_business.space_wallet_placeholder\') ]]</option>',
+            '              <option v-for="w in rampWallets" :key="w.id" :value="w.id">[[ w.name || (\'#\' + w.id) ]]</option>',
+            '            </select>',
+            '            <p class="text-[11px] text-[#58667e] leading-snug mt-1.5">[[ $t(\'main.my_business.space_wallet_escrow_hint\') ]]</p>',
+            '            <p v-if="!rampWallets.length" class="text-xs text-amber-900 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 mt-1">[[ $t(\'main.my_business.space_wallet_empty\') ]]</p>',
+            '          </div>',
+            '          <div class="hidden md:block" aria-hidden="true"></div>',
+            '          <div class="hidden md:block" aria-hidden="true"></div>',
+            '        </div>',
             '        </div>',
             '        <p v-if="!createModalHasFiat" class="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm font-semibold text-amber-900 leading-snug">[[ $t(\'main.my_business.fiat_required_for_limits\') ]]</p>',
             '        <p v-else-if="createModalShowRatesNotFound" class="rounded-xl border border-orange-300 bg-orange-50 px-3 py-2.5 text-sm font-semibold text-orange-950 leading-snug">[[ $t(\'main.my_business.fiat_rates_not_found_for_limits\') ]]</p>',
@@ -2220,20 +2433,30 @@
             '        </div>',
             '        <div>',
             '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-3 ml-1">[[ $t(\'main.my_business.rate_type_label\') ]]</label>',
-            '          <div class="flex gap-4">',
-            '            <label class="flex-1 cursor-pointer">',
+            '          <div :class="isEditExchangeModal ? \'grid grid-cols-1 sm:grid-cols-3 gap-3\' : \'flex flex-col sm:flex-row gap-4\'">',
+            '            <label class="flex-1 min-w-0 cursor-pointer">',
             '              <input type="radio" v-model="newService.rateType" value="forex" class="hidden" />',
             '              <div :class="[\'p-3 rounded-xl border-2 text-center transition-all\', newService.rateType === \'forex\' ? \'border-[#3861fb] bg-blue-50 text-[#3861fb]\' : \'border-[#eff2f5] hover:border-gray-300\']"><div class="text-xs font-bold">[[ $t(\'main.my_business.rate_forex\') ]]</div><div class="text-[10px] opacity-60">[[ $t(\'main.my_business.rate_forex_desc\') ]]</div></div>',
             '            </label>',
-            '            <label class="flex-1 cursor-pointer">',
+            '            <label class="flex-1 min-w-0 cursor-pointer">',
             '              <input type="radio" v-model="newService.rateType" value="request" class="hidden" />',
             '              <div :class="[\'p-3 rounded-xl border-2 text-center transition-all\', newService.rateType === \'request\' ? \'border-[#3861fb] bg-blue-50 text-[#3861fb]\' : \'border-[#eff2f5] hover:border-gray-300\']"><div class="text-xs font-bold">[[ $t(\'main.my_business.rate_request\') ]]</div><div class="text-[10px] opacity-60">[[ $t(\'main.my_business.rate_request_desc\') ]]</div></div>',
+            '            </label>',
+            '            <label v-if="isEditExchangeModal" class="flex-1 min-w-0 cursor-pointer">',
+            '              <input type="radio" v-model="newService.rateType" value="manual" class="hidden" />',
+            '              <div :class="[\'p-3 rounded-xl border-2 text-center transition-all\', newService.rateType === \'manual\' ? \'border-[#3861fb] bg-blue-50 text-[#3861fb]\' : \'border-[#eff2f5] hover:border-gray-300\']"><div class="text-xs font-bold">[[ $t(\'main.my_business.rate_manual\') ]]</div><div class="text-[10px] opacity-60">[[ $t(\'main.my_business.rate_manual_desc\') ]]</div></div>',
             '            </label>',
             '          </div>',
             '        </div>',
             '        <div v-show="newService.rateType === \'forex\'">',
             '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.ratios_engine_key_label\') ]]</label>',
             '          <input type="text" v-model="newService.ratiosEngineKey" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb] font-mono" :placeholder="$t(\'main.my_business.ratios_engine_key_placeholder\')" />',
+            '        </div>',
+            '        <div v-show="newService.rateType === \'manual\'">',
+            '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.manual_rate_label\') ]]</label>',
+            '          <input type="number" v-model.number="newService.manualRate" step="any" min="0" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb] tabular-nums" />',
+            '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mt-3 mb-1.5 ml-1">[[ $t(\'main.my_business.manual_rate_valid_until_label\') ]]</label>',
+            '          <input type="datetime-local" v-model="newService.manualRateValidUntil" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb]" />',
             '        </div>',
             '        <div>',
             '          <div class="flex items-center justify-between mb-1.5 ml-1"><label class="text-[10px] font-bold text-[#58667e] uppercase">[[ $t(\'main.my_business.commission_label\') ]]</label><span class="text-sm font-bold text-[#3861fb]">[[ newService.commission ]]%</span></div>',
@@ -2242,14 +2465,14 @@
             '        </div>',
             '      </div>',
             '      <div class="p-6 pt-4 bg-gray-50 border-t border-[#eff2f5] flex gap-3 shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">',
-            '        <button type="button" @click="showCreateModal = false" class="flex-1 py-3 border border-[#eff2f5] rounded-xl text-sm font-bold text-[#58667e] hover:bg-white transition-all">[[ $t(\'main.my_business.cancel\') ]]</button>',
-            '        <button type="button" @click="addService" :disabled="createModalLaunchDisabled" class="flex-1 py-3 bg-[#3861fb] text-white rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all">[[ exchangeSaving ? $t(\'main.my_business.saving\') : $t(\'main.my_business.launch_service\') ]]</button>',
+            '        <button type="button" @click="closeCreateModal" class="flex-1 py-3 border border-[#eff2f5] rounded-xl text-sm font-bold text-[#58667e] hover:bg-white transition-all">[[ $t(\'main.my_business.cancel\') ]]</button>',
+            '        <button type="button" @click="saveExchangeService" :disabled="createModalLaunchDisabled" class="flex-1 py-3 bg-[#3861fb] text-white rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all">[[ exchangeSaving ? $t(\'main.my_business.saving\') : (isEditExchangeModal ? $t(\'main.my_business.save_service_changes\') : $t(\'main.my_business.launch_service\')) ]]</button>',
             '      </div>',
             '    </div>',
             '    </div>',
             '  </div>',
 
-            '  <payment-form-preview-modal :show="showFormPreviewModal" :payment-code="formPreviewCode" :variant="formModalVariant" :initial-requisites-schema="formModalInitialSchema" @close="showFormPreviewModal = false" @requisites-saved="onRequisitesSaved"></payment-form-preview-modal>',
+            '  <payment-form-preview-modal :show="showFormPreviewModal" :payment-code="formPreviewCode" :preview-exchange-service-id="formModalVariant === \'preview\' ? formModalServiceId : null" :variant="formModalVariant" :initial-requisites-schema="formModalInitialSchema" @close="showFormPreviewModal = false" @requisites-saved="onRequisitesSaved"></payment-form-preview-modal>',
 
             '  <div v-if="showPartnerModal" class="fixed inset-0 z-[100] flex items-center justify-center p-4">',
             '    <div class="absolute inset-0 bg-black/60" @click="showPartnerModal = false"></div>',

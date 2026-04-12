@@ -10,9 +10,12 @@ from pydantic import BaseModel, Field
 
 class EffectivePaymentFormResponse(BaseModel):
     payment_code: str
-    source: Literal["space", "system", "none"] = Field(
+    source: Literal["exchange_service", "space", "system", "none"] = Field(
         ...,
-        description="space — переопределение спейса; system — forms.yaml; none — не найдено",
+        description=(
+            "exchange_service — кастом направления (requisites_form_schema); "
+            "space — override спейса; system — forms.yaml; none — не найдено"
+        ),
     )
     form: Optional[dict[str, Any]] = Field(
         None,

@@ -60,6 +60,33 @@ class ExchangeServiceRepository(BaseRepository):
         res = await self._session.execute(stmt)
         return res.scalar_one_or_none()
 
+    async def list_titles_for_space_wallet(
+        self,
+        space: str,
+        wallet_id: int,
+    ) -> list[str]:
+        """Заголовки неудалённых направлений, привязанных к корп. кошельку."""
+        sp = _strip_space(space)
+        if not sp or wallet_id <= 0:
+            return []
+        stmt = (
+            select(ExchangeService.title)
+            .where(
+                ExchangeService.space == sp,
+                ExchangeService.space_wallet_id == wallet_id,
+                ExchangeService.is_deleted.is_(False),
+            )
+            .order_by(ExchangeService.title.asc())
+        )
+        res = await self._session.execute(stmt)
+        rows = res.scalars().all()
+        out: list[str] = []
+        for t in rows:
+            s = (t or "").strip()
+            if s:
+                out.append(s)
+        return out
+
     async def list_fee_tiers(
         self, exchange_service_id: int
     ) -> list[ExchangeServiceFeeTier]:

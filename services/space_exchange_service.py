@@ -9,8 +9,15 @@ from typing import Any, Optional
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.bc import PaymentForm
 from db.models import ExchangeRateMode, ExchangeServiceType
 from repos.exchange_service import ExchangeServiceRepository
+from repos.wallet import WalletRepository
+from repos.wallet_user import WalletUserRepository
+from services.requisites_form_effective import (
+    EffectiveRequisitesFormSource,
+    resolve_effective_requisites_form,
+)
 from services.space import SpaceService
 from settings import Settings
 
@@ -146,6 +153,19 @@ def _validate_cash_verification(
             )
 
 
+async def _owner_did_for_space_session(
+    session: AsyncSession,
+    redis: Redis,
+    settings: Settings,
+    space: str,
+) -> str:
+    users = WalletUserRepository(session=session, redis=redis, settings=settings)
+    owner = await users.get_by_nickname((space or "").strip())
+    if not owner:
+        raise ExchangeServiceValidationError("space_not_found", "Space not found")
+    return owner.did
+
+
 def _parse_dt(v: Any) -> datetime | None:
     if v is None or v == "":
         return None
@@ -172,6 +192,65 @@ class SpaceExchangeService:
             session=session, redis=redis, settings=settings
         )
         self._space = SpaceService(session=session, redis=redis, settings=settings)
+
+    async def _validate_off_ramp_space_wallet(
+        self,
+        space: str,
+        wallet_id: int,
+    ) -> int:
+        if wallet_id <= 0:
+            raise ExchangeServiceValidationError(
+                "invalid_space_wallet_id",
+                "space_wallet_id must be a positive integer",
+            )
+        owner_did = await _owner_did_for_space_session(
+            self._session, self._redis, self._settings, space
+        )
+        wr = WalletRepository(self._session, self._redis, self._settings)
+        w = await wr.get_exchange_wallet(wallet_id, owner_did)
+        if not w:
+            raise ExchangeServiceValidationError(
+                "space_wallet_not_found",
+                "Corporate wallet not found or does not belong to this space",
+            )
+        return wallet_id
+
+    def _payment_form_resolver(self):
+        from repos.bestchange import PaymentFormsYamlRepository
+        from repos.space_payment_form import SpacePaymentFormOverrideRepository
+        from services.payment_form_resolve import PaymentFormResolutionService
+
+        return PaymentFormResolutionService(
+            SpacePaymentFormOverrideRepository(
+                session=self._session, redis=self._redis, settings=self._settings
+            ),
+            PaymentFormsYamlRepository(
+                session=self._session, redis=self._redis, settings=self._settings
+            ),
+        )
+
+    async def get_effective_payment_form(
+        self,
+        space: str,
+        service_id: int,
+        actor_wallet_address: str,
+    ) -> tuple[PaymentForm | None, EffectiveRequisitesFormSource, str] | None:
+        """Форма реквизитов для направления: кастом из БД или каталог (как в заявках).
+
+        ``None`` — направление не найдено (не 404 формы).
+        """
+        await self._space._ensure_owner_and_owner_id(space, actor_wallet_address)
+        row = await self._repo.get_by_id(service_id, space)
+        if row is None:
+            return None
+        form, src = await resolve_effective_requisites_form(
+            space=space,
+            payment_code=row.payment_code,
+            requisites_form_schema=row.requisites_form_schema,
+            resolver=self._payment_form_resolver(),
+        )
+        code = _strip(row.payment_code)
+        return form, src, code
 
     async def list_services(self, space: str, actor_wallet_address: str):
         await self._space._ensure_owner_and_owner_id(space, actor_wallet_address)
@@ -286,6 +365,25 @@ class SpaceExchangeService:
             "is_active": bool(payload.get("is_active", True)),
             "is_deleted": False,
         }
+        if st == ExchangeServiceType.off_ramp.value:
+            sw_raw = payload.get("space_wallet_id")
+            if sw_raw is None:
+                raise ExchangeServiceValidationError(
+                    "space_wallet_required",
+                    "space_wallet_id is required for off_ramp",
+                )
+            try:
+                sw_id = int(sw_raw)
+            except (TypeError, ValueError):
+                raise ExchangeServiceValidationError(
+                    "invalid_space_wallet_id",
+                    "space_wallet_id must be a positive integer",
+                )
+            row_fields["space_wallet_id"] = await self._validate_off_ramp_space_wallet(
+                space, sw_id
+            )
+        else:
+            row_fields["space_wallet_id"] = None
         if (
             not row_fields["stablecoin_symbol"]
             or not row_fields["network"]
@@ -387,6 +485,31 @@ class SpaceExchangeService:
             fields["verification_requirements"] = ver
         if "is_active" in payload:
             fields["is_active"] = bool(payload["is_active"])
+        if "space_wallet_id" in payload:
+            sw_raw = payload["space_wallet_id"]
+            if sw_raw is None:
+                fields["space_wallet_id"] = None
+            else:
+                try:
+                    sw_id = int(sw_raw)
+                except (TypeError, ValueError):
+                    raise ExchangeServiceValidationError(
+                        "invalid_space_wallet_id",
+                        "space_wallet_id must be a positive integer",
+                    )
+                fields["space_wallet_id"] = await self._validate_off_ramp_space_wallet(
+                    space, sw_id
+                )
+        eff_type = fields.get("service_type", row.service_type)
+        if eff_type == ExchangeServiceType.on_ramp.value:
+            fields["space_wallet_id"] = None
+        elif eff_type == ExchangeServiceType.off_ramp.value:
+            eff_sw = fields.get("space_wallet_id", row.space_wallet_id)
+            if eff_sw is None:
+                raise ExchangeServiceValidationError(
+                    "space_wallet_required",
+                    "space_wallet_id is required for off_ramp",
+                )
         if not fields and not replace_fee_tiers:
             tiers = await self._repo.list_fee_tiers(int(row.id))
             return row, tiers

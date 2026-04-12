@@ -1,6 +1,7 @@
 /**
  * Модалка предпросмотра / редактирования формы реквизитов по payment_code.
- * Effective: forms.yaml + override спейса (preview). Редактор сравнивает с system_only.
+ * Превью: GET .../payment-forms/{code} или, с previewExchangeServiceId, GET .../exchange-services/{id}/payment-form
+ * (кастом направления из БД или space/system из каталога). Редактор сравнивает с system_only.
  * Подключать после vue.min.js, до my_business.js.
  */
 (function() {
@@ -106,6 +107,8 @@
         props: {
             show: { type: Boolean, default: false },
             paymentCode: { type: String, default: '' },
+            /** Если задан (id направления), превью грузится с effective-логикой бэка (кастом БД или каталог). */
+            previewExchangeServiceId: { type: [Number, String], default: null },
             variant: { type: String, default: 'preview' },
             initialRequisitesSchema: {
                 type: Object,
@@ -129,6 +132,16 @@
         computed: {
             isEdit: function() {
                 return this.variant === 'edit';
+            },
+            formSourceCaption: function() {
+                var raw = this.payload && this.payload.source;
+                if (!raw) return '';
+                var key = 'main.my_business.form_source_' + raw;
+                try {
+                    var t = this.$t(key);
+                    if (t && t !== key) return t;
+                } catch (e) {}
+                return raw;
             }
         },
         mounted: function() {
@@ -138,6 +151,7 @@
                     return [
                         String(self.show),
                         (self.paymentCode || '').trim(),
+                        String(self.previewExchangeServiceId != null ? self.previewExchangeServiceId : ''),
                         self.variant,
                         JSON.stringify(self.initialRequisitesSchema || {})
                     ].join('\0');
@@ -147,7 +161,9 @@
                         self.resetLocal();
                         return;
                     }
-                    if (!(self.paymentCode || '').trim()) return;
+                    var hasCode = (self.paymentCode || '').trim();
+                    var hasSvc = self.previewExchangeServiceId != null && String(self.previewExchangeServiceId).trim() !== '';
+                    if (!hasCode && !hasSvc) return;
                     if (self.isEdit) {
                         self.loadEdit();
                     } else {
@@ -193,9 +209,39 @@
                 }
                 return '';
             },
+            /** Значение в превью-поле (только default, без ввода). */
+            fieldPreviewValue: function(f) {
+                if (!f || f.default == null) return '';
+                var s = String(f.default).trim();
+                return s;
+            },
+            previewIsTextarea: function(f) {
+                return f && String(f.type || '') === 'text';
+            },
+            previewInputType: function(f) {
+                if (!f) return 'text';
+                var t = String(f.type || '');
+                if (t === 'email') return 'email';
+                if (t === 'phone') return 'tel';
+                if (t === 'date') return 'date';
+                return 'text';
+            },
+            previewInputMode: function(f) {
+                if (!f) return 'text';
+                var t = String(f.type || '');
+                if (t === 'integer' || t === 'decimal' || t === 'money') return 'decimal';
+                return 'text';
+            },
+            previewInputClass: function(f) {
+                var base = 'w-full px-4 py-3 border border-[#eff2f5] rounded-xl text-sm text-[#191d23]';
+                if (f && f.readonly) return base + ' bg-gray-100 cursor-default';
+                return base + ' bg-gray-50 cursor-default';
+            },
             loadPreview: function() {
                 var code = (this.paymentCode || '').trim();
-                if (!code) return;
+                var svcId = this.previewExchangeServiceId;
+                var hasSvc = svcId != null && String(svcId).trim() !== '';
+                if (!code && !hasSvc) return;
                 var self = this;
                 var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__)
                     ? String(window.__CURRENT_SPACE__).trim()
@@ -208,7 +254,13 @@
                     self.error = 'nospace';
                     return;
                 }
-                var url = '/v1/spaces/' + encodeURIComponent(space) + '/payment-forms/' + encodeURIComponent(code);
+                var url;
+                if (hasSvc) {
+                    url = '/v1/spaces/' + encodeURIComponent(space) + '/exchange-services/'
+                        + encodeURIComponent(String(svcId)) + '/payment-form';
+                } else {
+                    url = '/v1/spaces/' + encodeURIComponent(space) + '/payment-forms/' + encodeURIComponent(code);
+                }
                 fetch(url, { method: 'GET', headers: authHeaders(), credentials: 'include' })
                     .then(function(r) {
                         if (!r.ok) throw new Error(String(r.status));
@@ -336,11 +388,19 @@
             '        <p v-if="loading" class="text-[#58667e]">[[ $t(\'main.loading\') ]]</p>',
             '        <p v-else-if="error" class="text-red-600">[[ $t(\'main.my_business.form_preview_error\') ]]</p>',
             '        <template v-else-if="payload">',
-            '          <p class="text-xs text-[#58667e]">[[ $t(\'main.my_business.form_source_label\') ]]: <strong>[[ payload.source ]]</strong></p>',
-            '          <ul v-if="payload.form && payload.form.fields && payload.form.fields.length" class="list-disc pl-5 space-y-1">',
-            '            <li v-for="(f, idx) in payload.form.fields" :key="idx" class="text-[#191d23]"><span class="font-mono text-xs">[[ f.id ]]</span> — <span class="text-[#58667e]">[[ fieldCaption(f) ]]</span> — [[ f.type ]] <span v-if="f.required" class="text-amber-600 text-xs">([[ $t(\'main.my_business.field_required\') ]])</span></li>',
-            '          </ul>',
-            '          <p v-else class="text-[#58667e]">[[ $t(\'main.my_business.form_preview_empty\') ]]</p>',
+            '          <p class="text-xs text-[#58667e]">[[ $t(\'main.my_business.form_source_label\') ]]: <strong>[[ formSourceCaption ]]</strong></p>',
+            '          <p class="text-xs text-[#58667e] mt-2 leading-snug">[[ $t(\'main.my_business.form_preview_ux_note\') ]]</p>',
+            '          <div v-if="payload.form && payload.form.fields && payload.form.fields.length" class="mt-4 pointer-events-none select-none space-y-4" aria-hidden="true">',
+            '            <div v-for="(f, idx) in payload.form.fields" :key="\'pv-\' + idx + \'-\' + (f.id || idx)" class="space-y-1.5">',
+            '              <label class="block text-[10px] font-bold text-[#58667e] uppercase tracking-wide ml-1">',
+            '                <span class="text-[#191d23]">[[ fieldCaption(f) ]]</span><span v-if="f.required" class="text-amber-600 ml-0.5">*</span>',
+            '                <span v-if="f.readonly" class="text-[10px] font-bold text-[#58667e] normal-case ml-1.5">([[ $t(\'main.my_business.form_preview_readonly_badge\') ]])</span>',
+            '              </label>',
+            '              <textarea v-if="previewIsTextarea(f)" readonly tabindex="-1" rows="3" :value="fieldPreviewValue(f)" :class="previewInputClass(f) + \' resize-y min-h-[4rem]\'" :placeholder="$t(\'main.my_business.form_preview_placeholder\')"></textarea>',
+            '              <input v-else :type="previewInputType(f)" :inputmode="previewInputMode(f)" readonly tabindex="-1" :value="fieldPreviewValue(f)" :class="previewInputClass(f)" :placeholder="$t(\'main.my_business.form_preview_placeholder\')" />',
+            '            </div>',
+            '          </div>',
+            '          <p v-else class="text-[#58667e] mt-1">[[ $t(\'main.my_business.form_preview_empty\') ]]</p>',
             '        </template>',
             '        </template>',
             '        <template v-else>',

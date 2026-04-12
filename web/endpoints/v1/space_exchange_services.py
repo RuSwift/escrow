@@ -17,6 +17,7 @@ from web.endpoints.v1.schemas.space_exchange_services import (
     PatchExchangeServiceRequest,
     exchange_service_to_out,
 )
+from web.endpoints.v1.schemas.space_payment_forms import EffectivePaymentFormResponse
 
 router = APIRouter(prefix="/spaces", tags=["exchange-services"])
 
@@ -99,6 +100,37 @@ async def get_exchange_service(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
     row, tiers = result
     return exchange_service_to_out(row, tiers)
+
+
+@router.get(
+    "/{space}/exchange-services/{service_id}/payment-form",
+    response_model=EffectivePaymentFormResponse,
+)
+async def get_exchange_service_payment_form(
+    space: str,
+    service_id: int,
+    wallet_address: str = Depends(get_required_wallet_address_for_space),
+    svc: SpaceExchangeService = Depends(get_space_exchange_service),
+):
+    """Effective-форма реквизитов направления: кастом из БД или space/system из каталога."""
+    try:
+        result = await svc.get_effective_payment_form(
+            space, service_id, wallet_address
+        )
+    except SpacePermissionDenied as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e),
+        ) from e
+    if result is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found")
+    form, src, payment_code = result
+    dumped = form.model_dump(mode="json") if form is not None else None
+    return EffectivePaymentFormResponse(
+        payment_code=payment_code,
+        source=src,
+        form=dumped,
+    )
 
 
 @router.patch("/{space}/exchange-services/{service_id}", response_model=ExchangeServiceOut)

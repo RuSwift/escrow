@@ -15,6 +15,7 @@ from didcomm.crypto import EthCrypto
 
 from core.exceptions import SpacePermissionDenied
 
+from repos.exchange_service import ExchangeServiceRepository
 from repos.wallet import (
     ExchangeRole,
     ExchangeWalletResource,
@@ -72,6 +73,15 @@ class MultisigDeleteBlockedError(Exception):
         super().__init__(code)
 
 
+class RampWalletDeleteBlockedError(Exception):
+    """Нельзя удалить корп. кошелёк: используется в направлениях offRamp."""
+
+    def __init__(self, code: str, **extra: Any):
+        self.code = code
+        self.extra = extra
+        super().__init__(code)
+
+
 def normalize_balance_blockchain(blockchain: str) -> Optional[BalanceChain]:
     """Нормализация имени сети для запросов баланса (как в token_balance_cache.blockchain)."""
     b = (blockchain or "").strip().upper()
@@ -96,6 +106,9 @@ class ExchangeWalletService:
         self._settings = settings
         self._repo = WalletRepository(session=session, redis=redis, settings=settings)
         self._users = WalletUserRepository(session=session, redis=redis, settings=settings)
+        self._exchange_services = ExchangeServiceRepository(
+            session=session, redis=redis, settings=settings
+        )
         self._space = SpaceService(session=session, redis=redis, settings=settings)
 
     async def _owner_did_for_space(self, space: str) -> str:
@@ -417,6 +430,14 @@ class ExchangeWalletService:
         existing = await self._repo.get_exchange_wallet(wallet_id, owner_did)
         if not existing:
             return False
+        titles = await self._exchange_services.list_titles_for_space_wallet(
+            space, wallet_id
+        )
+        if titles:
+            raise RampWalletDeleteBlockedError(
+                "used_by_exchange_services",
+                direction_titles=titles,
+            )
         if (existing.role or "") == "multisig":
             tron = (existing.tron_address or "").strip()
             if tron:
