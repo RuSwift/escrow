@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class PaymentFormFieldType(StrEnum):
@@ -50,10 +50,43 @@ class PaymentFormsMeta(BaseModel):
 class PaymentFormField(BaseModel):
     """Одно поле формы реквизитов."""
 
+    model_config = ConfigDict(extra="ignore")
+
     id: str = Field(..., description="Стабильный идентификатор поля (snake_case)")
     type: PaymentFormFieldType = Field(..., description="Тип для валидации и UI")
     required: bool = Field(..., description="Обязательность")
-    label_key: str = Field(..., description="Ключ в i18n/translations/*.json")
+    label_key: Optional[str] = Field(
+        None,
+        description="Ключ в i18n/translations/*.json (каталог и совместимость)",
+    )
+    label: Optional[str] = Field(
+        None,
+        description="Подпись поля по умолчанию (без i18n-ключа)",
+    )
+    labels: Optional[Dict[str, str]] = Field(
+        None,
+        description="Подписи по коду локали (ru, en, …)",
+    )
+    default: Optional[str] = Field(
+        None,
+        description="Значение по умолчанию для UI (опционально)",
+    )
+    readonly: bool = Field(
+        False,
+        description="Поле только для чтения в форме ввода",
+    )
+
+    @model_validator(mode="after")
+    def _at_least_one_caption(self) -> "PaymentFormField":
+        lk = (self.label_key or "").strip()
+        lb = (self.label or "").strip()
+        labs = self.labels or {}
+        has_locale = any((v or "").strip() for v in labs.values())
+        if not lk and not lb and not has_locale:
+            raise ValueError(
+                "PaymentFormField requires non-empty label_key, label, or labels[locale]"
+            )
+        return self
 
 
 class PaymentForm(BaseModel):

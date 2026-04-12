@@ -53,6 +53,16 @@ class SpacePaymentFormAdminService:
         form, source = await self._resolve.resolve(space, payment_code)
         return form, source
 
+    async def get_system_form(
+        self,
+        space: str,
+        actor_wallet_address: str,
+        payment_code: str,
+    ):
+        """Только forms.yaml (без override спейса)."""
+        await self._space._ensure_owner_and_owner_id(space, actor_wallet_address)
+        return await self._resolve.resolve_system(payment_code)
+
     async def list_overrides(
         self, space: str, actor_wallet_address: str
     ) -> list[SpacePaymentFormOverride]:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from urllib.parse import unquote
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from core.exceptions import SpacePermissionDenied
 from services.space_payment_form_admin import (
@@ -32,12 +32,19 @@ router = APIRouter(prefix="/spaces", tags=["space-payment-forms"])
 async def get_effective_payment_form(
     space: str,
     payment_code: str,
+    system_only: bool = Query(
+        False,
+        description="Только forms.yaml (без override спейса); для сравнения с requisites_form_schema",
+    ),
     wallet_address: str = Depends(get_required_wallet_address_for_space),
     svc: SpacePaymentFormAdminService = Depends(get_space_payment_form_admin_service),
 ):
     code = unquote((payment_code or "").strip())
     try:
-        form, src = await svc.get_effective(space, wallet_address, code)
+        if system_only:
+            form, src = await svc.get_system_form(space, wallet_address, code)
+        else:
+            form, src = await svc.get_effective(space, wallet_address, code)
     except SpacePermissionDenied as e:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

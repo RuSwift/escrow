@@ -13,7 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from core.bc import load_payment_forms_yaml
+from pydantic import ValidationError
+
+from core.bc import PaymentFormField, PaymentFormFieldType, load_payment_forms_yaml
 from scripts.build_payment_forms_yaml import build_forms
 from scripts.schemas import load_bestchange_export_yaml
 
@@ -34,6 +36,24 @@ def test_forms_yaml_matches_build_script() -> None:
     built, _, _, _ = build_forms(bc, None)
     disk = load_payment_forms_yaml(ROOT / "forms.yaml")
     assert built.model_dump(mode="json") == disk.model_dump(mode="json")
+
+
+def test_payment_form_field_requires_some_caption() -> None:
+    with pytest.raises(ValidationError):
+        PaymentFormField(id="a", type=PaymentFormFieldType.STRING, required=True)
+
+
+def test_payment_form_field_accepts_label_without_label_key() -> None:
+    f = PaymentFormField(
+        id="a",
+        type=PaymentFormFieldType.STRING,
+        required=True,
+        label="Название",
+        labels={"en": "Title"},
+    )
+    dumped = f.model_dump(mode="json")
+    assert dumped["label"] == "Название"
+    assert dumped["labels"] == {"en": "Title"}
 
 
 def test_field_label_keys_exist_in_i18n() -> None:

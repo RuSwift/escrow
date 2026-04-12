@@ -11,6 +11,7 @@ from repos.bestchange import PaymentFormsYamlRepository
 from repos.space_payment_form import SpacePaymentFormOverrideRepository
 
 PaymentFormSource = Literal["space", "system", "none"]
+SystemFormSource = Literal["system", "none"]
 
 
 class PaymentFormResolutionService:
@@ -39,6 +40,19 @@ class PaymentFormResolutionService:
                 return PaymentForm.model_validate(row.form), "space"
             except ValidationError:
                 return None, "none"
+        base = await self._yaml_forms.get_form(pc)
+        if base is not None:
+            return base, "system"
+        return None, "none"
+
+    async def resolve_system(
+        self,
+        payment_code: str,
+    ) -> tuple[PaymentForm | None, SystemFormSource]:
+        """Только ``forms.yaml`` (без override спейса), для сравнения с ``requisites_form_schema``."""
+        pc = (payment_code or "").strip()
+        if not pc:
+            return None, "none"
         base = await self._yaml_forms.get_form(pc)
         if base is not None:
             return base, "system"

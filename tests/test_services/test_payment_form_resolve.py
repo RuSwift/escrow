@@ -86,6 +86,34 @@ async def test_resolve_none_for_unknown_code() -> None:
 
 
 @pytest.mark.asyncio
+async def test_resolve_system_ignores_space_override() -> None:
+    pf = PaymentForm(
+        fields=[
+            PaymentFormField(
+                id="from_yaml",
+                type=PaymentFormFieldType.STRING,
+                required=True,
+                label_key="forms.requisite.x",
+            )
+        ]
+    )
+
+    class _OvRepo:
+        async def get(self, space: str, code: str):
+            raise AssertionError("override must not be read for resolve_system")
+
+    class _YamlRepo:
+        async def get_form(self, code: str):
+            return pf if code == "PM" else None
+
+    svc = PaymentFormResolutionService(_OvRepo(), _YamlRepo())
+    form, src = await svc.resolve_system("PM")
+    assert src == "system"
+    assert form is not None
+    assert form.fields[0].id == "from_yaml"
+
+
+@pytest.mark.asyncio
 async def test_resolve_empty_payment_code() -> None:
     class _O:
         async def get(self, space: str, code: str):

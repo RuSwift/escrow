@@ -3,7 +3,7 @@
  * Управление платежными сервисами (направления) и контрагентами (партнерская сеть).
  * Модалка multisig: multisig_config_modal.js → <multisig-config-modal>.
  * Справка по направлению: new_service_help_modal.js → <new-service-help-modal>.
- * Предпросмотр формы реквизитов: payment_form_preview_modal.js → <payment-form-preview-modal>.
+ * Форма реквизитов (просмотр / редактирование): payment_form_preview_modal.js → <payment-form-preview-modal>.
  */
 (function() {
     var PAYMENT_CODE_AC_DEBOUNCE_MS = 280;
@@ -207,6 +207,9 @@
                 exchangeSaving: false,
                 showFormPreviewModal: false,
                 formPreviewCode: '',
+                formModalVariant: 'preview',
+                formModalInitialSchema: {},
+                formModalServiceId: null,
                 showPartnerModal: false,
                 newService: {
                     type: 'onRamp',
@@ -223,7 +226,8 @@
                     cash: false,
                     cashCities: [],
                     cashCityInput: '',
-                    _paymentCodeBackup: ''
+                    _paymentCodeBackup: '',
+                    requisites_form_schema: {}
                 },
                 newPartner: {
                     name: '',
@@ -481,6 +485,7 @@
                 this.fiatCurrencyNoHits = false;
                 this.newService.payment_code = '';
                 this.newService._paymentCodeBackup = '';
+                this.newService.requisites_form_schema = {};
                 this.paymentCodeSuggestions = [];
                 this.paymentCodeAutocompleteOpen = false;
                 this.paymentCodeLoading = false;
@@ -499,11 +504,13 @@
                 this.applyCashPaymentRules();
                 this.fiatAutocompleteOpen = true;
                 this.fetchCreateModalFiatCurrencies('');
+                this.newService.requisites_form_schema = {};
             },
             clearCreateModalPaymentCode: function() {
                 if (this.cashLocked) return;
                 if (!this.createModalFiatIso3) return;
                 this.newService.payment_code = '';
+                this.newService.requisites_form_schema = {};
                 if (this.newService.cash) this.newService._paymentCodeBackup = '';
                 this.paymentCodeAutocompleteOpen = true;
                 this.fetchCreateModalPaymentDirections('');
@@ -702,6 +709,7 @@
             selectPaymentCodeFromAutocomplete: function(item) {
                 if (!item || !item.payment_code) return;
                 this.newService.payment_code = item.payment_code;
+                this.newService.requisites_form_schema = {};
                 this.paymentCodeAutocompleteOpen = false;
                 this.paymentCodeNoHits = false;
             },
@@ -907,7 +915,8 @@
                     cash: false,
                     cashCities: [],
                     cashCityInput: '',
-                    _paymentCodeBackup: ''
+                    _paymentCodeBackup: '',
+                    requisites_form_schema: {}
                 };
                 this.cashCityAutocompleteOpen = false;
                 this.cashCitySuggestions = [];
@@ -1060,7 +1069,9 @@
                     ratios_commission_percent: rateMode === 'ratios' ? comm : null,
                     min_fiat_amount: this.newService.minFiat,
                     max_fiat_amount: this.newService.maxFiat,
-                    requisites_form_schema: {},
+                    requisites_form_schema: (this.newService.requisites_form_schema && typeof this.newService.requisites_form_schema === 'object')
+                        ? this.newService.requisites_form_schema
+                        : {},
                     verification_requirements: verif,
                     is_active: true
                 };
@@ -1150,11 +1161,78 @@
                 var c = (code || '').trim();
                 if (!c) return;
                 this.formPreviewCode = c;
+                this.formModalVariant = 'preview';
+                this.formModalServiceId = null;
+                this.formModalInitialSchema = {};
                 this.showFormPreviewModal = true;
             },
             openFormPreviewForService: function(s) {
                 if (this.serviceCashLockedForCard(s)) return;
                 this.openFormPreview(s && s.payment_code);
+            },
+            openFormEditorNew: function() {
+                if (this.cashLocked) return;
+                var c = (this.newService.payment_code || '').trim();
+                if (!c) return;
+                this.formPreviewCode = c;
+                this.formModalVariant = 'edit';
+                this.formModalServiceId = null;
+                this.formModalInitialSchema = this.newService.requisites_form_schema
+                    && typeof this.newService.requisites_form_schema === 'object'
+                    ? JSON.parse(JSON.stringify(this.newService.requisites_form_schema))
+                    : {};
+                this.showFormPreviewModal = true;
+            },
+            openFormEditorForService: function(s) {
+                if (this.serviceCashLockedForCard(s)) return;
+                var c = (s && s.payment_code || '').trim();
+                if (!c) return;
+                this.formPreviewCode = c;
+                this.formModalVariant = 'edit';
+                this.formModalServiceId = s.id;
+                var api = s._api || {};
+                var rs = api.requisites_form_schema;
+                this.formModalInitialSchema = rs && typeof rs === 'object'
+                    ? JSON.parse(JSON.stringify(rs))
+                    : {};
+                this.showFormPreviewModal = true;
+            },
+            onRequisitesSaved: function(payload) {
+                var schema = payload && payload.schema && typeof payload.schema === 'object'
+                    ? payload.schema
+                    : {};
+                if (this.formModalServiceId != null) {
+                    this.patchExchangeServiceRequisites(this.formModalServiceId, schema);
+                } else {
+                    this.newService.requisites_form_schema = schema;
+                    this.showFormPreviewModal = false;
+                }
+            },
+            patchExchangeServiceRequisites: function(serviceId, schema) {
+                var self = this;
+                var base = this.exchangeServicesApiBase();
+                if (!base) return;
+                this.exchangeSaving = true;
+                fetch(base + '/' + encodeURIComponent(serviceId), {
+                    method: 'PATCH',
+                    headers: this.rampAuthHeaders(),
+                    credentials: 'include',
+                    body: JSON.stringify({ requisites_form_schema: schema || {} })
+                })
+                    .then(function(r) {
+                        if (!r.ok) throw new Error(String(r.status));
+                        return r.json();
+                    })
+                    .then(function() {
+                        self.showFormPreviewModal = false;
+                        return self.fetchExchangeServices();
+                    })
+                    .catch(function() {
+                        self.exchangeServicesError = 'save';
+                    })
+                    .then(function() {
+                        self.exchangeSaving = false;
+                    });
             },
             openPartnerModal: function() {
                 this.newPartner = { name: '', serviceType: '', baseCommission: 0.5, myCommission: 0.3 };
@@ -1967,6 +2045,7 @@
             '              <div v-if="(service.payment_code || \'\').trim()" class="flex flex-wrap items-center gap-2 text-xs text-[#58667e]">',
             '                <span class="font-mono bg-gray-50 px-2 py-0.5 rounded">[[ service.payment_code ]]</span>',
             '                <button type="button" @click="openFormPreviewForService(service)" :disabled="serviceCashLockedForCard(service)" class="text-[#3861fb] font-bold hover:underline disabled:opacity-45 disabled:cursor-not-allowed disabled:no-underline">[[ $t(\'main.my_business.preview_payment_form\') ]]</button>',
+            '                <button type="button" @click="openFormEditorForService(service)" :disabled="serviceCashLockedForCard(service)" class="text-[#58667e] font-bold hover:underline disabled:opacity-45 disabled:cursor-not-allowed disabled:no-underline">[[ $t(\'main.my_business.form_edit_open\') ]]</button>',
             '              </div>',
             '              <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">',
             '                <div class="flex items-center gap-1.5 text-xs text-[#58667e] min-w-0"><svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0h.5a2.5 2.5 0 002.5-2.5V3.935M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> <span class="truncate">[[ $t(\'main.my_business.rate_label\') ]]: [[ serviceRateLabel(service) ]]</span></div>',
@@ -2127,7 +2206,10 @@
             '              </div>',
             '            </div>',
             '            </div>',
+            '            <div class="flex flex-col sm:flex-row gap-2 shrink-0 w-full sm:w-auto">',
             '            <button type="button" @click="openFormPreview(newService.payment_code)" :disabled="cashLocked || !(newService.payment_code || \'\').trim()" :title="$t(\'main.my_business.payment_code_show_requisites\')" class="shrink-0 px-4 py-3 rounded-xl border border-[#3861fb]/40 bg-white text-xs font-bold text-[#3861fb] hover:bg-blue-50 disabled:opacity-45 disabled:cursor-not-allowed whitespace-nowrap self-stretch sm:self-auto">[[ $t(\'main.my_business.payment_code_show_requisites\') ]]</button>',
+            '            <button type="button" @click="openFormEditorNew" :disabled="cashLocked || !(newService.payment_code || \'\').trim()" :title="$t(\'main.my_business.form_edit_open\')" class="shrink-0 px-4 py-3 rounded-xl border border-[#eff2f5] bg-white text-xs font-bold text-[#58667e] hover:bg-gray-50 disabled:opacity-45 disabled:cursor-not-allowed whitespace-nowrap self-stretch sm:self-auto">[[ $t(\'main.my_business.form_edit_open\') ]]</button>',
+            '            </div>',
             '          </div>',
             '          <p v-if="!createModalFiatIso3 && createModalHasFiat" class="text-[10px] text-amber-800 mt-1 ml-1 font-medium">[[ $t(\'main.my_business.payment_code_need_fiat_iso\') ]]</p>',
             '          <p class="text-[10px] text-[#58667e] mt-1 ml-1">[[ $t(\'main.my_business.payment_code_hint\') ]]</p>',
@@ -2167,7 +2249,7 @@
             '    </div>',
             '  </div>',
 
-            '  <payment-form-preview-modal :show="showFormPreviewModal" :payment-code="formPreviewCode" @close="showFormPreviewModal = false"></payment-form-preview-modal>',
+            '  <payment-form-preview-modal :show="showFormPreviewModal" :payment-code="formPreviewCode" :variant="formModalVariant" :initial-requisites-schema="formModalInitialSchema" @close="showFormPreviewModal = false" @requisites-saved="onRequisitesSaved"></payment-form-preview-modal>',
 
             '  <div v-if="showPartnerModal" class="fixed inset-0 z-[100] flex items-center justify-center p-4">',
             '    <div class="absolute inset-0 bg-black/60" @click="showPartnerModal = false"></div>',
