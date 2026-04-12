@@ -23,6 +23,13 @@ class ExchangeWalletItem(BaseModel):
 
 class ExchangeWalletListResponse(BaseModel):
     items: List[ExchangeWalletItem]
+    primary_ramp_wallet_id: Optional[int] = Field(
+        None,
+        description=(
+            "ID корп. кошелька, совпадающего с primary wallet спейса (если есть); "
+            "для подстановки при пустом списке"
+        ),
+    )
 
 
 class CreateExchangeWalletRequest(BaseModel):

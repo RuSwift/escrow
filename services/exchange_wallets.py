@@ -141,6 +141,35 @@ class ExchangeWalletService:
         owner_did = await self._owner_did_for_space(space)
         return await self._repo.list_exchange_wallets(owner_did, role=role)
 
+    async def primary_ramp_wallet_id_for_space(
+        self,
+        space: str,
+        actor_wallet_address: str,
+    ) -> Optional[int]:
+        """
+        ID корп. кошелька (Wallet), чей TRON/ETH-адрес совпадает с primary wallet спейса.
+        Если совпадения нет — None.
+        """
+        await self._space.ensure_owner_or_operator(space, actor_wallet_address)
+        try:
+            primary = await self._space.get_primary_wallet(space)
+        except ValueError:
+            return None
+        addr = (primary.get("address") or "").strip()
+        if not addr:
+            return None
+        bc = (primary.get("blockchain") or "").strip().lower()
+        owner_did = await self._owner_did_for_space(space)
+        if bc == "tron":
+            return await self._repo.get_exchange_wallet_id_by_tron_address(
+                owner_did, addr
+            )
+        if bc in ("ethereum", "eth"):
+            return await self._repo.get_exchange_wallet_id_by_ethereum_address(
+                owner_did, addr
+            )
+        return None
+
     async def get_wallet(
         self,
         space: str,

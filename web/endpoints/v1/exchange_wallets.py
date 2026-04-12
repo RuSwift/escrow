@@ -111,7 +111,8 @@ async def list_exchange_wallets(
     out: List[ExchangeWalletItem] = []
     for x in rows:
         out.append(await _to_item_with_tronlink_flag(svc, x, wallet_address))
-    return ExchangeWalletListResponse(items=out)
+    prim_id = await svc.primary_ramp_wallet_id_for_space(space, wallet_address)
+    return ExchangeWalletListResponse(items=out, primary_ramp_wallet_id=prim_id)
 
 
 @router.post(

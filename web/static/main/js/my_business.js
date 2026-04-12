@@ -281,6 +281,8 @@
                 },
                 cryptoOptions: ['USDT TRC20', 'A7A5 TRC20'],
                 rampWallets: [],
+                /** ID корп. кошелька = primary wallet спейса (если список пуст). С бэка: GET exchange-wallets. */
+                primaryRampWalletId: null,
                 rampLoading: false,
                 rampError: null,
                 showRampModal: false,
@@ -333,7 +335,9 @@
                 createModalRatiosFetchDone: false,
                 /** Отображаемые строки лимитов фиата (с группировкой разрядов); числа — в newService.minFiat / maxFiat. */
                 createModalMinFiatText: '1',
-                createModalMaxFiatText: '1000000'
+                createModalMaxFiatText: '1000000',
+                /** Фильтр карточек направлений: null — все, onRamp / offRamp — только тип. */
+                serviceTypeFilter: null
             };
         },
         mounted: function() {
@@ -345,6 +349,11 @@
         computed: {
             onRampCount: function() { return this.services.filter(function(s) { return s.type === 'onRamp'; }).length; },
             offRampCount: function() { return this.services.filter(function(s) { return s.type === 'offRamp'; }).length; },
+            filteredServices: function() {
+                var f = this.serviceTypeFilter;
+                if (!f) return this.services;
+                return this.services.filter(function(s) { return s.type === f; });
+            },
             rampParticipantCandidates: function() {
                 var taken = {};
                 (this.rampWallets || []).forEach(function(w) {
@@ -465,6 +474,18 @@
                     && (this.newService.cashCities || []).length >= 1
                     && this.createModalFiatIso3);
             },
+            /** offRamp: выбранный id или primary при пустом списке корп. кошельков. */
+            offRampEffectiveWalletId: function() {
+                if (this.newService.type !== 'offRamp') return null;
+                var sw = this.newService.spaceWalletId;
+                if (sw !== '' && sw !== null && sw !== undefined && isFinite(Number(sw))) {
+                    return Number(sw);
+                }
+                if (!(this.rampWallets || []).length && this.primaryRampWalletId != null) {
+                    return Number(this.primaryRampWalletId);
+                }
+                return null;
+            },
             createModalLaunchDisabled: function() {
                 if (this.exchangeSaving) return true;
                 if (!(this.newService.fiatCurrency || '').trim()) return true;
@@ -474,9 +495,8 @@
                     if (!(this.newService.cashCities || []).length) return true;
                 }
                 if (this.newService.type === 'offRamp') {
-                    var sw = this.newService.spaceWalletId;
-                    if (sw === '' || sw === null || sw === undefined) return true;
-                    if (!isFinite(Number(sw))) return true;
+                    var oid = this.offRampEffectiveWalletId;
+                    if (oid == null || !isFinite(Number(oid))) return true;
                 }
                 if (this.newService.rateType === 'manual') {
                     var mr = parseFloat(this.newService.manualRate);
@@ -501,6 +521,27 @@
                 this.fiatAutocompleteOpen = false;
                 this.showCreateModal = true;
                 this.fetchCreateModalRatios();
+                this.applyPrimaryRampWalletFallback();
+            },
+            toggleServiceTypeFilter: function(type) {
+                if (this.serviceTypeFilter === type) {
+                    this.serviceTypeFilter = null;
+                } else {
+                    this.serviceTypeFilter = type;
+                }
+            },
+            setNewServiceTypeOnRamp: function() {
+                this.newService.type = 'onRamp';
+            },
+            setNewServiceTypeOffRamp: function() {
+                this.newService.type = 'offRamp';
+                this.applyPrimaryRampWalletFallback();
+            },
+            applyPrimaryRampWalletFallback: function() {
+                if (this.newService.type !== 'offRamp') return;
+                if ((this.rampWallets || []).length) return;
+                if (this.primaryRampWalletId == null) return;
+                this.newService.spaceWalletId = this.primaryRampWalletId;
             },
             closeCreateModal: function() {
                 this.showCreateModal = false;
@@ -645,7 +686,8 @@
                     body.is_active = true;
                 }
                 if (this.newService.type === 'offRamp') {
-                    body.space_wallet_id = parseInt(String(this.newService.spaceWalletId), 10);
+                    var oid = this.offRampEffectiveWalletId;
+                    body.space_wallet_id = oid != null ? parseInt(String(oid), 10) : null;
                 } else {
                     body.space_wallet_id = null;
                 }
@@ -1610,6 +1652,7 @@
                     this.rampLoading = false;
                     this.rampError = null;
                     this.rampWallets = [];
+                    this.primaryRampWalletId = null;
                     return Promise.resolve();
                 }
                 this.rampLoading = true;
@@ -1622,10 +1665,15 @@
                     })
                     .then(function(data) {
                         self.rampWallets = (data && data.items) ? data.items : [];
+                        self.primaryRampWalletId = (data && data.primary_ramp_wallet_id != null)
+                            ? data.primary_ramp_wallet_id
+                            : null;
+                        self.applyPrimaryRampWalletFallback();
                     })
                     .catch(function() {
                         self.rampError = self.$t('main.my_business.ramp_loading_error');
                         self.rampWallets = [];
+                        self.primaryRampWalletId = null;
                     })
                     .finally(function() {
                         self.rampLoading = false;
@@ -2202,15 +2250,20 @@
             '            [[ $t(\'main.my_business.create_service\') ]]',
             '          </button>',
             '        </div>',
-            '        <div class="flex flex-wrap gap-2 shrink-0">',
-            '          <span class="text-xs font-medium px-2 py-1 rounded-lg bg-blue-50 text-blue-600 border border-blue-100">onRamp: [[ onRampCount ]]</span>',
-            '          <span class="text-xs font-medium px-2 py-1 rounded-lg bg-purple-50 text-purple-600 border border-purple-100">offRamp: [[ offRampCount ]]</span>',
+            '        <div class="flex flex-col items-stretch sm:items-end gap-1.5 shrink-0 w-full sm:w-auto">',
+            '          <div class="flex flex-wrap gap-2 justify-end">',
+            '            <button type="button" @click="toggleServiceTypeFilter(\'onRamp\')" :class="[\'text-xs font-medium px-2 py-1 rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-blue-400\', serviceTypeFilter === \'onRamp\' ? \'bg-blue-100 text-blue-800 border-blue-300 ring-1 ring-blue-300\' : \'bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100\']" :title="$t(\'main.my_business.filter_on_ramp_hint\')" :aria-pressed="serviceTypeFilter === \'onRamp\' ? \'true\' : \'false\'">onRamp: [[ onRampCount ]]</button>',
+            '            <button type="button" @click="toggleServiceTypeFilter(\'offRamp\')" :class="[\'text-xs font-medium px-2 py-1 rounded-lg border transition-colors focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-purple-400\', serviceTypeFilter === \'offRamp\' ? \'bg-purple-100 text-purple-800 border-purple-300 ring-1 ring-purple-300\' : \'bg-purple-50 text-purple-600 border-purple-100 hover:bg-purple-100\']" :title="$t(\'main.my_business.filter_off_ramp_hint\')" :aria-pressed="serviceTypeFilter === \'offRamp\' ? \'true\' : \'false\'">offRamp: [[ offRampCount ]]</button>',
+            '          </div>',
+            '          <p v-if="serviceTypeFilter === \'onRamp\'" role="status" class="text-[10px] sm:text-xs text-[#58667e] leading-snug text-left sm:text-right max-w-[20rem] sm:ml-auto">[[ $t(\'main.my_business.filter_active_banner_on_ramp\') ]]</p>',
+            '          <p v-else-if="serviceTypeFilter === \'offRamp\'" role="status" class="text-[10px] sm:text-xs text-[#58667e] leading-snug text-left sm:text-right max-w-[20rem] sm:ml-auto">[[ $t(\'main.my_business.filter_active_banner_off_ramp\') ]]</p>',
             '        </div>',
             '      </div>',
             '      <p v-if="exchangeServicesLoading" class="text-sm text-[#58667e]">[[ $t(\'main.my_business.exchange_loading\') ]]</p>',
             '      <p v-else-if="exchangeServicesError" class="text-sm text-red-600">[[ $t(\'main.my_business.exchange_error\') ]]</p>',
-            '      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">',
-            '        <div v-for="service in services" :key="service.id" class="bg-white rounded-2xl border border-[#eff2f5] p-5 hover:border-[#3861fb] transition-all relative overflow-hidden group">',
+            '      <p v-else-if="!exchangeServicesLoading && services.length && !filteredServices.length" class="text-sm text-[#58667e] py-4">[[ $t(\'main.my_business.filter_no_services_of_type\') ]]</p>',
+            '      <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4">',
+            '        <div v-for="service in filteredServices" :key="service.id" class="bg-white rounded-2xl border border-[#eff2f5] p-5 hover:border-[#3861fb] transition-all relative overflow-hidden group">',
             '          <div :class="[\'pointer-events-none absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 rounded-full opacity-5 group-hover:opacity-10 transition-opacity\', service.type === \'onRamp\' ? \'bg-blue-500\' : \'bg-purple-500\']"></div>',
             '          <div class="flex items-center justify-between mb-4">',
             '            <div :class="[\'p-2 rounded-xl\', service.type === \'onRamp\' ? \'bg-blue-50 text-blue-600\' : \'bg-purple-50 text-purple-600\']">',
@@ -2301,12 +2354,12 @@
             '      </div>',
             '      <div class="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain touch-pan-y p-6 space-y-6 [scrollbar-gutter:stable]">',
             '        <div class="grid grid-cols-2 gap-4">',
-            '          <button type="button" :disabled="isEditExchangeModal" @click="newService.type = \'onRamp\'" :class="[\'p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2\', newService.type === \'onRamp\' ? (isEditExchangeModal ? \'border-gray-300 bg-gray-100 text-[#58667e]\' : \'border-[#3861fb] bg-blue-50 text-[#3861fb]\') : (isEditExchangeModal ? \'border-gray-200 bg-gray-50 text-gray-400\' : \'border-[#eff2f5]\'), !isEditExchangeModal && newService.type !== \'onRamp\' ? \'hover:border-gray-300\' : \'\', isEditExchangeModal ? \'cursor-not-allowed\' : \'\']">',
+            '          <button type="button" :disabled="isEditExchangeModal" @click="setNewServiceTypeOnRamp" :class="[\'p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2\', newService.type === \'onRamp\' ? (isEditExchangeModal ? \'border-gray-300 bg-gray-100 text-[#58667e]\' : \'border-[#3861fb] bg-blue-50 text-[#3861fb]\') : (isEditExchangeModal ? \'border-gray-200 bg-gray-50 text-gray-400\' : \'border-[#eff2f5]\'), !isEditExchangeModal && newService.type !== \'onRamp\' ? \'hover:border-gray-300\' : \'\', isEditExchangeModal ? \'cursor-not-allowed\' : \'\']">',
             '            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>',
             '            <span class="text-xs font-bold uppercase">[[ $t(\'main.my_business.on_ramp\') ]]</span>',
             '            <span class="text-[10px] opacity-60">[[ $t(\'main.my_business.on_ramp_desc\') ]]</span>',
             '          </button>',
-            '          <button type="button" :disabled="isEditExchangeModal" @click="newService.type = \'offRamp\'" :class="[\'p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2\', newService.type === \'offRamp\' ? (isEditExchangeModal ? \'border-gray-300 bg-gray-100 text-[#58667e]\' : \'border-[#3861fb] bg-blue-50 text-[#3861fb]\') : (isEditExchangeModal ? \'border-gray-200 bg-gray-50 text-gray-400\' : \'border-[#eff2f5]\'), !isEditExchangeModal && newService.type !== \'offRamp\' ? \'hover:border-gray-300\' : \'\', isEditExchangeModal ? \'cursor-not-allowed\' : \'\']">',
+            '          <button type="button" :disabled="isEditExchangeModal" @click="setNewServiceTypeOffRamp" :class="[\'p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2\', newService.type === \'offRamp\' ? (isEditExchangeModal ? \'border-gray-300 bg-gray-100 text-[#58667e]\' : \'border-[#3861fb] bg-blue-50 text-[#3861fb]\') : (isEditExchangeModal ? \'border-gray-200 bg-gray-50 text-gray-400\' : \'border-[#eff2f5]\'), !isEditExchangeModal && newService.type !== \'offRamp\' ? \'hover:border-gray-300\' : \'\', isEditExchangeModal ? \'cursor-not-allowed\' : \'\']">',
             '            <svg class="w-6 h-6 -rotate-90" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M17 7 7 17"/><path d="M17 17H7V7"/></svg>',
             '            <span class="text-xs font-bold uppercase">[[ $t(\'main.my_business.off_ramp\') ]]</span>',
             '            <span class="text-[10px] opacity-60">[[ $t(\'main.my_business.off_ramp_desc\') ]]</span>',
@@ -2377,10 +2430,11 @@
             '            <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.space_wallet_label\') ]]</label>',
             '            <select v-model="newService.spaceWalletId" class="w-full min-w-0 max-w-full px-4 py-3 bg-white border border-[#eff2f5] rounded-xl text-sm shadow-sm focus:outline-none focus:border-[#3861fb]">',
             '              <option disabled value="">[[ $t(\'main.my_business.space_wallet_placeholder\') ]]</option>',
+            '              <option v-if="!rampWallets.length && primaryRampWalletId" :value="primaryRampWalletId">[[ $t(\'main.my_business.space_wallet_primary_option\') ]]</option>',
             '              <option v-for="w in rampWallets" :key="w.id" :value="w.id">[[ w.name || (\'#\' + w.id) ]]</option>',
             '            </select>',
             '            <p class="text-[11px] text-[#58667e] leading-snug mt-1.5">[[ $t(\'main.my_business.space_wallet_escrow_hint\') ]]</p>',
-            '            <p v-if="!rampWallets.length" class="text-xs text-amber-900 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 mt-1">[[ $t(\'main.my_business.space_wallet_empty\') ]]</p>',
+            '            <p v-if="!rampWallets.length && !primaryRampWalletId" class="text-xs text-amber-900 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 mt-1">[[ $t(\'main.my_business.space_wallet_empty\') ]]</p>',
             '          </div>',
             '          <div class="hidden md:block" aria-hidden="true"></div>',
             '          <div class="hidden md:block" aria-hidden="true"></div>',

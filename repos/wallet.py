@@ -259,6 +259,45 @@ class WalletRepository(BaseRepository):
         await self._session.refresh(model)
         return _model_to_exchange_get(model)
 
+    async def get_exchange_wallet_id_by_tron_address(
+        self,
+        owner_did: str,
+        tron_address: str,
+    ) -> Optional[int]:
+        """Корп. кошелёк владельца с данным TRON-адресом (точное совпадение)."""
+        ta = (tron_address or "").strip()
+        if not ta:
+            return None
+        stmt = (
+            select(Wallet.id)
+            .where(self._exchange_scope(owner_did))
+            .where(Wallet.tron_address == ta)
+            .limit(1)
+        )
+        res = await self._session.execute(stmt)
+        rid = res.scalar_one_or_none()
+        return int(rid) if rid is not None else None
+
+    async def get_exchange_wallet_id_by_ethereum_address(
+        self,
+        owner_did: str,
+        ethereum_address: str,
+    ) -> Optional[int]:
+        """Корп. кошелёк владельца с данным ETH-адресом (без учёта регистра)."""
+        ea = (ethereum_address or "").strip()
+        if not ea:
+            return None
+        stmt = (
+            select(Wallet.id)
+            .where(self._exchange_scope(owner_did))
+            .where(Wallet.ethereum_address.isnot(None))
+            .where(func.lower(Wallet.ethereum_address) == ea.lower())
+            .limit(1)
+        )
+        res = await self._session.execute(stmt)
+        rid = res.scalar_one_or_none()
+        return int(rid) if rid is not None else None
+
     async def list_exchange_wallets(
         self,
         owner_did: str,
