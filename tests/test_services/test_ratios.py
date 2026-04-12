@@ -60,6 +60,23 @@ async def test_forex_engine_is_enabled(forex_engine):
     assert forex_engine.is_enabled is True
 
 
+@pytest.mark.asyncio
+async def test_forex_market_ratio_matches_exchange_pair_semantics(test_redis, monkeypatch):
+    """usd.json даёт «сколько quote за 1 USD» — в ExchangePair это ratio для 1 USD = ratio quote."""
+
+    async def fake_load(cls):
+        return {"date": "2026-01-01", "usd": {"rub": 80.0, "eur": 0.9}}
+
+    monkeypatch.setattr(ForexEngine, "load_from_internet", classmethod(fake_load))
+    cache = RatioCacheAdapter(test_redis, "TestForexPairSemantics")
+    engine = ForexEngine(cache, ForexEngineSettings(), refresh_cache=True)
+    pairs = await engine.market()
+    by_q = {p.quote: p for p in pairs}
+    assert by_q["RUB"].ratio == 80.0
+    assert abs(by_q["EUR"].ratio - 0.9) < 1e-9
+    assert by_q["RUB"].base == "USD"
+
+
 @pytest.mark.network
 @pytest.mark.asyncio
 async def test_forex_load_from_internet_real():

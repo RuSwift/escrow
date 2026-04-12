@@ -813,6 +813,12 @@ class ExchangeService(Base):
         comment="Базовая валюта привязки стейбла (USD, RUB, …), опционально",
     )
 
+    title = Column(
+        String(255),
+        nullable=False,
+        comment="Краткий заголовок направления для списков и карточек",
+    )
+
     description = Column(
         Text,
         nullable=True,

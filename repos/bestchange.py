@@ -42,6 +42,31 @@ def _casefold_ci(s: str) -> str:
     return (s or "").casefold()
 
 
+def _pm_corporate_tier(payment_code: str) -> int:
+    """
+    Приоритет для корпоративного сценария: коды CORP* и WIRE* выше остальных (для любого фиата).
+    Префиксы по полю payment_code в снимке BestChange (например CORPCNY, WIREUSD).
+    """
+    u = (payment_code or "").strip().upper()
+    if u.startswith("CORP"):
+        return 0
+    if u.startswith("WIRE"):
+        return 1
+    return 2
+
+
+def _sort_pm_corporate(rows: list[PaymentMethodRow]) -> list[PaymentMethodRow]:
+    """Стабильная сортировка: сначала CORP*, затем WIRE*, затем прочие; внутри группы — по имени и коду."""
+    return sorted(
+        rows,
+        key=lambda r: (
+            _pm_corporate_tier(r.payment_code),
+            _casefold_ci(r.name),
+            (r.payment_code or "").upper(),
+        ),
+    )
+
+
 def _forex_currency_codes_from_payload(payload: dict[str, Any]) -> set[str]:
     """
     Коды из необязательного списка forex_currencies в корне payload или в meta.
@@ -96,7 +121,10 @@ def _canonical_pm_map(tables: dict[str, Any]) -> dict[str, PaymentMethodRow]:
 
 
 def _canonical_city_map(tables: dict[str, Any]) -> dict[int, CityRow]:
-    """Одна строка на id города: предпочтительно en."""
+    """
+    Одна строка на id города для автокомплита без ``locale``:
+    предпочтительно **ru**, затем **en**, иначе первая доступная локаль.
+    """
     ct = tables["cities"]
     ids: set[int] = set()
     for loc in ct:
@@ -105,10 +133,15 @@ def _canonical_city_map(tables: dict[str, Any]) -> dict[int, CityRow]:
     out: dict[int, CityRow] = {}
     for cid in ids:
         chosen: CityRow | None = None
-        for r in ct.get("en", []):
+        for r in ct.get("ru", []):
             if r.id == cid:
                 chosen = r
                 break
+        if chosen is None:
+            for r in ct.get("en", []):
+                if r.id == cid:
+                    chosen = r
+                    break
         if chosen is None:
             for loc in sorted(ct.keys()):
                 for r in ct[loc]:
@@ -165,19 +198,14 @@ def _filter_pm_all_locales(
     if not canonical:
         return []
     if not q or not str(q).strip():
-        codes = sorted(
-            canonical.keys(),
-            key=lambda c: (_casefold_ci(canonical[c].name), c),
-        )
-        return [canonical[c] for c in codes[:limit]]
+        rows_all = list(canonical.values())
+        return _sort_pm_corporate(rows_all)[:limit]
     needle = _casefold_ci(str(q).strip())
     out: list[PaymentMethodRow] = []
     for code in sorted(canonical.keys(), key=lambda c: (_casefold_ci(canonical[c].name), c)):
         if _pm_code_matches_any_locale(tables, code, needle):
             out.append(canonical[code])
-            if len(out) >= limit:
-                break
-    return out
+    return _sort_pm_corporate(out)[:limit]
 
 
 def _filter_pm_by_cur(rows: list[PaymentMethodRow], cur: str | None) -> list[PaymentMethodRow]:
@@ -205,6 +233,31 @@ def _filter_currencies(tables: dict[str, Any], q: str | None, limit: int) -> lis
             if len(out) >= limit:
                 break
     return out
+
+
+def _filter_cities_search_all_display_locale(
+    tables: dict[str, Any],
+    loc: str,
+    q: str | None,
+    limit: int,
+) -> list[CityRow]:
+    """
+    Города: подстрока ``q`` ищется по **всем** локалям (ru/en имена и id),
+    в ответе — только строки локали ``loc`` (язык профиля / query ``locale``).
+    """
+    rows_loc = tables["cities"].get(loc, [])
+    if not rows_loc:
+        return []
+    if not q or not str(q).strip():
+        return rows_loc[:limit]
+    needle = _casefold_ci(str(q).strip())
+    by_id: dict[int, CityRow] = {r.id: r for r in rows_loc}
+    matched_ids: list[int] = []
+    for cid in by_id:
+        if _city_id_matches_any_locale(tables, cid, needle):
+            matched_ids.append(cid)
+    matched_ids.sort(key=lambda i: (_casefold_ci(by_id[i].name), i))
+    return [by_id[cid] for cid in matched_ids[:limit]]
 
 
 def _filter_cities_all_locales(tables: dict[str, Any], q: str | None, limit: int) -> list[CityRow]:
@@ -277,7 +330,9 @@ class BestchangeYamlRepository(BaseRepository):
     ) -> list[PaymentMethodRow] | list[CityRow] | list[CurrencyRow]:
         """
         Список для autocomplete. Если locale не задан — поиск по всем локалям (имена en, ru, …);
-        в ответе name как у локали en, иначе первая доступная. Если locale задан — только эта локаль.
+        для городов в ответе name предпочтительно ru, затем en; для платёжных методов — как у en, иначе первая доступная.
+        Если locale задан — для платёжных методов только эта локаль; для городов поиск по всем
+        именам, в ответе — имена выбранной локали.
         Для kind=currencies locale не влияет на набор кодов (уникальные cur из платёжных методов).
         Для payment_methods при непустом cur — только методы с этой валютой (безрегистровое сравнение);
         limit и q применяются уже внутри этой выборки (при пустом q — первые limit методов по валюте).
@@ -294,8 +349,7 @@ class BestchangeYamlRepository(BaseRepository):
             rows_pm: list[PaymentMethodRow] = tables["payment_methods"][loc]
             rows_scoped = _filter_pm_by_cur(rows_pm, cur)
             return self._filter_pm(rows_scoped, q, limit)
-        rows_c: list[CityRow] = tables["cities"][loc]
-        return self._filter_cities(rows_c, q, limit)
+        return _filter_cities_search_all_display_locale(tables, loc, q, limit)
 
     async def count_payment_methods_for_currency(
         self,
@@ -377,7 +431,7 @@ class BestchangeYamlRepository(BaseRepository):
     @staticmethod
     def _filter_pm(rows: list[PaymentMethodRow], q: str | None, limit: int) -> list[PaymentMethodRow]:
         if not q or not str(q).strip():
-            return rows[:limit]
+            return _sort_pm_corporate(rows)[:limit]
         needle = _casefold_ci(str(q).strip())
         out: list[PaymentMethodRow] = []
         for r in rows:
@@ -387,22 +441,7 @@ class BestchangeYamlRepository(BaseRepository):
                 or needle in _casefold_ci(r.name)
             ):
                 out.append(r)
-                if len(out) >= limit:
-                    break
-        return out
-
-    @staticmethod
-    def _filter_cities(rows: list[CityRow], q: str | None, limit: int) -> list[CityRow]:
-        if not q or not str(q).strip():
-            return rows[:limit]
-        needle = _casefold_ci(str(q).strip())
-        out: list[CityRow] = []
-        for r in rows:
-            if needle in _casefold_ci(str(r.id)) or needle in _casefold_ci(r.name):
-                out.append(r)
-                if len(out) >= limit:
-                    break
-        return out
+        return _sort_pm_corporate(out)[:limit]
 
     async def _scalar_max_id(self) -> int | None:
         stmt = select(func.max(BestchangeYamlSnapshot.id))

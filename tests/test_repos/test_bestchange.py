@@ -188,11 +188,12 @@ async def test_list_without_locale_searches_all_localized_names(bestchange_repo:
     assert pm_all[0].name == "Only English"
 
     city_en = await bestchange_repo.list("cities", locale="en", q="Тул", limit=10)
-    assert len(city_en) == 0
+    assert len(city_en) == 1 and city_en[0].id == 7
+    assert city_en[0].name == "Tula"
 
     city_all = await bestchange_repo.list("cities", locale=None, q="Тул", limit=10)
     assert len(city_all) == 1 and city_all[0].id == 7
-    assert city_all[0].name == "Tula"
+    assert city_all[0].name == "Тула"
 
 
 @pytest.mark.asyncio
@@ -283,11 +284,36 @@ async def test_list_payment_methods_empty_q_cur_before_limit(bestchange_repo: Be
     await test_db.commit()
 
     rows = await bestchange_repo.list("payment_methods", locale="en", q=None, cur="USD", limit=5)
-    # Порядок как в снимке: сортировка по name.lower(), затем payment_code
+    # Корпоративная сортировка: CORP*/WIRE* сверху (здесь нет), иначе по имени и коду — как раньше по имени
     assert [r.payment_code for r in rows] == ["U5", "U4", "U1", "U3", "U2"]
 
     n = await bestchange_repo.count_payment_methods_for_currency(locale="en", cur="USD")
     assert n == 5
+
+
+@pytest.mark.asyncio
+async def test_list_payment_methods_corporate_priority_corp_wire(bestchange_repo: BestchangeYamlRepository, test_db):
+    """CORP* и WIRE* выше остальных для любого фиата (корпоративный сценарий)."""
+    snap = BestchangeYamlSnapshot(
+        file_hash="corp" + "0" * 60,
+        exported_at=datetime(2025, 12, 1, tzinfo=timezone.utc),
+        payload={
+            "payment_methods": [
+                {"payment_code": "ZZZUSD", "cur": "USD", "payment_name": "Z last", "payment_name_en": "Z last"},
+                {"payment_code": "WIREUSD", "cur": "USD", "payment_name": "Wire", "payment_name_en": "Wire"},
+                {"payment_code": "CORPUSD", "cur": "USD", "payment_name": "Corp", "payment_name_en": "Corp"},
+            ],
+            "cities": [],
+        },
+    )
+    test_db.add(snap)
+    await test_db.commit()
+
+    rows = await bestchange_repo.list("payment_methods", locale="en", q=None, cur="USD", limit=10)
+    assert [r.payment_code for r in rows] == ["CORPUSD", "WIREUSD", "ZZZUSD"]
+
+    rows_q = await bestchange_repo.list("payment_methods", locale="en", q="us", cur="USD", limit=10)
+    assert [r.payment_code for r in rows_q] == ["CORPUSD", "WIREUSD", "ZZZUSD"]
 
 
 @pytest.mark.asyncio

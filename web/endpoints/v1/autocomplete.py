@@ -35,7 +35,10 @@ async def autocomplete_cities(
     ),
     locale: str | None = Query(
         None,
-        description="Код языка как в i18n (en, ru). Если не указан — поиск по всем локалям; в ответе имена в основном как en.",
+        description=(
+            "Код языка как в i18n (en, ru): имена в ответе на этом языке; "
+            "подстрока q ищется по всем локалям. Если не указан — см. репозиторий (ru затем en)."
+        ),
     ),
     limit: int = Query(50, ge=1, le=200),
 ):

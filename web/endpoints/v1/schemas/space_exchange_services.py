@@ -33,6 +33,7 @@ class ExchangeServiceOut(BaseModel):
     network: str
     contract_address: str
     stablecoin_base_currency: Optional[str] = None
+    title: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
     payment_code: Optional[str] = None
     rate_mode: str
@@ -62,6 +63,7 @@ class CreateExchangeServiceRequest(BaseModel):
     network: str = Field(..., min_length=1, max_length=64)
     contract_address: str = Field(..., min_length=1, max_length=128)
     stablecoin_base_currency: Optional[str] = Field(None, max_length=3)
+    title: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = None
     payment_code: Optional[str] = Field(None, max_length=128)
     rate_mode: str = Field(..., description="manual | on_request | ratios")
@@ -72,7 +74,13 @@ class CreateExchangeServiceRequest(BaseModel):
     min_fiat_amount: Decimal
     max_fiat_amount: Decimal
     requisites_form_schema: dict[str, Any] = Field(default_factory=dict)
-    verification_requirements: dict[str, Any] = Field(default_factory=dict)
+    verification_requirements: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "Произвольный JSON; для наличных (cash): "
+            "`cash: true`, `cash_cities: [{id?, name}]`, при этом `payment_code` должен быть `CASH`+ISO фиата."
+        ),
+    )
     is_active: bool = True
     fee_tiers: Optional[list[ExchangeServiceFeeTierIn]] = None
 
@@ -84,6 +92,7 @@ class PatchExchangeServiceRequest(BaseModel):
     network: Optional[str] = Field(None, min_length=1, max_length=64)
     contract_address: Optional[str] = Field(None, min_length=1, max_length=128)
     stablecoin_base_currency: Optional[str] = Field(None, max_length=3)
+    title: Optional[str] = Field(None, min_length=1, max_length=255)
     description: Optional[str] = None
     payment_code: Optional[str] = Field(None, max_length=128)
     rate_mode: Optional[str] = None
@@ -123,6 +132,7 @@ def exchange_service_to_out(row, tiers) -> ExchangeServiceOut:
         network=row.network,
         contract_address=row.contract_address,
         stablecoin_base_currency=row.stablecoin_base_currency,
+        title=row.title,
         description=row.description,
         payment_code=row.payment_code,
         rate_mode=row.rate_mode,

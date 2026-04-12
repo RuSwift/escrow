@@ -96,6 +96,56 @@ def _validate_payload(
             )
 
 
+def _validate_cash_verification(
+    *,
+    fiat: str,
+    payment_code: str | None,
+    verif: dict[str, Any],
+) -> None:
+    """
+    Наличные направления: ``verification_requirements.cash`` и ``cash_cities``;
+    при ``cash is True`` — непустой список городов и ``payment_code == CASH{FIAT}``.
+    """
+    cash = verif.get("cash")
+    if cash is not True:
+        return
+    cities = verif.get("cash_cities")
+    if not isinstance(cities, list) or len(cities) < 1:
+        raise ExchangeServiceValidationError(
+            "cash_cities_required",
+            "cash_cities must be a non-empty list when cash is true",
+        )
+    fiat_u = _strip(fiat).upper()
+    if len(fiat_u) != 3:
+        return
+    expected_pc = f"CASH{fiat_u}"
+    pc = _strip(payment_code or "").upper()
+    if pc != expected_pc:
+        raise ExchangeServiceValidationError(
+            "cash_payment_code_mismatch",
+            f"payment_code must be {expected_pc} for cash directions",
+        )
+    for c in cities:
+        if isinstance(c, dict):
+            nm = _strip(str(c.get("name", "")))
+            if not nm:
+                raise ExchangeServiceValidationError(
+                    "cash_city_name_required",
+                    "each cash_cities item must have a non-empty name",
+                )
+        elif isinstance(c, str):
+            if not _strip(c):
+                raise ExchangeServiceValidationError(
+                    "cash_city_name_required",
+                    "each cash_cities item must be a non-empty string or object with name",
+                )
+        else:
+            raise ExchangeServiceValidationError(
+                "invalid_cash_city",
+                "cash_cities items must be objects with name or non-empty strings",
+            )
+
+
 def _parse_dt(v: Any) -> datetime | None:
     if v is None or v == "":
         return None
@@ -171,6 +221,23 @@ class SpaceExchangeService:
         rcp = payload.get("ratios_commission_percent")
         rcp_d = Decimal(str(rcp)) if rcp is not None else None
         payment_code = _optional_str(payload.get("payment_code"))
+        title_raw = payload.get("title")
+        if title_raw is None:
+            raise ExchangeServiceValidationError(
+                "title_required",
+                "title is required",
+            )
+        title = _strip(str(title_raw))
+        if not title:
+            raise ExchangeServiceValidationError(
+                "title_required",
+                "title must not be empty",
+            )
+        if len(title) > 255:
+            raise ExchangeServiceValidationError(
+                "title_too_long",
+                "title must be at most 255 characters",
+            )
         description = _optional_text(payload.get("description"))
         requisites = payload.get("requisites_form_schema") or {}
         verif = payload.get("verification_requirements") or {}
@@ -184,6 +251,11 @@ class SpaceExchangeService:
                 "invalid_verif",
                 "verification_requirements must be an object",
             )
+        _validate_cash_verification(
+            fiat=fiat,
+            payment_code=payment_code,
+            verif=verif,
+        )
         _validate_payload(
             rate_mode=rm,
             manual_rate=mr,
@@ -199,6 +271,7 @@ class SpaceExchangeService:
             "network": _strip(payload.get("network", "")),
             "contract_address": _strip(payload.get("contract_address", "")),
             "stablecoin_base_currency": sc_base.upper() if sc_base else None,
+            "title": title,
             "description": description,
             "payment_code": payment_code,
             "rate_mode": rm,
@@ -261,6 +334,19 @@ class SpaceExchangeService:
         if "stablecoin_base_currency" in payload:
             v = _optional_str(payload["stablecoin_base_currency"])
             fields["stablecoin_base_currency"] = v.upper() if v else None
+        if "title" in payload:
+            t = _strip(str(payload["title"]))
+            if not t:
+                raise ExchangeServiceValidationError(
+                    "title_required",
+                    "title must not be empty",
+                )
+            if len(t) > 255:
+                raise ExchangeServiceValidationError(
+                    "title_too_long",
+                    "title must be at most 255 characters",
+                )
+            fields["title"] = t
         if "description" in payload:
             fields["description"] = _optional_text(payload["description"])
         if "payment_code" in payload:
@@ -304,6 +390,22 @@ class SpaceExchangeService:
         if not fields and not replace_fee_tiers:
             tiers = await self._repo.list_fee_tiers(int(row.id))
             return row, tiers
+        ver_merged: dict[str, Any] = dict(row.verification_requirements or {})
+        if "verification_requirements" in fields:
+            ver_merged = dict(fields["verification_requirements"] or {})
+        pc_merged = (
+            fields["payment_code"] if "payment_code" in fields else row.payment_code
+        )
+        fiat_merged = (
+            fields["fiat_currency_code"]
+            if "fiat_currency_code" in fields
+            else row.fiat_currency_code
+        )
+        _validate_cash_verification(
+            fiat=str(fiat_merged or ""),
+            payment_code=_optional_str(pc_merged),
+            verif=ver_merged,
+        )
         rm = fields.get("rate_mode", row.rate_mode)
         mr = fields.get("manual_rate", row.manual_rate)
         rk = fields.get("ratios_engine_key", row.ratios_engine_key)

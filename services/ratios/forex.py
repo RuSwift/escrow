@@ -49,11 +49,13 @@ class ForexEngine(BaseRatioEngine):
             return []
         pairs = []
         dt = datetime.strptime(data["date"], "%Y-%m-%d")
-        for quote, ratio in data["usd"].items():
+        # В usd.json значения — сколько единиц quote за 1 USD (напр. rub≈77 → 1 USD = 77 RUB).
+        # ExchangePair: 1 base = ratio quote → ratio = quote_per_1_USD.
+        for quote, quote_per_usd in data["usd"].items():
             p = ExchangePair(
                 base="USD",
                 quote=str(quote).upper(),
-                ratio=1 / ratio,
+                ratio=float(quote_per_usd),
                 utc=datetime_to_float(dt),
             )
             pairs.append(p)

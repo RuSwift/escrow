@@ -2,9 +2,19 @@
  * Vue 2 компонент: Мой Бизнес. Интерфейс из _temp/MyBusiness.vue.
  * Управление платежными сервисами (направления) и контрагентами (партнерская сеть).
  * Модалка multisig: multisig_config_modal.js → <multisig-config-modal>.
+ * Справка по направлению: new_service_help_modal.js → <new-service-help-modal>.
+ * Предпросмотр формы реквизитов: payment_form_preview_modal.js → <payment-form-preview-modal>.
  */
 (function() {
-    var FIAT_OPTIONS = ['RUB', 'USD', 'EUR', 'GBP', 'KZT', 'UAH', 'TRY', 'AED'];
+    var PAYMENT_CODE_AC_DEBOUNCE_MS = 280;
+    var PAYMENT_CODE_AC_LIMIT = 50;
+    var CASH_CITY_AC_DEBOUNCE_MS = 280;
+    var CASH_CITY_AC_LIMIT = 50;
+    var FIAT_AC_DEBOUNCE_MS = 280;
+    var FIAT_AC_LIMIT = 50;
+    /** Таймаут fetch фиатного autocomplete: иначе при зависании бэка индикатор «Загрузка…» не сбрасывается. */
+    var FIAT_AC_FETCH_TIMEOUT_MS = 15000;
+    var PAYMENT_CODE_FETCH_TIMEOUT_MS = 15000;
     var CRYPTO_OPTIONS = ['USDT TRC20', 'A7A5 TRC20'];
     /** Подписи UI → поля API (синхронно с дефолтным каталогом collateral stablecoin). */
     var CRYPTO_META = {
@@ -22,6 +32,131 @@
         }
     };
 
+    function unwrapApiRoot(data) {
+        if (data && data.root && typeof data.root === 'object') return data.root;
+        return data;
+    }
+
+    /** Заголовки JSON API как в fetchCreateModalRatios (Bearer из localStorage). */
+    function mainAppJsonFetchHeaders() {
+        var h = { Accept: 'application/json' };
+        try {
+            var key = (typeof window !== 'undefined' && window.main_auth_token_key)
+                ? window.main_auth_token_key
+                : 'main_auth_token';
+            var token = localStorage.getItem(key);
+            if (token) h.Authorization = 'Bearer ' + token;
+        } catch (e) {}
+        return h;
+    }
+
+    /** Сколько USD в 1 единице фиата по строкам одного движка (как в ExchangePair на бэке). */
+    function usdPerOneFiatFromEngineRows(rows, fiat) {
+        if (!Array.isArray(rows)) return null;
+        var i;
+        var row;
+        var p;
+        var r;
+        for (i = 0; i < rows.length; i++) {
+            row = rows[i];
+            p = row && row.pair;
+            if (!p || typeof p.ratio !== 'number' || !isFinite(p.ratio) || p.ratio <= 0) continue;
+            r = p.ratio;
+            if (row.base === 'USD' && row.quote === fiat) return 1 / r;
+            if (row.base === fiat && row.quote === 'USD') return r;
+        }
+        return null;
+    }
+
+    function resolveRatiosEngineKey(ratiosRaw, preferred) {
+        if (!ratiosRaw || typeof ratiosRaw !== 'object') return null;
+        var keys = Object.keys(ratiosRaw).filter(function(k) {
+            return Array.isArray(ratiosRaw[k]);
+        });
+        if (!keys.length) return null;
+        var p = (preferred || '').trim().toLowerCase();
+        var i;
+        if (p) {
+            for (i = 0; i < keys.length; i++) {
+                if (keys[i].toLowerCase() === p) return keys[i];
+            }
+        }
+        for (i = 0; i < keys.length; i++) {
+            if (keys[i].toLowerCase() === 'forex') return keys[i];
+        }
+        return keys.sort()[0];
+    }
+
+    /**
+     * Разбор суммы из поля ввода (пробелы, тысячные запятые/точки en, десятичная «10,5»).
+     */
+    function mainAppLocale() {
+        if (typeof window !== 'undefined' && window.__LOCALE__) {
+            return String(window.__LOCALE__).trim() || 'en';
+        }
+        return 'en';
+    }
+
+    /** Локаль для GET /v1/autocomplete/cities — как язык UI (профиль спейса / Vue i18n). */
+    function autocompleteUiLocale(vm) {
+        var raw = '';
+        try {
+            if (vm && vm.$i18n && vm.$i18n.locale) {
+                raw = String(vm.$i18n.locale);
+            }
+        } catch (e) {}
+        if (!raw) raw = mainAppLocale();
+        var code = String(raw).trim().split('-')[0].toLowerCase();
+        return code === 'ru' ? 'ru' : 'en';
+    }
+
+    function parseFiatAmountInputString(str) {
+        var s = String(str == null ? '' : str).replace(/[\s\u00a0\u202f]/g, '');
+        if (!s) return NaN;
+        var hasComma = s.indexOf(',') >= 0;
+        var hasDot = s.indexOf('.') >= 0;
+        if (hasComma && hasDot) {
+            if (s.lastIndexOf(',') > s.lastIndexOf('.')) {
+                s = s.replace(/\./g, '').replace(',', '.');
+            } else {
+                s = s.replace(/,/g, '');
+            }
+        } else if (hasComma && !hasDot) {
+            var parts = s.split(',');
+            if (parts.length === 2 && parts[1].length <= 2) {
+                s = parts[0].replace(/\./g, '') + '.' + parts[1];
+            } else {
+                s = s.replace(/,/g, '');
+            }
+        } else {
+            s = s.replace(/,/g, '');
+        }
+        var n = parseFloat(s);
+        return isFinite(n) ? n : NaN;
+    }
+
+    function usdPerOneFiatFromRatios(ratiosRaw, fiatCode, preferredEngineKey) {
+        var f = (fiatCode || '').trim().toUpperCase();
+        if (!f) return null;
+        if (f === 'USD') return 1;
+        if (!ratiosRaw || typeof ratiosRaw !== 'object') return null;
+        var eng = resolveRatiosEngineKey(ratiosRaw, preferredEngineKey);
+        var u;
+        if (eng && ratiosRaw[eng]) {
+            u = usdPerOneFiatFromEngineRows(ratiosRaw[eng], f);
+            if (u != null) return u;
+        }
+        var keys = Object.keys(ratiosRaw).filter(function(k) {
+            return Array.isArray(ratiosRaw[k]);
+        });
+        var j;
+        for (j = 0; j < keys.length; j++) {
+            u = usdPerOneFiatFromEngineRows(ratiosRaw[keys[j]], f);
+            if (u != null) return u;
+        }
+        return null;
+    }
+
     function mapExchangeItemFromApi(it) {
         var rt = 'request';
         if (it.rate_mode === 'ratios') rt = 'forex';
@@ -33,9 +168,15 @@
             comm = parseFloat(it.ratios_commission_percent) || 0;
         }
         var cry = (it.stablecoin_symbol || '') + ' ' + String(it.network || '').toUpperCase();
+        var vr = it.verification_requirements && typeof it.verification_requirements === 'object'
+            ? it.verification_requirements
+            : {};
+        var cash = vr.cash === true;
+        var cashCities = Array.isArray(vr.cash_cities) ? vr.cash_cities : [];
         return {
             id: it.id,
             type: it.service_type === 'on_ramp' ? 'onRamp' : 'offRamp',
+            title: (it.title || '').trim(),
             fiatCurrency: it.fiat_currency_code,
             cryptoCurrency: cry,
             rateType: rt,
@@ -44,6 +185,8 @@
             description: it.description || '',
             payment_code: it.payment_code || '',
             rate_mode: it.rate_mode,
+            cash: cash,
+            cashCities: cashCities,
             _api: it
         };
     }
@@ -58,17 +201,16 @@
                     { id: 'p2', name: 'CryptoBridge Ltd', serviceType: 'offRamp (GBP/USDT)', baseCommission: 0.8, myCommission: 0.5, status: 'connected' }
                 ],
                 showCreateModal: false,
+                showNewServiceHelpModal: false,
                 exchangeServicesLoading: false,
                 exchangeServicesError: null,
                 exchangeSaving: false,
                 showFormPreviewModal: false,
-                formPreviewLoading: false,
-                formPreviewError: null,
-                formPreviewPayload: null,
                 formPreviewCode: '',
                 showPartnerModal: false,
                 newService: {
                     type: 'onRamp',
+                    title: '',
                     fiatCurrency: '',
                     cryptoCurrency: 'USDT TRC20',
                     rateType: 'forex',
@@ -77,7 +219,11 @@
                     maxFiat: 1000000,
                     description: '',
                     payment_code: '',
-                    ratiosEngineKey: 'forex'
+                    ratiosEngineKey: 'forex',
+                    cash: false,
+                    cashCities: [],
+                    cashCityInput: '',
+                    _paymentCodeBackup: ''
                 },
                 newPartner: {
                     name: '',
@@ -111,20 +257,44 @@
                 rampBalancesRowRefreshingId: null,
                 showRampMultisigWizard: false,
                 rampMultisigWizardWallet: null,
-                rampWalletsExpanded: true
+                rampWalletsExpanded: true,
+                /** Показ autocomplete по фиату: GET /v1/autocomplete/currencies?is_fiat=true (как guarantor.js). */
+                fiatAutocompleteOpen: false,
+                fiatCurrencySuggestions: [],
+                fiatCurrencyLoading: false,
+                fiatCurrencyNoHits: false,
+                fiatCurrencyFetchGen: 0,
+                fiatCurrencyTimer: null,
+                /** Autocomplete кодов оплаты: GET /v1/autocomplete/directions?cur=… */
+                paymentCodeAutocompleteOpen: false,
+                paymentCodeSuggestions: [],
+                paymentCodeTotalForCur: null,
+                paymentCodeNoHits: false,
+                paymentCodeLoading: false,
+                paymentCodeFetchGen: 0,
+                paymentCodeTimer: null,
+                /** GET /v1/autocomplete/cities — города из bc.yaml (наличные). */
+                cashCityAutocompleteOpen: false,
+                cashCitySuggestions: [],
+                cashCityLoading: false,
+                cashCityFetchGen: 0,
+                cashCityTimer: null,
+                /** Снимок GET /v1/dashboard/ratios для ориентира лимитов в USD в модалке создания сервиса. */
+                createModalRatiosRaw: null,
+                /** После завершения запроса котировок (успех или ошибка) — чтобы не показывать «курсы не найдены» до ответа. */
+                createModalRatiosFetchDone: false,
+                /** Отображаемые строки лимитов фиата (с группировкой разрядов); числа — в newService.minFiat / maxFiat. */
+                createModalMinFiatText: '1',
+                createModalMaxFiatText: '1000000'
             };
         },
         mounted: function() {
             this.fetchUiPrefs();
             this.fetchRampWallets();
             this.fetchExchangeServices();
+            this.syncCreateModalFiatLimitTexts();
         },
         computed: {
-            filteredFiats: function() {
-                var q = (this.newService.fiatCurrency || '').toLowerCase();
-                if (!q) return [];
-                return FIAT_OPTIONS.filter(function(f) { return f.toLowerCase().indexOf(q) !== -1; });
-            },
             onRampCount: function() { return this.services.filter(function(s) { return s.type === 'onRamp'; }).length; },
             offRampCount: function() { return this.services.filter(function(s) { return s.type === 'offRamp'; }).length; },
             rampParticipantCandidates: function() {
@@ -187,6 +357,75 @@
                 return Object.keys(sums).sort().map(function(sym) {
                     return { symbol: sym, amount: sums[sym] };
                 });
+            },
+            createModalHasFiat: function() {
+                return !!(this.newService.fiatCurrency || '').trim();
+            },
+            /** Нормализованный трёхбуквенный ISO-код или '' если ввод неполный/неверный. */
+            createModalFiatIso3: function() {
+                var t = (this.newService.fiatCurrency || '').trim().toUpperCase();
+                return /^[A-Z]{3}$/.test(t) ? t : '';
+            },
+            /** Есть котировка к USD в снимке дашборда (USD всегда без запроса). */
+            createModalFiatRatesOk: function() {
+                if (!this.createModalHasFiat) return false;
+                var iso = this.createModalFiatIso3;
+                if (!iso) return false;
+                if (iso === 'USD') return true;
+                if (!this.createModalRatiosFetchDone) return false;
+                var per = usdPerOneFiatFromRatios(
+                    this.createModalRatiosRaw,
+                    iso,
+                    this.newService.ratiosEngineKey
+                );
+                return per != null;
+            },
+            /** Неверный код или нет пары в снимке после загрузки — честное предупреждение, лимиты остаются доступны. */
+            createModalShowRatesNotFound: function() {
+                if (!this.createModalHasFiat) return false;
+                var iso = this.createModalFiatIso3;
+                if (!iso) return true;
+                if (iso === 'USD') return false;
+                if (!this.createModalRatiosFetchDone) return false;
+                return usdPerOneFiatFromRatios(
+                    this.createModalRatiosRaw,
+                    iso,
+                    this.newService.ratiosEngineKey
+                ) == null;
+            },
+            createModalFiatUsdHintLine: function() {
+                if (!this.createModalFiatRatesOk) return '';
+                var fiat = this.createModalFiatIso3;
+                if (!fiat) return '';
+                var min = parseFloat(this.newService.minFiat);
+                var max = parseFloat(this.newService.maxFiat);
+                if (!isFinite(min) || !isFinite(max)) return '';
+                var per = usdPerOneFiatFromRatios(
+                    this.createModalRatiosRaw,
+                    fiat,
+                    this.newService.ratiosEngineKey
+                );
+                if (per == null) return '';
+                return this.$t('main.my_business.fiat_limits_usd_hint', {
+                    min: this.formatUsdApproxForHint(min * per),
+                    max: this.formatUsdApproxForHint(max * per)
+                });
+            },
+            /** Наличные: автокод CASH+FIAT и блокировка поля кода при >=1 городе. */
+            cashLocked: function() {
+                return !!(this.newService.cash
+                    && (this.newService.cashCities || []).length >= 1
+                    && this.createModalFiatIso3);
+            },
+            createModalLaunchDisabled: function() {
+                if (this.exchangeSaving) return true;
+                if (!(this.newService.fiatCurrency || '').trim()) return true;
+                if (!(this.newService.title || '').trim()) return true;
+                if (this.newService.cash) {
+                    if (!this.createModalFiatIso3) return true;
+                    if (!(this.newService.cashCities || []).length) return true;
+                }
+                return false;
             }
         },
         methods: {
@@ -199,9 +438,445 @@
             openCreateServiceModal: function() {
                 this.resetNewServiceForm();
                 this.exchangeServicesError = null;
+                this.fiatAutocompleteOpen = false;
                 this.showCreateModal = true;
+                this.fetchCreateModalRatios();
             },
-            selectFiat: function(fiat) { this.newService.fiatCurrency = fiat; },
+            fetchCreateModalRatios: function() {
+                var self = this;
+                self.createModalRatiosFetchDone = false;
+                return fetch('/v1/dashboard/ratios', {
+                    method: 'GET',
+                    headers: mainAppJsonFetchHeaders(),
+                    credentials: 'include'
+                })
+                    .then(function(res) {
+                        if (!res.ok) throw new Error('HTTP ' + res.status);
+                        return res.json();
+                    })
+                    .then(function(data) {
+                        data = unwrapApiRoot(data);
+                        self.createModalRatiosRaw = data && typeof data === 'object' ? data : null;
+                    })
+                    .catch(function() {
+                        self.createModalRatiosRaw = null;
+                    })
+                    .finally(function() {
+                        self.createModalRatiosFetchDone = true;
+                    });
+            },
+            formatUsdApproxForHint: function(n) {
+                if (!isFinite(n)) return '—';
+                var abs = Math.abs(n);
+                var maxFrac = abs >= 1000 ? 0 : 2;
+                return '$' + Number(n).toLocaleString('en-US', {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: maxFrac
+                });
+            },
+            selectFiat: function(fiat) {
+                this.newService.fiatCurrency = fiat;
+                this.fiatAutocompleteOpen = false;
+                this.fiatCurrencySuggestions = [];
+                this.fiatCurrencyNoHits = false;
+                this.newService.payment_code = '';
+                this.newService._paymentCodeBackup = '';
+                this.paymentCodeSuggestions = [];
+                this.paymentCodeAutocompleteOpen = false;
+                this.paymentCodeLoading = false;
+                this._abortCreateModalPaymentCodeRequest();
+                this.applyCashPaymentRules();
+            },
+            clearCreateModalFiatCurrency: function() {
+                this.newService.fiatCurrency = '';
+                this.fiatAutocompleteOpen = false;
+                this.fiatCurrencySuggestions = [];
+                this.fiatCurrencyNoHits = false;
+                this._abortCreateModalFiatCurrencyRequest();
+                this.newService.payment_code = '';
+                this.newService._paymentCodeBackup = '';
+                this.paymentCodeSuggestions = [];
+                this.paymentCodeAutocompleteOpen = false;
+                this.paymentCodeLoading = false;
+                this._abortCreateModalPaymentCodeRequest();
+                this.applyCashPaymentRules();
+            },
+            _abortCreateModalFiatCurrencyRequest: function() {
+                if (this._fiatCurrencyAbortController) {
+                    try {
+                        this._fiatCurrencyAbortController.abort();
+                    } catch (e) {}
+                    this._fiatCurrencyAbortController = null;
+                }
+            },
+            fetchCreateModalFiatCurrencies: function(q) {
+                var self = this;
+                if (self._fiatCurrencyTimeoutId) {
+                    clearTimeout(self._fiatCurrencyTimeoutId);
+                    self._fiatCurrencyTimeoutId = null;
+                }
+                self._abortCreateModalFiatCurrencyRequest();
+                var fetchOpts = {
+                    credentials: 'include',
+                    headers: mainAppJsonFetchHeaders()
+                };
+                if (typeof AbortController !== 'undefined') {
+                    self._fiatCurrencyAbortController = new AbortController();
+                    fetchOpts.signal = self._fiatCurrencyAbortController.signal;
+                }
+                self.fiatCurrencyFetchGen += 1;
+                var gen = self.fiatCurrencyFetchGen;
+                self.fiatCurrencyLoading = true;
+                self.fiatCurrencyNoHits = false;
+                var url =
+                    '/v1/autocomplete/currencies?is_fiat=true&limit=' +
+                    encodeURIComponent(String(FIAT_AC_LIMIT)) +
+                    (q ? '&q=' + encodeURIComponent(q) : '');
+                if (self._fiatCurrencyAbortController && FIAT_AC_FETCH_TIMEOUT_MS > 0) {
+                    self._fiatCurrencyTimeoutId = setTimeout(function() {
+                        self._fiatCurrencyTimeoutId = null;
+                        try {
+                            if (self._fiatCurrencyAbortController) self._fiatCurrencyAbortController.abort();
+                        } catch (e) {}
+                    }, FIAT_AC_FETCH_TIMEOUT_MS);
+                }
+                fetch(url, fetchOpts)
+                    .then(function(r) {
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        if (gen !== self.fiatCurrencyFetchGen) return;
+                        var payload = data && data.root && typeof data.root === 'object' ? data.root : data;
+                        var items = (payload && payload.items) ? payload.items : [];
+                        self.fiatCurrencySuggestions = items;
+                        self.fiatCurrencyNoHits =
+                            items.length === 0 && q && String(q).trim().length >= 1;
+                        self.fiatAutocompleteOpen = true;
+                    })
+                    .catch(function(err) {
+                        if (err && err.name === 'AbortError') return;
+                        if (gen !== self.fiatCurrencyFetchGen) return;
+                        self.fiatCurrencySuggestions = [];
+                        self.fiatCurrencyNoHits = false;
+                    })
+                    .then(function() {
+                        if (self._fiatCurrencyTimeoutId) {
+                            clearTimeout(self._fiatCurrencyTimeoutId);
+                            self._fiatCurrencyTimeoutId = null;
+                        }
+                        if (gen !== self.fiatCurrencyFetchGen) return;
+                        self.fiatCurrencyLoading = false;
+                    });
+            },
+            onFiatInputFocus: function() {
+                this.fiatAutocompleteOpen = true;
+                this.fetchCreateModalFiatCurrencies((this.newService.fiatCurrency || '').trim());
+            },
+            onFiatInputInput: function() {
+                this.fiatAutocompleteOpen = true;
+                var self = this;
+                if (self.fiatCurrencyTimer) clearTimeout(self.fiatCurrencyTimer);
+                self.fiatCurrencyTimer = setTimeout(function() {
+                    self.fetchCreateModalFiatCurrencies((self.newService.fiatCurrency || '').trim());
+                }, FIAT_AC_DEBOUNCE_MS);
+            },
+            onFiatInputBlur: function() {
+                var self = this;
+                setTimeout(function() {
+                    self.fiatAutocompleteOpen = false;
+                }, 200);
+            },
+            fetchCreateModalPaymentDirections: function(q) {
+                var iso = this.createModalFiatIso3;
+                if (!iso) {
+                    this.paymentCodeSuggestions = [];
+                    this.paymentCodeTotalForCur = null;
+                    this.paymentCodeLoading = false;
+                    this._abortCreateModalPaymentCodeRequest();
+                    return;
+                }
+                var self = this;
+                if (self._paymentCodeTimeoutId) {
+                    clearTimeout(self._paymentCodeTimeoutId);
+                    self._paymentCodeTimeoutId = null;
+                }
+                self._abortCreateModalPaymentCodeRequest();
+                var fetchOpts = {
+                    credentials: 'include',
+                    headers: mainAppJsonFetchHeaders()
+                };
+                if (typeof AbortController !== 'undefined') {
+                    self._paymentCodeAbortController = new AbortController();
+                    fetchOpts.signal = self._paymentCodeAbortController.signal;
+                }
+                self.paymentCodeFetchGen += 1;
+                var gen = self.paymentCodeFetchGen;
+                self.paymentCodeLoading = true;
+                self.paymentCodeNoHits = false;
+                var url =
+                    '/v1/autocomplete/directions?locale=' +
+                    encodeURIComponent(mainAppLocale()) +
+                    '&limit=' +
+                    encodeURIComponent(String(PAYMENT_CODE_AC_LIMIT)) +
+                    '&cur=' +
+                    encodeURIComponent(iso) +
+                    (q ? '&q=' + encodeURIComponent(q) : '');
+                if (self._paymentCodeAbortController && PAYMENT_CODE_FETCH_TIMEOUT_MS > 0) {
+                    self._paymentCodeTimeoutId = setTimeout(function() {
+                        self._paymentCodeTimeoutId = null;
+                        try {
+                            if (self._paymentCodeAbortController) self._paymentCodeAbortController.abort();
+                        } catch (e) {}
+                    }, PAYMENT_CODE_FETCH_TIMEOUT_MS);
+                }
+                fetch(url, fetchOpts)
+                    .then(function(r) {
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        if (gen !== self.paymentCodeFetchGen) return;
+                        var payload = data && data.root && typeof data.root === 'object' ? data.root : data;
+                        self.paymentCodeSuggestions = (payload && payload.items) ? payload.items : [];
+                        self.paymentCodeTotalForCur =
+                            payload && typeof payload.total_for_cur === 'number' ? payload.total_for_cur : null;
+                        self.paymentCodeNoHits =
+                            self.paymentCodeSuggestions.length === 0 && q && String(q).trim().length >= 1;
+                        self.paymentCodeAutocompleteOpen = true;
+                    })
+                    .catch(function(err) {
+                        if (err && err.name === 'AbortError') return;
+                        if (gen !== self.paymentCodeFetchGen) return;
+                        self.paymentCodeSuggestions = [];
+                        self.paymentCodeTotalForCur = null;
+                        self.paymentCodeNoHits = true;
+                    })
+                    .then(function() {
+                        if (self._paymentCodeTimeoutId) {
+                            clearTimeout(self._paymentCodeTimeoutId);
+                            self._paymentCodeTimeoutId = null;
+                        }
+                        if (gen !== self.paymentCodeFetchGen) return;
+                        self.paymentCodeLoading = false;
+                    });
+            },
+            /** Отмена предыдущего запроса автокомплита способов оплаты (новый fetch перезапускает). */
+            _abortCreateModalPaymentCodeRequest: function() {
+                if (this._paymentCodeAbortController) {
+                    try {
+                        this._paymentCodeAbortController.abort();
+                    } catch (e) {}
+                    this._paymentCodeAbortController = null;
+                }
+            },
+            onPaymentCodeFocus: function() {
+                if (this.cashLocked) return;
+                if (!this.createModalFiatIso3) return;
+                this.paymentCodeAutocompleteOpen = true;
+                this.fetchCreateModalPaymentDirections((this.newService.payment_code || '').trim());
+            },
+            onPaymentCodeInput: function() {
+                if (this.cashLocked) return;
+                if (!this.createModalFiatIso3) return;
+                this.paymentCodeAutocompleteOpen = true;
+                var self = this;
+                if (self.paymentCodeTimer) clearTimeout(self.paymentCodeTimer);
+                self.paymentCodeTimer = setTimeout(function() {
+                    self.fetchCreateModalPaymentDirections((self.newService.payment_code || '').trim());
+                }, PAYMENT_CODE_AC_DEBOUNCE_MS);
+            },
+            onPaymentCodeBlur: function() {
+                var self = this;
+                setTimeout(function() {
+                    self.paymentCodeAutocompleteOpen = false;
+                }, 200);
+            },
+            selectPaymentCodeFromAutocomplete: function(item) {
+                if (!item || !item.payment_code) return;
+                this.newService.payment_code = item.payment_code;
+                this.paymentCodeAutocompleteOpen = false;
+                this.paymentCodeNoHits = false;
+            },
+            applyCashPaymentRules: function() {
+                if (!this.newService.cash) return;
+                var iso = this.createModalFiatIso3;
+                var cities = this.newService.cashCities || [];
+                if (cities.length >= 1 && iso) {
+                    this.newService.payment_code = 'CASH' + iso;
+                } else {
+                    var bak = this.newService._paymentCodeBackup;
+                    this.newService.payment_code = typeof bak === 'string' ? bak : '';
+                }
+            },
+            onCashCheckboxChange: function() {
+                var self = this;
+                if (this.newService.cash) {
+                    this.newService._paymentCodeBackup = this.newService.payment_code || '';
+                    this.applyCashPaymentRules();
+                } else {
+                    this.newService.cashCities = [];
+                    this.newService.cashCityInput = '';
+                    this.cashCityAutocompleteOpen = false;
+                    this.newService.payment_code = this.newService._paymentCodeBackup != null
+                        ? this.newService._paymentCodeBackup
+                        : '';
+                    this.newService._paymentCodeBackup = '';
+                    this._abortCreateModalCashCityRequest();
+                }
+            },
+            _abortCreateModalCashCityRequest: function() {
+                if (this._cashCityAbortController) {
+                    try {
+                        this._cashCityAbortController.abort();
+                    } catch (e) {}
+                    this._cashCityAbortController = null;
+                }
+            },
+            fetchCreateModalCashCities: function(q) {
+                var self = this;
+                if (self._cashCityTimeoutId) {
+                    clearTimeout(self._cashCityTimeoutId);
+                    self._cashCityTimeoutId = null;
+                }
+                self._abortCreateModalCashCityRequest();
+                var fetchOpts = {
+                    credentials: 'include',
+                    headers: mainAppJsonFetchHeaders()
+                };
+                if (typeof AbortController !== 'undefined') {
+                    self._cashCityAbortController = new AbortController();
+                    fetchOpts.signal = self._cashCityAbortController.signal;
+                }
+                self.cashCityFetchGen += 1;
+                var gen = self.cashCityFetchGen;
+                self.cashCityLoading = true;
+                var url =
+                    '/v1/autocomplete/cities?locale=' +
+                    encodeURIComponent(autocompleteUiLocale(self)) +
+                    '&limit=' +
+                    encodeURIComponent(String(CASH_CITY_AC_LIMIT)) +
+                    (q ? '&q=' + encodeURIComponent(q) : '');
+                if (self._cashCityAbortController && FIAT_AC_FETCH_TIMEOUT_MS > 0) {
+                    self._cashCityTimeoutId = setTimeout(function() {
+                        self._cashCityTimeoutId = null;
+                        try {
+                            if (self._cashCityAbortController) self._cashCityAbortController.abort();
+                        } catch (e) {}
+                    }, FIAT_AC_FETCH_TIMEOUT_MS);
+                }
+                fetch(url, fetchOpts)
+                    .then(function(r) {
+                        if (!r.ok) throw new Error('HTTP ' + r.status);
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        if (gen !== self.cashCityFetchGen) return;
+                        var payload = data && data.root && typeof data.root === 'object' ? data.root : data;
+                        self.cashCitySuggestions = (payload && payload.items) ? payload.items : [];
+                        self.cashCityAutocompleteOpen = true;
+                    })
+                    .catch(function(err) {
+                        if (err && err.name === 'AbortError') return;
+                        if (gen !== self.cashCityFetchGen) return;
+                        self.cashCitySuggestions = [];
+                    })
+                    .then(function() {
+                        if (self._cashCityTimeoutId) {
+                            clearTimeout(self._cashCityTimeoutId);
+                            self._cashCityTimeoutId = null;
+                        }
+                        if (gen !== self.cashCityFetchGen) return;
+                        self.cashCityLoading = false;
+                    });
+            },
+            onCashCityFocus: function() {
+                if (!this.newService.cash) return;
+                this.cashCityAutocompleteOpen = true;
+                this.fetchCreateModalCashCities((this.newService.cashCityInput || '').trim());
+            },
+            onCashCityInput: function() {
+                if (!this.newService.cash) return;
+                this.cashCityAutocompleteOpen = true;
+                var self = this;
+                if (self.cashCityTimer) clearTimeout(self.cashCityTimer);
+                self.cashCityTimer = setTimeout(function() {
+                    self.fetchCreateModalCashCities((self.newService.cashCityInput || '').trim());
+                }, CASH_CITY_AC_DEBOUNCE_MS);
+            },
+            onCashCityBlur: function() {
+                var self = this;
+                setTimeout(function() {
+                    self.cashCityAutocompleteOpen = false;
+                }, 200);
+            },
+            onCashCityInputKeydown: function(e) {
+                if (!e || e.key !== 'Enter') return;
+                e.preventDefault();
+                var raw = (this.newService.cashCityInput || '').trim();
+                if (!raw) return;
+                this.addCashCityManual(raw);
+            },
+            addCashCityFromAutocomplete: function(item) {
+                if (!item || item.name == null) return;
+                var name = String(item.name).trim();
+                if (!name) return;
+                var id = item.id != null ? item.id : null;
+                var list = this.newService.cashCities.slice();
+                var exists = list.some(function(c) {
+                    return (c.name || '').trim().toLowerCase() === name.toLowerCase();
+                });
+                if (exists) {
+                    this.cashCityAutocompleteOpen = false;
+                    this.newService.cashCityInput = '';
+                    return;
+                }
+                list.push({ id: id, name: name });
+                this.newService.cashCities = list;
+                this.newService.cashCityInput = '';
+                this.cashCityAutocompleteOpen = false;
+                this.applyCashPaymentRules();
+            },
+            addCashCityManual: function(name) {
+                var n = String(name || '').trim();
+                if (!n) return;
+                var list = this.newService.cashCities.slice();
+                var exists = list.some(function(c) {
+                    return (c.name || '').trim().toLowerCase() === n.toLowerCase();
+                });
+                if (exists) {
+                    this.newService.cashCityInput = '';
+                    this.cashCityAutocompleteOpen = false;
+                    return;
+                }
+                list.push({ id: null, name: n });
+                this.newService.cashCities = list;
+                this.newService.cashCityInput = '';
+                this.cashCityAutocompleteOpen = false;
+                this.applyCashPaymentRules();
+            },
+            removeCashCity: function(index) {
+                var list = (this.newService.cashCities || []).slice();
+                if (index < 0 || index >= list.length) return;
+                list.splice(index, 1);
+                this.newService.cashCities = list;
+                this.applyCashPaymentRules();
+            },
+            serviceCashLockedForCard: function(s) {
+                return !!(s && s.cash && (s.cashCities || []).length);
+            },
+            serviceCashCitiesLine: function(s) {
+                if (!s || !s.cash || !(s.cashCities || []).length) return '';
+                var names = [];
+                (s.cashCities || []).forEach(function(c) {
+                    var nm = '';
+                    if (c && typeof c === 'object') nm = (c.name || '').trim();
+                    else if (typeof c === 'string') nm = c.trim();
+                    if (nm) names.push(nm);
+                });
+                if (!names.length) return '';
+                return this.$t('main.my_business.service_cash_cities_line', { cities: names.join(', ') });
+            },
             exchangeServicesApiBase: function() {
                 var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__)
                     ? String(window.__CURRENT_SPACE__).trim()
@@ -212,6 +887,7 @@
             resetNewServiceForm: function() {
                 this.newService = {
                     type: 'onRamp',
+                    title: '',
                     fiatCurrency: '',
                     cryptoCurrency: 'USDT TRC20',
                     rateType: 'forex',
@@ -220,8 +896,96 @@
                     maxFiat: 1000000,
                     description: '',
                     payment_code: '',
-                    ratiosEngineKey: 'forex'
+                    ratiosEngineKey: 'forex',
+                    cash: false,
+                    cashCities: [],
+                    cashCityInput: '',
+                    _paymentCodeBackup: ''
                 };
+                this.cashCityAutocompleteOpen = false;
+                this.cashCitySuggestions = [];
+                this.cashCityLoading = false;
+                this._abortCreateModalCashCityRequest();
+                if (this._cashCityTimeoutId) {
+                    clearTimeout(this._cashCityTimeoutId);
+                    this._cashCityTimeoutId = null;
+                }
+                if (this.cashCityTimer) {
+                    clearTimeout(this.cashCityTimer);
+                    this.cashCityTimer = null;
+                }
+                this.fiatAutocompleteOpen = false;
+                this.fiatCurrencySuggestions = [];
+                this.fiatCurrencyNoHits = false;
+                this.fiatCurrencyLoading = false;
+                this._abortCreateModalFiatCurrencyRequest();
+                if (this._fiatCurrencyTimeoutId) {
+                    clearTimeout(this._fiatCurrencyTimeoutId);
+                    this._fiatCurrencyTimeoutId = null;
+                }
+                if (this.fiatCurrencyTimer) {
+                    clearTimeout(this.fiatCurrencyTimer);
+                    this.fiatCurrencyTimer = null;
+                }
+                this.paymentCodeAutocompleteOpen = false;
+                this.paymentCodeSuggestions = [];
+                this.paymentCodeTotalForCur = null;
+                this.paymentCodeNoHits = false;
+                this.paymentCodeLoading = false;
+                this._abortCreateModalPaymentCodeRequest();
+                if (this._paymentCodeTimeoutId) {
+                    clearTimeout(this._paymentCodeTimeoutId);
+                    this._paymentCodeTimeoutId = null;
+                }
+                if (this.paymentCodeTimer) {
+                    clearTimeout(this.paymentCodeTimer);
+                    this.paymentCodeTimer = null;
+                }
+                this.syncCreateModalFiatLimitTexts();
+            },
+            fiatLimitsLocale: function() {
+                try {
+                    var loc = this.$i18n && this.$i18n.locale;
+                    if (loc && String(loc).toLowerCase().indexOf('ru') === 0) return 'ru-RU';
+                } catch (e) {}
+                return 'en-US';
+            },
+            formatFiatAmountForLimits: function(n) {
+                if (n == null || !isFinite(Number(n))) return '';
+                return Number(n).toLocaleString(this.fiatLimitsLocale(), {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 2
+                });
+            },
+            syncCreateModalFiatLimitTexts: function() {
+                this.createModalMinFiatText = this.formatFiatAmountForLimits(this.newService.minFiat);
+                this.createModalMaxFiatText = this.formatFiatAmountForLimits(this.newService.maxFiat);
+            },
+            applyCreateModalFiatLimitTextsToNumbers: function() {
+                var min = parseFiatAmountInputString(this.createModalMinFiatText);
+                var max = parseFiatAmountInputString(this.createModalMaxFiatText);
+                if (isFinite(min) && min >= 0) this.newService.minFiat = min;
+                if (isFinite(max) && max >= 0) this.newService.maxFiat = max;
+            },
+            onCreateModalMinFiatLimitInput: function() {
+                var n = parseFiatAmountInputString(this.createModalMinFiatText);
+                if (isFinite(n) && n >= 0) this.newService.minFiat = n;
+            },
+            onCreateModalMinFiatLimitBlur: function() {
+                var n = parseFiatAmountInputString(this.createModalMinFiatText);
+                if (!isFinite(n) || n < 0) n = this.newService.minFiat;
+                this.newService.minFiat = n;
+                this.createModalMinFiatText = this.formatFiatAmountForLimits(n);
+            },
+            onCreateModalMaxFiatLimitInput: function() {
+                var n = parseFiatAmountInputString(this.createModalMaxFiatText);
+                if (isFinite(n) && n >= 0) this.newService.maxFiat = n;
+            },
+            onCreateModalMaxFiatLimitBlur: function() {
+                var n = parseFiatAmountInputString(this.createModalMaxFiatText);
+                if (!isFinite(n) || n < 0) n = this.newService.maxFiat;
+                this.newService.maxFiat = n;
+                this.createModalMaxFiatText = this.formatFiatAmountForLimits(n);
             },
             fetchExchangeServices: function() {
                 var self = this;
@@ -252,6 +1016,8 @@
             },
             addService: function() {
                 if (!(this.newService.fiatCurrency || '').trim()) return;
+                if (!(this.newService.title || '').trim()) return;
+                this.applyCreateModalFiatLimitTextsToNumbers();
                 var self = this;
                 var base = this.exchangeServicesApiBase();
                 if (!base) return;
@@ -259,6 +1025,15 @@
                 var rateMode = this.newService.rateType === 'forex' ? 'ratios' : 'on_request';
                 var comm = parseFloat(this.newService.commission);
                 if (isNaN(comm)) comm = 1;
+                var verif = {};
+                if (this.newService.cash && (this.newService.cashCities || []).length) {
+                    verif.cash = true;
+                    verif.cash_cities = (this.newService.cashCities || []).map(function(c) {
+                        var o = { name: String(c.name || '').trim() };
+                        if (c.id != null && c.id !== '') o.id = c.id;
+                        return o;
+                    }).filter(function(x) { return x.name; });
+                }
                 var body = {
                     service_type: this.newService.type === 'onRamp' ? 'on_ramp' : 'off_ramp',
                     fiat_currency_code: this.newService.fiatCurrency.trim().toUpperCase(),
@@ -266,6 +1041,7 @@
                     network: meta.network,
                     contract_address: meta.contract_address,
                     stablecoin_base_currency: meta.base_currency || null,
+                    title: (this.newService.title || '').trim(),
                     description: (this.newService.description || '').trim() || null,
                     payment_code: (this.newService.payment_code || '').trim() || null,
                     rate_mode: rateMode,
@@ -278,7 +1054,7 @@
                     min_fiat_amount: this.newService.minFiat,
                     max_fiat_amount: this.newService.maxFiat,
                     requisites_form_schema: {},
-                    verification_requirements: {},
+                    verification_requirements: verif,
                     is_active: true
                 };
                 if (rateMode === 'on_request') {
@@ -363,37 +1139,15 @@
                     });
             },
             openFormPreview: function(code) {
+                if (this.showCreateModal && this.cashLocked) return;
                 var c = (code || '').trim();
                 if (!c) return;
                 this.formPreviewCode = c;
-                this.formPreviewPayload = null;
-                this.formPreviewError = null;
                 this.showFormPreviewModal = true;
-                this.formPreviewLoading = true;
-                var self = this;
-                var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__)
-                    ? String(window.__CURRENT_SPACE__).trim()
-                    : '';
-                if (!space) {
-                    this.formPreviewLoading = false;
-                    this.formPreviewError = 'nospace';
-                    return;
-                }
-                var url = '/v1/spaces/' + encodeURIComponent(space) + '/payment-forms/' + encodeURIComponent(c);
-                fetch(url, { method: 'GET', headers: this.rampAuthHeaders(), credentials: 'include' })
-                    .then(function(r) {
-                        if (!r.ok) throw new Error(String(r.status));
-                        return r.json();
-                    })
-                    .then(function(data) {
-                        self.formPreviewPayload = data;
-                    })
-                    .catch(function() {
-                        self.formPreviewError = 'load';
-                    })
-                    .then(function() {
-                        self.formPreviewLoading = false;
-                    });
+            },
+            openFormPreviewForService: function(s) {
+                if (this.serviceCashLockedForCard(s)) return;
+                this.openFormPreview(s && s.payment_code);
             },
             openPartnerModal: function() {
                 this.newPartner = { name: '', serviceType: '', baseCommission: 0.5, myCommission: 0.3 };
@@ -1189,6 +1943,8 @@
             '            </div>',
             '          </div>',
             '          <div class="space-y-3">',
+            '            <div v-if="(service.title || \'\').trim()" class="text-base font-bold text-[#191d23] leading-snug pr-2">[[ service.title ]]</div>',
+            '            <p v-if="serviceCashCitiesLine(service)" class="text-xs text-[#58667e] leading-snug pr-2">[[ serviceCashCitiesLine(service) ]]</p>',
             '            <div class="flex items-end justify-between">',
             '              <div>',
             '                <div class="text-xs text-[#58667e] uppercase font-bold tracking-wider">[[ $t(\'main.my_business.direction\') ]]</div>',
@@ -1203,7 +1959,7 @@
             '            <div class="pt-3 border-t border-[#eff2f5] space-y-2">',
             '              <div v-if="(service.payment_code || \'\').trim()" class="flex flex-wrap items-center gap-2 text-xs text-[#58667e]">',
             '                <span class="font-mono bg-gray-50 px-2 py-0.5 rounded">[[ service.payment_code ]]</span>',
-            '                <button type="button" @click="openFormPreview(service.payment_code)" class="text-[#3861fb] font-bold hover:underline">[[ $t(\'main.my_business.preview_payment_form\') ]]</button>',
+            '                <button type="button" @click="openFormPreviewForService(service)" :disabled="serviceCashLockedForCard(service)" class="text-[#3861fb] font-bold hover:underline disabled:opacity-45 disabled:cursor-not-allowed disabled:no-underline">[[ $t(\'main.my_business.preview_payment_form\') ]]</button>',
             '              </div>',
             '              <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">',
             '                <div class="flex items-center gap-1.5 text-xs text-[#58667e] min-w-0"><svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0h.5a2.5 2.5 0 002.5-2.5V3.935M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> <span class="truncate">[[ $t(\'main.my_business.rate_label\') ]]: [[ serviceRateLabel(service) ]]</span></div>',
@@ -1253,9 +2009,12 @@
             '    <div class="min-h-[100dvh] min-h-[100svh] flex items-end justify-center sm:items-center p-0 sm:p-4">',
             '    <div class="absolute inset-0 bg-black/60" @click="showCreateModal = false"></div>',
             '    <div class="relative z-10 bg-white w-full max-w-full sm:max-w-2xl lg:max-w-3xl rounded-t-3xl sm:rounded-3xl shadow-2xl grid grid-rows-[auto_minmax(0,1fr)_auto] h-[90dvh] max-h-[90dvh] overflow-hidden my-0 sm:my-4">',
-            '      <div class="p-6 border-b border-[#eff2f5] flex items-center justify-between shrink-0">',
-            '        <h3 class="text-xl font-bold text-[#191d23]">[[ $t(\'main.my_business.modal_new_service_title\') ]]</h3>',
-            '        <button type="button" @click="showCreateModal = false" class="p-2 hover:bg-gray-100 rounded-full"><svg class="w-6 h-6 text-[#58667e] rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg></button>',
+            '      <div class="p-6 border-b border-[#eff2f5] flex items-center justify-between gap-3 shrink-0">',
+            '        <div class="flex items-center gap-2 min-w-0 flex-1">',
+            '          <h3 class="text-xl font-bold text-[#191d23] truncate">[[ $t(\'main.my_business.modal_new_service_title\') ]]</h3>',
+            '          <button type="button" @click.stop="showNewServiceHelpModal = true" class="shrink-0 w-9 h-9 rounded-full bg-[#3861fb] text-white text-lg font-bold leading-none flex items-center justify-center shadow-md hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[#3861fb] focus:ring-offset-2" :title="$t(\'main.my_business.new_service_help_open\')" :aria-label="$t(\'main.my_business.new_service_help_open\')">?</button>',
+            '        </div>',
+            '        <button type="button" @click="showCreateModal = false" class="p-2 hover:bg-gray-100 rounded-full shrink-0"><svg class="w-6 h-6 text-[#58667e] rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg></button>',
             '      </div>',
             '      <div class="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain touch-pan-y p-6 space-y-6 [scrollbar-gutter:stable]">',
             '        <div class="grid grid-cols-2 gap-4">',
@@ -1270,17 +2029,51 @@
             '            <span class="text-[10px] opacity-60">[[ $t(\'main.my_business.off_ramp_desc\') ]]</span>',
             '          </button>',
             '        </div>',
+            '        <div>',
+            '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.exchange_service_title_label\') ]]</label>',
+            '          <input type="text" v-model="newService.title" maxlength="255" :class="[\'w-full px-4 py-3 rounded-xl text-sm shadow-sm focus:outline-none\', !(newService.title || \'\').trim() ? \'border-2 border-amber-300 bg-amber-50/80 focus:border-amber-400 focus:ring-2 focus:ring-amber-100\' : \'border border-[#eff2f5] bg-white focus:border-[#3861fb]\']" :placeholder="$t(\'main.my_business.exchange_service_title_placeholder\')" :aria-invalid="!(newService.title || \'\').trim() ? \'true\' : \'false\'" />',
+            '          <div v-if="!(newService.title || \'\').trim()" role="alert" class="mt-2 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm font-semibold text-amber-900 leading-snug">[[ $t(\'main.my_business.exchange_service_title_required\') ]]</div>',
+            '        </div>',
             '        <div class="create-modal-currency-panel">',
             '          <p class="create-modal-currency-panel-title">[[ $t(\'main.my_business.currency_pair_section_title\') ]]</p>',
             '        <div class="create-modal-currency-row">',
             '          <div class="relative min-w-0" :class="newService.type === \'onRamp\' ? \'order-1\' : \'order-3\'">',
             '            <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.fiat_label\') ]]</label>',
             '            <div class="relative">',
-            '              <input type="text" v-model="newService.fiatCurrency" :placeholder="$t(\'main.my_business.fiat_placeholder\')" class="w-full min-w-0 max-w-full pl-9 pr-4 py-3 bg-white border border-[#eff2f5] rounded-xl text-sm shadow-sm focus:outline-none focus:border-[#3861fb]" />',
-            '              <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#58667e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>',
+            '              <input type="text" v-model="newService.fiatCurrency" :placeholder="$t(\'main.my_business.fiat_placeholder\')" @focus="onFiatInputFocus" @input="onFiatInputInput" @blur="onFiatInputBlur" :class="[\'w-full min-w-0 max-w-full pl-9 py-3 bg-white border border-[#eff2f5] rounded-xl text-sm shadow-sm focus:outline-none focus:border-[#3861fb]\', (newService.fiatCurrency || \'\').trim() ? \'pr-10\' : \'pr-4\']" />',
+            '              <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#58667e] pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>',
+            '              <button v-if="(newService.fiatCurrency || \'\').trim()" type="button" @click="clearCreateModalFiatCurrency" @mousedown.prevent class="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-lg text-[#58667e] hover:bg-[#eff2f5] hover:text-[#191d23] focus:outline-none focus:ring-2 focus:ring-[#3861fb]/40" :title="$t(\'main.my_business.fiat_clear\')" :aria-label="$t(\'main.my_business.fiat_clear\')">',
+            '                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>',
+            '              </button>',
             '            </div>',
-            '            <div v-if="filteredFiats.length > 0" class="absolute z-10 w-full mt-1 bg-white border border-[#eff2f5] rounded-xl shadow-xl overflow-hidden">',
-            '              <button type="button" v-for="fiat in filteredFiats" :key="fiat" @click="selectFiat(fiat)" class="w-full px-4 py-2.5 text-left text-sm hover:bg-blue-50 flex items-center justify-between">[[ fiat ]]</button>',
+            '            <div v-if="fiatAutocompleteOpen && (fiatCurrencyLoading || fiatCurrencySuggestions.length > 0 || fiatCurrencyNoHits)" class="absolute z-10 w-full mt-1 bg-white border border-[#eff2f5] rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">',
+            '              <div v-if="fiatCurrencyLoading" class="px-3 py-2.5 text-xs text-[#58667e]">[[ $t(\'main.loading\') ]]</div>',
+            '              <template v-else>',
+            '              <button type="button" v-for="item in fiatCurrencySuggestions" :key="item.code" @mousedown.prevent="selectFiat(item.code)" class="w-full px-4 py-2.5 text-left text-sm hover:bg-blue-50 flex items-center justify-between">[[ item.code ]]</button>',
+            '              <div v-if="fiatCurrencyNoHits && !fiatCurrencySuggestions.length" class="px-3 py-2.5 text-xs text-[#58667e]">[[ $t(\'main.guarantor.no_results\') ]]</div>',
+            '              </template>',
+            '            </div>',
+            '            <div v-if="createModalHasFiat" class="mt-3 space-y-2">',
+            '              <label class="flex items-center gap-2 cursor-pointer select-none">',
+            '                <input type="checkbox" v-model="newService.cash" @change="onCashCheckboxChange" class="rounded border-[#eff2f5] text-[#3861fb] focus:ring-[#3861fb]" />',
+            '                <span class="text-xs font-bold text-[#58667e]">[[ $t(\'main.my_business.cash_label\') ]]</span>',
+            '              </label>',
+            '              <div v-show="newService.cash" class="space-y-2">',
+            '                <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1 ml-0.5">[[ $t(\'main.my_business.cash_cities_label\') ]]</label>',
+            '                <div class="flex flex-wrap gap-1.5 mb-1 min-h-[1.25rem]">',
+            '                  <span v-for="(c, idx) in newService.cashCities" :key="\'cc-\' + idx + \'-\' + (c.name || \'\')" class="inline-flex items-center gap-1 pl-2.5 pr-1 py-0.5 rounded-lg bg-[#eff2f5] text-xs font-medium text-[#191d23] max-w-full">',
+            '                    <span class="truncate max-w-[12rem]">[[ c.name ]]</span>',
+            '                    <button type="button" @click="removeCashCity(idx)" class="shrink-0 p-0.5 rounded hover:bg-white/80 text-[#58667e] leading-none" :aria-label="$t(\'main.my_business.cash_city_remove\')">×</button>',
+            '                  </span>',
+            '                </div>',
+            '                <div class="relative">',
+            '                  <input type="text" v-model="newService.cashCityInput" autocomplete="off" @focus="onCashCityFocus" @input="onCashCityInput" @blur="onCashCityBlur" @keydown="onCashCityInputKeydown" class="w-full px-4 py-2.5 bg-white border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb]" :placeholder="$t(\'main.my_business.cash_city_placeholder\')" />',
+            '                  <div v-if="cashCityAutocompleteOpen && (cashCityLoading || cashCitySuggestions.length)" class="absolute z-20 w-full mt-1 bg-white border border-[#eff2f5] rounded-xl shadow-xl overflow-hidden max-h-40 overflow-y-auto">',
+            '                    <div v-if="cashCityLoading" class="px-3 py-2 text-xs text-[#58667e]">[[ $t(\'main.loading\') ]]</div>',
+            '                    <button type="button" v-for="(it, iti) in cashCitySuggestions" :key="\'cct-\' + iti + \'-\' + it.id" @mousedown.prevent="addCashCityFromAutocomplete(it)" class="w-full px-3 py-2.5 text-left text-sm hover:bg-blue-50">[[ it.name ]]</button>',
+            '                  </div>',
+            '                </div>',
+            '              </div>',
             '            </div>',
             '          </div>',
             '          <div class="order-2 flex items-center justify-center py-1 md:py-0" aria-hidden="true">',
@@ -1294,24 +2087,44 @@
             '          </div>',
             '        </div>',
             '        </div>',
+            '        <p v-if="!createModalHasFiat" class="rounded-xl border border-amber-300 bg-amber-50 px-3 py-2.5 text-sm font-semibold text-amber-900 leading-snug">[[ $t(\'main.my_business.fiat_required_for_limits\') ]]</p>',
+            '        <p v-else-if="createModalShowRatesNotFound" class="rounded-xl border border-orange-300 bg-orange-50 px-3 py-2.5 text-sm font-semibold text-orange-950 leading-snug">[[ $t(\'main.my_business.fiat_rates_not_found_for_limits\') ]]</p>',
             '        <div class="create-modal-fiat-limits-row">',
             '          <div class="min-w-0">',
-            '            <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.min_fiat_label\') ]]</label>',
-            '            <input type="number" v-model.number="newService.minFiat" min="0" step="0.01" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb]" />',
+            '            <label :class="[\'block text-[10px] font-bold uppercase mb-1.5 ml-1\', createModalHasFiat ? \'text-[#58667e]\' : \'text-amber-800\']">[[ $t(\'main.my_business.min_fiat_label\') ]]</label>',
+            '            <input type="text" inputmode="decimal" autocomplete="off" v-model="createModalMinFiatText" @input="onCreateModalMinFiatLimitInput" @blur="onCreateModalMinFiatLimitBlur" :disabled="!createModalHasFiat" :class="[\'w-full px-4 py-3 border rounded-xl text-sm focus:outline-none focus:border-[#3861fb] tabular-nums\', createModalHasFiat ? \'bg-gray-50 border-[#eff2f5]\' : \'bg-gray-100 border-amber-200 text-gray-500 cursor-not-allowed opacity-80\']" />',
             '          </div>',
             '          <div class="min-w-0">',
-            '            <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.max_fiat_label\') ]]</label>',
-            '            <input type="number" v-model.number="newService.maxFiat" min="0" step="0.01" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb]" />',
+            '            <label :class="[\'block text-[10px] font-bold uppercase mb-1.5 ml-1\', createModalHasFiat ? \'text-[#58667e]\' : \'text-amber-800\']">[[ $t(\'main.my_business.max_fiat_label\') ]]</label>',
+            '            <input type="text" inputmode="decimal" autocomplete="off" v-model="createModalMaxFiatText" @input="onCreateModalMaxFiatLimitInput" @blur="onCreateModalMaxFiatLimitBlur" :disabled="!createModalHasFiat" :class="[\'w-full px-4 py-3 border rounded-xl text-sm focus:outline-none focus:border-[#3861fb] tabular-nums\', createModalHasFiat ? \'bg-gray-50 border-[#eff2f5]\' : \'bg-gray-100 border-amber-200 text-gray-500 cursor-not-allowed opacity-80\']" />',
             '          </div>',
+            '        </div>',
+            '        <p v-if="createModalFiatUsdHintLine" class="text-[10px] text-[#58667e] mt-1 ml-1 leading-snug">[[ createModalFiatUsdHintLine ]]</p>',
+            '        <div>',
+            '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.payment_code_label\') ]]</label>',
+            '          <div class="flex flex-col sm:flex-row gap-2 items-stretch">',
+            '            <div class="relative flex-1 min-w-0">',
+            '            <input type="text" v-model="newService.payment_code" autocomplete="off" :disabled="!createModalFiatIso3 || cashLocked" @focus="onPaymentCodeFocus" @input="onPaymentCodeInput" @blur="onPaymentCodeBlur" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb] font-mono disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed" :placeholder="createModalFiatIso3 ? $t(\'main.my_business.payment_code_placeholder\') : $t(\'main.my_business.payment_code_placeholder_disabled\')" />',
+            '            <div v-if="paymentCodeAutocompleteOpen && createModalFiatIso3 && !cashLocked" class="absolute z-[60] w-full mt-1 bg-white border border-[#eff2f5] rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">',
+            '              <div v-if="paymentCodeLoading" class="px-3 py-2.5 text-xs text-[#58667e]">[[ $t(\'main.loading\') ]]</div>',
+            '              <div v-else>',
+            '              <div v-if="paymentCodeTotalForCur != null" class="sticky top-0 z-10 px-3 py-1.5 text-[10px] font-medium text-[#58667e] bg-[#fafbfc] border-b border-[#eff2f5]">[[ $t(\'main.guarantor.payment_total_for_currency\', { count: paymentCodeTotalForCur }) ]]</div>',
+            '              <button type="button" v-for="p in paymentCodeSuggestions" :key="p.payment_code" @mousedown.prevent="selectPaymentCodeFromAutocomplete(p)" class="w-full px-3 py-2.5 text-left text-sm hover:bg-blue-50 border-b border-[#eff2f5] last:border-b-0">',
+            '                <span class="font-medium text-[#191d23]">[[ p.name ]]</span>',
+            '                <span class="block text-[10px] text-[#58667e] font-mono mt-0.5">[[ p.cur ]] · [[ p.payment_code ]]</span>',
+            '              </button>',
+            '              <div v-if="paymentCodeNoHits && !paymentCodeSuggestions.length" class="px-3 py-2.5 text-xs text-[#58667e]">[[ $t(\'main.guarantor.no_results\') ]]</div>',
+            '              </div>',
+            '            </div>',
+            '            </div>',
+            '            <button type="button" @click="openFormPreview(newService.payment_code)" :disabled="cashLocked || !(newService.payment_code || \'\').trim()" :title="$t(\'main.my_business.payment_code_show_requisites\')" class="shrink-0 px-4 py-3 rounded-xl border border-[#3861fb]/40 bg-white text-xs font-bold text-[#3861fb] hover:bg-blue-50 disabled:opacity-45 disabled:cursor-not-allowed whitespace-nowrap self-stretch sm:self-auto">[[ $t(\'main.my_business.payment_code_show_requisites\') ]]</button>',
+            '          </div>',
+            '          <p v-if="!createModalFiatIso3 && createModalHasFiat" class="text-[10px] text-amber-800 mt-1 ml-1 font-medium">[[ $t(\'main.my_business.payment_code_need_fiat_iso\') ]]</p>',
+            '          <p class="text-[10px] text-[#58667e] mt-1 ml-1">[[ $t(\'main.my_business.payment_code_hint\') ]]</p>',
             '        </div>',
             '        <div>',
             '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.service_description_label\') ]]</label>',
             '          <textarea v-model="newService.description" rows="2" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb] resize-y min-h-[4rem]" :placeholder="$t(\'main.my_business.service_description_placeholder\')"></textarea>',
-            '        </div>',
-            '        <div>',
-            '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.payment_code_label\') ]]</label>',
-            '          <input type="text" v-model="newService.payment_code" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb] font-mono" :placeholder="$t(\'main.my_business.payment_code_placeholder\')" />',
-            '          <p class="text-[10px] text-[#58667e] mt-1 ml-1">[[ $t(\'main.my_business.payment_code_hint\') ]]</p>',
             '        </div>',
             '        <div>',
             '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-3 ml-1">[[ $t(\'main.my_business.rate_type_label\') ]]</label>',
@@ -1338,34 +2151,13 @@
             '      </div>',
             '      <div class="p-6 pt-4 bg-gray-50 border-t border-[#eff2f5] flex gap-3 shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">',
             '        <button type="button" @click="showCreateModal = false" class="flex-1 py-3 border border-[#eff2f5] rounded-xl text-sm font-bold text-[#58667e] hover:bg-white transition-all">[[ $t(\'main.my_business.cancel\') ]]</button>',
-            '        <button type="button" @click="addService" :disabled="exchangeSaving || !(newService.fiatCurrency || \'\').trim()" class="flex-1 py-3 bg-[#3861fb] text-white rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all">[[ exchangeSaving ? $t(\'main.my_business.saving\') : $t(\'main.my_business.launch_service\') ]]</button>',
+            '        <button type="button" @click="addService" :disabled="createModalLaunchDisabled" class="flex-1 py-3 bg-[#3861fb] text-white rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all">[[ exchangeSaving ? $t(\'main.my_business.saving\') : $t(\'main.my_business.launch_service\') ]]</button>',
             '      </div>',
             '    </div>',
             '    </div>',
             '  </div>',
 
-            '  <div v-if="showFormPreviewModal" class="fixed inset-0 z-[110] overflow-y-auto overscroll-contain">',
-            '    <div class="min-h-[100dvh] min-h-[100svh] flex items-end justify-center sm:items-center p-0 sm:p-4">',
-            '    <div class="absolute inset-0 bg-black/60" @click="showFormPreviewModal = false"></div>',
-            '    <div class="relative z-10 bg-white w-full max-w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl grid grid-rows-[auto_minmax(0,1fr)] h-[90dvh] max-h-[90dvh] overflow-hidden my-0 sm:my-4">',
-            '      <div class="p-6 border-b border-[#eff2f5] flex items-center justify-between shrink-0">',
-            '        <h3 class="text-xl font-bold text-[#191d23]">[[ $t(\'main.my_business.form_preview_title\') ]] <span class="font-mono text-base text-[#58667e]">[[ formPreviewCode ]]</span></h3>',
-            '        <button type="button" @click="showFormPreviewModal = false" class="p-2 hover:bg-gray-100 rounded-full"><svg class="w-6 h-6 text-[#58667e] rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg></button>',
-            '      </div>',
-            '      <div class="min-h-0 overflow-y-auto touch-pan-y p-6 space-y-3 text-sm">',
-            '        <p v-if="formPreviewLoading" class="text-[#58667e]">[[ $t(\'main.loading\') ]]</p>',
-            '        <p v-else-if="formPreviewError" class="text-red-600">[[ $t(\'main.my_business.form_preview_error\') ]]</p>',
-            '        <template v-else-if="formPreviewPayload">',
-            '          <p class="text-xs text-[#58667e]">[[ $t(\'main.my_business.form_source_label\') ]]: <strong>[[ formPreviewPayload.source ]]</strong></p>',
-            '          <ul v-if="formPreviewPayload.form && formPreviewPayload.form.fields && formPreviewPayload.form.fields.length" class="list-disc pl-5 space-y-1">',
-            '            <li v-for="(f, idx) in formPreviewPayload.form.fields" :key="idx" class="text-[#191d23]"><span class="font-mono text-xs">[[ f.id ]]</span> — [[ f.type ]] <span v-if="f.required" class="text-amber-600 text-xs">([[ $t(\'main.my_business.field_required\') ]])</span></li>',
-            '          </ul>',
-            '          <p v-else class="text-[#58667e]">[[ $t(\'main.my_business.form_preview_empty\') ]]</p>',
-            '        </template>',
-            '      </div>',
-            '    </div>',
-            '    </div>',
-            '  </div>',
+            '  <payment-form-preview-modal :show="showFormPreviewModal" :payment-code="formPreviewCode" @close="showFormPreviewModal = false"></payment-form-preview-modal>',
 
             '  <div v-if="showPartnerModal" class="fixed inset-0 z-[100] flex items-center justify-center p-4">',
             '    <div class="absolute inset-0 bg-black/60" @click="showPartnerModal = false"></div>',
@@ -1486,6 +2278,7 @@
             '    </div>',
             '  </div>',
 
+            '  <new-service-help-modal :show="showNewServiceHelpModal" @close="showNewServiceHelpModal = false"></new-service-help-modal>',
             '  <multisig-config-modal :show="showRampMultisigWizard" :wallet="rampMultisigWizardWallet" @close="closeMultisigWizard" @saved="onMultisigConfigModalSaved"></multisig-config-modal>',
             '</div>'
         ].join('')
