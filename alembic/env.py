@@ -37,6 +37,7 @@ from db.models import (
     BestchangeYamlSnapshot,
     ExchangeService,
     ExchangeServiceFeeTier,
+    SpacePaymentFormOverride,
 )
 
 # this is the Alembic Config object, which provides

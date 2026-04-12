@@ -148,6 +148,60 @@ class WalletUserSub(Base):
         return f"<WalletUserSub(id={self.id}, nickname={self.nickname})>"
 
 
+class WalletSpaceUIPrefs(Base):
+    """UI preferences per authenticated wallet user and space (main app; JSON payload)."""
+
+    __tablename__ = "wallet_space_ui_prefs"
+    __table_args__ = (
+        UniqueConstraint(
+            "wallet_user_id",
+            "space",
+            name="uq_wallet_space_ui_prefs_user_space",
+        ),
+        Index("ix_wallet_space_ui_prefs_space", "space"),
+    )
+
+    id = Column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+        index=True,
+        comment="Autoincrement primary key",
+    )
+    wallet_user_id = Column(
+        Integer,
+        ForeignKey("wallet_users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+        comment="WalletUser.id of the logged-in account",
+    )
+    space = Column(
+        String(255),
+        nullable=False,
+        comment="Space nickname (URL segment)",
+    )
+    payload = Column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+        comment="Arbitrary UI state JSON (e.g. my_business.ramp_wallets_expanded)",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    def __repr__(self) -> str:
+        return f"<WalletSpaceUIPrefs(id={self.id}, wallet_user_id={self.wallet_user_id}, space={self.space!r})>"
+
+
 # Event listener для автоматической генерации DID при создании WalletUser
 @event.listens_for(WalletUser, 'before_insert')
 def generate_did_before_insert(mapper, connection, target):
@@ -676,7 +730,8 @@ class ExchangeService(Base):
     __tablename__ = "exchange_services"
     __table_args__ = (
         Index(
-            "ix_exchange_services_fiat_type_active",
+            "ix_exch_svc_space_fiat_type_act",
+            "space",
             "fiat_currency_code",
             "service_type",
             "is_active",
@@ -718,6 +773,13 @@ class ExchangeService(Base):
         comment="Идентификатор конфигурации сервиса обмена",
     )
 
+    space = Column(
+        String(255),
+        nullable=False,
+        index=True,
+        comment="Идентификатор space (как в URL /{space}/…)",
+    )
+
     service_type = Column(
         String(20),
         nullable=False,
@@ -749,6 +811,18 @@ class ExchangeService(Base):
         String(3),
         nullable=True,
         comment="Базовая валюта привязки стейбла (USD, RUB, …), опционально",
+    )
+
+    description = Column(
+        Text,
+        nullable=True,
+        comment="Описание направления для UI",
+    )
+    payment_code = Column(
+        String(128),
+        nullable=True,
+        index=True,
+        comment="Код платёжного метода (bc.yaml); форма из резолвера если requisites_form_schema пуст",
     )
 
     rate_mode = Column(
@@ -895,6 +969,63 @@ class ExchangeServiceFeeTier(Base):
         return (
             f"<ExchangeServiceFeeTier(id={self.id}, service_id={self.exchange_service_id}, "
             f"range={self.fiat_min}-{self.fiat_max})>"
+        )
+
+
+class SpacePaymentFormOverride(Base):
+    """Переопределение формы реквизитов по payment_code в разрезе space (иначе — system forms.yaml)."""
+
+    __tablename__ = "space_payment_form_overrides"
+    __table_args__ = (
+        UniqueConstraint(
+            "space",
+            "payment_code",
+            name="uq_space_payment_form_space_code",
+        ),
+        Index("ix_spayform_space", "space"),
+    )
+
+    id = Column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+        index=True,
+        comment="Идентификатор переопределения формы",
+    )
+    space = Column(
+        String(255),
+        nullable=False,
+        index=True,
+        comment="Идентификатор space (как в URL /{space}/…)",
+    )
+    payment_code = Column(
+        String(128),
+        nullable=False,
+        comment="Код платёжного метода (payment_code в bc.yaml)",
+    )
+    form = Column(
+        JSONB,
+        nullable=False,
+        comment="Объект формы: { fields: [...] } как PaymentForm",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        comment="Создано (UTC)",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+        comment="Обновлено (UTC)",
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<SpacePaymentFormOverride(id={self.id}, space={self.space!r}, "
+            f"payment_code={self.payment_code!r})>"
         )
 
 

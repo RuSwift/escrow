@@ -168,3 +168,70 @@ html.overflow-x-hidden *::after {
   background: #3861fb;
   color: #fff;
 }
+
+/* Модалка «Новое платежное решение»: блок пары валют (фиат/крипта + стрелка) */
+.create-modal-currency-panel {
+  border-radius: 1rem;
+  padding: 1rem;
+  background: linear-gradient(
+    165deg,
+    rgba(56, 97, 251, 0.1) 0%,
+    rgba(56, 97, 251, 0.04) 45%,
+    rgba(248, 250, 253, 0.95) 100%
+  );
+  border: 1px solid rgba(56, 97, 251, 0.28);
+  box-shadow: 0 2px 12px rgba(56, 97, 251, 0.1), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+.create-modal-currency-panel-title {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #3861fb;
+  margin-bottom: 0.75rem;
+}
+/* Произвольные md:grid-cols-[…] из Vue в JS не всегда попадают в Tailwind CDN. */
+.create-modal-currency-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+@media (min-width: 768px) {
+  .create-modal-currency-row {
+    grid-template-columns: minmax(0, 1fr) 3rem minmax(0, 1fr);
+    align-items: center;
+    column-gap: 1rem;
+    row-gap: 1rem;
+  }
+}
+
+/* На мобильном колонка: стрелка «вниз» между полями */
+.create-modal-currency-arrow {
+  flex-shrink: 0;
+  color: rgba(56, 97, 251, 0.65);
+  width: 2rem;
+  height: 2rem;
+}
+@media (max-width: 767.98px) {
+  .create-modal-currency-arrow {
+    transform: rotate(90deg);
+  }
+}
+@media (min-width: 768px) {
+  .create-modal-currency-arrow {
+    width: 2.25rem;
+    height: 2.25rem;
+    color: rgba(56, 97, 251, 0.55);
+  }
+}
+
+.create-modal-fiat-limits-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+}
+@media (min-width: 640px) {
+  .create-modal-fiat-limits-row {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}

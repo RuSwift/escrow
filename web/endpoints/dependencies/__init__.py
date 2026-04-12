@@ -27,10 +27,13 @@ from services.tron_auth import TronAuth
 from services.wallet import WalletService
 from services.invite import InviteService
 from services.exchange_wallets import ExchangeWalletService
+from services.space_exchange_service import SpaceExchangeService
+from services.space_payment_form_admin import SpacePaymentFormAdminService
 from services.order import OrderService
 from services.guarantor import GuarantorService
 from services.space import SpaceService
 from services.dashboard import DashboardService
+from services.wallet_space_ui_prefs import WalletSpaceUIPrefsService
 from services.wallet_user import WalletUserService
 from services.web3_auth import Web3Auth
 from settings import Settings
@@ -172,6 +175,33 @@ def get_exchange_wallet_service(
 ) -> ExchangeWalletService:
     """Реквизиты Ramp (Wallet external | multisig) в разрезе space."""
     return ExchangeWalletService(session=db, redis=redis, settings=settings)
+
+
+def get_space_exchange_service(
+    db: DbSession,
+    redis: RedisClient,
+    settings: AppSettings,
+) -> SpaceExchangeService:
+    """Конфигурации onRamp/offRamp (exchange_services) в разрезе space."""
+    return SpaceExchangeService(session=db, redis=redis, settings=settings)
+
+
+def get_wallet_space_ui_prefs_service(
+    db: DbSession,
+    redis: RedisClient,
+    settings: AppSettings,
+) -> WalletSpaceUIPrefsService:
+    """UI-предпочтения main app (wallet_user + space)."""
+    return WalletSpaceUIPrefsService(session=db, redis=redis, settings=settings.settings)
+
+
+def get_space_payment_form_admin_service(
+    db: DbSession,
+    redis: RedisClient,
+    settings: AppSettings,
+) -> SpacePaymentFormAdminService:
+    """Переопределения форм payment_code и effective-форма."""
+    return SpacePaymentFormAdminService(session=db, redis=redis, settings=settings)
 
 
 def get_order_service(
@@ -542,6 +572,8 @@ __all__ = [
     "get_space_service",
     "get_guarantor_service",
     "get_exchange_wallet_service",
+    "get_space_exchange_service",
+    "get_space_payment_form_admin_service",
     "get_order_service",
     "get_balances_service",
     "BalancesServiceDep",
@@ -594,4 +626,5 @@ __all__ = [
     "CurrentWalletUser",
     "get_current_wallet_user",
     "get_required_wallet_address_for_space",
+    "get_wallet_space_ui_prefs_service",
 ]

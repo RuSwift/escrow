@@ -6,27 +6,78 @@
 (function() {
     var FIAT_OPTIONS = ['RUB', 'USD', 'EUR', 'GBP', 'KZT', 'UAH', 'TRY', 'AED'];
     var CRYPTO_OPTIONS = ['USDT TRC20', 'A7A5 TRC20'];
+    /** Подписи UI → поля API (синхронно с дефолтным каталогом collateral stablecoin). */
+    var CRYPTO_META = {
+        'USDT TRC20': {
+            symbol: 'USDT',
+            network: 'TRON',
+            contract_address: 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t',
+            base_currency: 'USD'
+        },
+        'A7A5 TRC20': {
+            symbol: 'A7A5',
+            network: 'TRON',
+            contract_address: 'TLeVfrdym8RoJreJ23dAGyfJDygRtiWKBZ',
+            base_currency: 'RUB'
+        }
+    };
+
+    function mapExchangeItemFromApi(it) {
+        var rt = 'request';
+        if (it.rate_mode === 'ratios') rt = 'forex';
+        else if (it.rate_mode === 'manual') rt = 'manual';
+        var comm = 0;
+        if (it.fee_tiers && it.fee_tiers.length) {
+            comm = parseFloat(it.fee_tiers[0].fee_percent) || 0;
+        } else if (it.ratios_commission_percent != null) {
+            comm = parseFloat(it.ratios_commission_percent) || 0;
+        }
+        var cry = (it.stablecoin_symbol || '') + ' ' + String(it.network || '').toUpperCase();
+        return {
+            id: it.id,
+            type: it.service_type === 'on_ramp' ? 'onRamp' : 'offRamp',
+            fiatCurrency: it.fiat_currency_code,
+            cryptoCurrency: cry,
+            rateType: rt,
+            commission: comm,
+            status: it.is_active ? 'active' : 'paused',
+            description: it.description || '',
+            payment_code: it.payment_code || '',
+            rate_mode: it.rate_mode,
+            _api: it
+        };
+    }
 
     Vue.component('my-business', {
         delimiters: ['[[', ']]'],
         data: function() {
             return {
-                services: [
-                    { id: '1', type: 'onRamp', fiatCurrency: 'RUB', cryptoCurrency: 'USDT TRC20', rateType: 'forex', commission: 1.5, status: 'active' },
-                    { id: '2', type: 'offRamp', fiatCurrency: 'USD', cryptoCurrency: 'A7A5 TRC20', rateType: 'request', commission: 2.0, status: 'active' }
-                ],
+                services: [],
                 partners: [
                     { id: 'p1', name: 'GlobalPay Solutions', serviceType: 'onRamp (EUR/USDT)', baseCommission: 0.5, myCommission: 0.3, status: 'connected' },
                     { id: 'p2', name: 'CryptoBridge Ltd', serviceType: 'offRamp (GBP/USDT)', baseCommission: 0.8, myCommission: 0.5, status: 'connected' }
                 ],
                 showCreateModal: false,
+                exchangeServicesLoading: false,
+                exchangeServicesError: null,
+                exchangeSaving: false,
+                showFormPreviewModal: false,
+                formPreviewLoading: false,
+                formPreviewError: null,
+                formPreviewPayload: null,
+                formPreviewCode: '',
                 showPartnerModal: false,
                 newService: {
                     type: 'onRamp',
                     fiatCurrency: '',
                     cryptoCurrency: 'USDT TRC20',
                     rateType: 'forex',
-                    commission: 1.0
+                    commission: 1.0,
+                    minFiat: 1,
+                    maxFiat: 1000000,
+                    description: '',
+                    payment_code: '',
+                    ratiosEngineKey: 'forex'
                 },
                 newPartner: {
                     name: '',
@@ -59,11 +110,14 @@
                 rampBalancesError: null,
                 rampBalancesRowRefreshingId: null,
                 showRampMultisigWizard: false,
-                rampMultisigWizardWallet: null
+                rampMultisigWizardWallet: null,
+                rampWalletsExpanded: true
             };
         },
         mounted: function() {
+            this.fetchUiPrefs();
             this.fetchRampWallets();
+            this.fetchExchangeServices();
         },
         computed: {
             filteredFiats: function() {
@@ -109,27 +163,237 @@
                 if (!this.rampEditingId) return false;
                 return !(this.rampForm.name || '').trim()
                     || !(this.rampForm.tron_address || '').trim();
+            },
+            rampExternalWalletCount: function() {
+                return (this.rampWallets || []).filter(function(w) { return w.role === 'external'; }).length;
+            },
+            rampMultisigWalletCount: function() {
+                return (this.rampWallets || []).filter(function(w) { return w.role === 'multisig'; }).length;
+            },
+            rampAggregatedBalanceRows: function() {
+                var sums = {};
+                var self = this;
+                (this.rampWallets || []).forEach(function(rw) {
+                    var bag = self.rampBalancesByWalletId[rw.id];
+                    if (!bag || !bag.rows) return;
+                    bag.rows.forEach(function(br) {
+                        var sym = String(br.symbol || '').trim();
+                        if (!sym) return;
+                        var n = parseFloat(String(br.amount == null ? '0' : br.amount).replace(/,/g, ''), 10);
+                        if (!isFinite(n)) n = 0;
+                        sums[sym] = (sums[sym] || 0) + n;
+                    });
+                });
+                return Object.keys(sums).sort().map(function(sym) {
+                    return { symbol: sym, amount: sums[sym] };
+                });
             }
         },
         methods: {
+            serviceRateLabel: function(s) {
+                if (!s) return '';
+                if (s.rateType === 'forex') return this.$t('main.my_business.rate_forex');
+                if (s.rateType === 'manual') return this.$t('main.my_business.rate_manual');
+                return this.$t('main.my_business.rate_request');
+            },
+            openCreateServiceModal: function() {
+                this.resetNewServiceForm();
+                this.exchangeServicesError = null;
+                this.showCreateModal = true;
+            },
             selectFiat: function(fiat) { this.newService.fiatCurrency = fiat; },
+            exchangeServicesApiBase: function() {
+                var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__)
+                    ? String(window.__CURRENT_SPACE__).trim()
+                    : '';
+                if (!space) return '';
+                return '/v1/spaces/' + encodeURIComponent(space) + '/exchange-services';
+            },
+            resetNewServiceForm: function() {
+                this.newService = {
+                    type: 'onRamp',
+                    fiatCurrency: '',
+                    cryptoCurrency: 'USDT TRC20',
+                    rateType: 'forex',
+                    commission: 1.0,
+                    minFiat: 1,
+                    maxFiat: 1000000,
+                    description: '',
+                    payment_code: '',
+                    ratiosEngineKey: 'forex'
+                };
+            },
+            fetchExchangeServices: function() {
+                var self = this;
+                var base = this.exchangeServicesApiBase();
+                if (!base) {
+                    this.services = [];
+                    return Promise.resolve();
+                }
+                this.exchangeServicesLoading = true;
+                this.exchangeServicesError = null;
+                return fetch(base, { method: 'GET', headers: this.rampAuthHeaders(), credentials: 'include' })
+                    .then(function(r) {
+                        if (r.status === 403) throw new Error('403');
+                        if (!r.ok) throw new Error(String(r.status));
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        var items = (data && data.items) ? data.items : [];
+                        self.services = items.map(mapExchangeItemFromApi);
+                    })
+                    .catch(function() {
+                        self.exchangeServicesError = 'load';
+                        self.services = [];
+                    })
+                    .then(function() {
+                        self.exchangeServicesLoading = false;
+                    });
+            },
             addService: function() {
                 if (!(this.newService.fiatCurrency || '').trim()) return;
-                this.services.push({
-                    id: String(Date.now()),
-                    type: this.newService.type,
-                    fiatCurrency: this.newService.fiatCurrency.trim(),
-                    cryptoCurrency: this.newService.cryptoCurrency,
-                    rateType: this.newService.rateType,
-                    commission: parseFloat(this.newService.commission) || 1,
-                    status: 'active'
-                });
-                this.showCreateModal = false;
-                this.newService = { type: 'onRamp', fiatCurrency: '', cryptoCurrency: 'USDT TRC20', rateType: 'forex', commission: 1.0 };
+                var self = this;
+                var base = this.exchangeServicesApiBase();
+                if (!base) return;
+                var meta = CRYPTO_META[this.newService.cryptoCurrency] || CRYPTO_META['USDT TRC20'];
+                var rateMode = this.newService.rateType === 'forex' ? 'ratios' : 'on_request';
+                var comm = parseFloat(this.newService.commission);
+                if (isNaN(comm)) comm = 1;
+                var body = {
+                    service_type: this.newService.type === 'onRamp' ? 'on_ramp' : 'off_ramp',
+                    fiat_currency_code: this.newService.fiatCurrency.trim().toUpperCase(),
+                    stablecoin_symbol: meta.symbol,
+                    network: meta.network,
+                    contract_address: meta.contract_address,
+                    stablecoin_base_currency: meta.base_currency || null,
+                    description: (this.newService.description || '').trim() || null,
+                    payment_code: (this.newService.payment_code || '').trim() || null,
+                    rate_mode: rateMode,
+                    manual_rate: null,
+                    manual_rate_valid_until: null,
+                    ratios_engine_key: rateMode === 'ratios'
+                        ? ((this.newService.ratiosEngineKey || '').trim() || 'forex')
+                        : null,
+                    ratios_commission_percent: rateMode === 'ratios' ? comm : null,
+                    min_fiat_amount: this.newService.minFiat,
+                    max_fiat_amount: this.newService.maxFiat,
+                    requisites_form_schema: {},
+                    verification_requirements: {},
+                    is_active: true
+                };
+                if (rateMode === 'on_request') {
+                    body.fee_tiers = [
+                        { fiat_min: 0, fiat_max: 999999999, fee_percent: comm, sort_order: 0 }
+                    ];
+                } else {
+                    body.fee_tiers = null;
+                }
+                this.exchangeSaving = true;
+                fetch(base, {
+                    method: 'POST',
+                    headers: this.rampAuthHeaders(),
+                    credentials: 'include',
+                    body: JSON.stringify(body)
+                })
+                    .then(function(r) {
+                        if (!r.ok) return r.json().then(function(d) { throw d; }, function() { throw new Error(String(r.status)); });
+                        return r.json();
+                    })
+                    .then(function() {
+                        self.showCreateModal = false;
+                        self.resetNewServiceForm();
+                        return self.fetchExchangeServices();
+                    })
+                    .catch(function(e) {
+                        console.error('exchange-service create', e);
+                        self.exchangeServicesError = 'save';
+                    })
+                    .then(function() {
+                        self.exchangeSaving = false;
+                    });
             },
             toggleStatus: function(id) {
                 var s = this.services.find(function(x) { return x.id === id; });
-                if (s) s.status = s.status === 'active' ? 'paused' : 'active';
+                if (!s || !s._api) return;
+                var self = this;
+                var base = this.exchangeServicesApiBase();
+                if (!base) return;
+                var nextActive = !(s._api.is_active === true);
+                fetch(base + '/' + encodeURIComponent(String(id)), {
+                    method: 'PATCH',
+                    headers: this.rampAuthHeaders(),
+                    credentials: 'include',
+                    body: JSON.stringify({ is_active: nextActive })
+                })
+                    .then(function(r) {
+                        if (!r.ok) throw new Error(String(r.status));
+                        return self.fetchExchangeServices();
+                    })
+                    .catch(function() {
+                        self.exchangeServicesError = 'save';
+                    });
+            },
+            deleteExchangeService: function(id) {
+                if (typeof window !== 'undefined' && window.showConfirm) {
+                    var self = this;
+                    window.showConfirm({
+                        title: this.$t('main.my_business.delete_service_confirm_title'),
+                        message: this.$t('main.my_business.delete_service_confirm_message'),
+                        onConfirm: function() { self._deleteExchangeService(id); }
+                    });
+                } else if (window.confirm(this.$t('main.my_business.delete_service_confirm_message'))) {
+                    this._deleteExchangeService(id);
+                }
+            },
+            _deleteExchangeService: function(id) {
+                var self = this;
+                var base = this.exchangeServicesApiBase();
+                if (!base) return;
+                fetch(base + '/' + encodeURIComponent(String(id)), {
+                    method: 'DELETE',
+                    headers: this.rampAuthHeaders(),
+                    credentials: 'include'
+                })
+                    .then(function(r) {
+                        if (!r.ok) throw new Error(String(r.status));
+                        return self.fetchExchangeServices();
+                    })
+                    .catch(function() {
+                        self.exchangeServicesError = 'save';
+                    });
+            },
+            openFormPreview: function(code) {
+                var c = (code || '').trim();
+                if (!c) return;
+                this.formPreviewCode = c;
+                this.formPreviewPayload = null;
+                this.formPreviewError = null;
+                this.showFormPreviewModal = true;
+                this.formPreviewLoading = true;
+                var self = this;
+                var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__)
+                    ? String(window.__CURRENT_SPACE__).trim()
+                    : '';
+                if (!space) {
+                    this.formPreviewLoading = false;
+                    this.formPreviewError = 'nospace';
+                    return;
+                }
+                var url = '/v1/spaces/' + encodeURIComponent(space) + '/payment-forms/' + encodeURIComponent(c);
+                fetch(url, { method: 'GET', headers: this.rampAuthHeaders(), credentials: 'include' })
+                    .then(function(r) {
+                        if (!r.ok) throw new Error(String(r.status));
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        self.formPreviewPayload = data;
+                    })
+                    .catch(function() {
+                        self.formPreviewError = 'load';
+                    })
+                    .then(function() {
+                        self.formPreviewLoading = false;
+                    });
             },
             openPartnerModal: function() {
                 this.newPartner = { name: '', serviceType: '', baseCommission: 0.5, myCommission: 0.3 };
@@ -264,6 +528,47 @@
                 var h = { 'Content-Type': 'application/json' };
                 if (token) h.Authorization = 'Bearer ' + token;
                 return h;
+            },
+            uiPrefsApiBase: function() {
+                var space = (typeof window !== 'undefined' && window.__CURRENT_SPACE__)
+                    ? String(window.__CURRENT_SPACE__).trim()
+                    : '';
+                if (!space) return '';
+                return '/v1/spaces/' + encodeURIComponent(space) + '/ui-prefs';
+            },
+            fetchUiPrefs: function() {
+                var self = this;
+                var url = this.uiPrefsApiBase();
+                if (!url) return Promise.resolve();
+                return fetch(url, { method: 'GET', headers: this.rampAuthHeaders(), credentials: 'include' })
+                    .then(function(r) {
+                        if (!r.ok) return null;
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        if (!data || typeof data !== 'object') return;
+                        var p = data.payload && typeof data.payload === 'object' ? data.payload : {};
+                        var mb = p.my_business && typeof p.my_business === 'object' ? p.my_business : {};
+                        if (typeof mb.ramp_wallets_expanded === 'boolean') {
+                            self.rampWalletsExpanded = mb.ramp_wallets_expanded;
+                        }
+                    })
+                    .catch(function() { /* ignore */ });
+            },
+            persistRampWalletsExpanded: function(expanded) {
+                var self = this;
+                this.rampWalletsExpanded = !!expanded;
+                var url = this.uiPrefsApiBase();
+                if (!url) return;
+                fetch(url, {
+                    method: 'PATCH',
+                    headers: this.rampAuthHeaders(),
+                    credentials: 'include',
+                    body: JSON.stringify({ my_business: { ramp_wallets_expanded: self.rampWalletsExpanded } })
+                }).catch(function() { /* ignore */ });
+            },
+            toggleRampWalletsSection: function() {
+                this.persistRampWalletsExpanded(!this.rampWalletsExpanded);
             },
             fetchRampWallets: function(opts) {
                 var self = this;
@@ -748,12 +1053,17 @@
 
             '  <section class="bg-white rounded-2xl border border-[#eff2f5] p-5 md:p-6 shadow-sm">',
             '    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-5">',
-            '      <div class="flex items-start gap-3">',
+            '      <div class="flex items-start gap-3 min-w-0 flex-1">',
             '        <div class="p-2 rounded-xl bg-blue-50 text-[#3861fb] shrink-0">',
             '          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z" /></svg>',
             '        </div>',
-            '        <div>',
-            '          <h2 class="text-lg font-bold text-[#191d23]">[[ $t(\'main.my_business.ramp_section_title\') ]]</h2>',
+            '        <div class="min-w-0">',
+            '          <div class="flex items-center gap-1 flex-wrap">',
+            '            <h2 class="text-lg font-bold text-[#191d23]">[[ $t(\'main.my_business.ramp_section_title\') ]]</h2>',
+            '            <button v-if="rampWallets.length" type="button" @click="toggleRampWalletsSection" class="p-1.5 rounded-lg text-[#58667e] hover:bg-[#eff2f5] hover:text-[#3861fb] transition-colors shrink-0" :aria-expanded="rampWalletsExpanded" :title="rampWalletsExpanded ? $t(\'main.my_business.ramp_collapse\') : $t(\'main.my_business.ramp_expand\')">',
+            '              <svg class="w-5 h-5 transition-transform duration-200" :class="rampWalletsExpanded ? \'rotate-180\' : \'\'" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>',
+            '            </button>',
+            '          </div>',
             '          <p class="text-xs text-[#58667e] mt-0.5">[[ $t(\'main.my_business.ramp_network\') ]]</p>',
             '        </div>',
             '      </div>',
@@ -765,7 +1075,23 @@
             '    <p v-if="rampError" class="text-sm text-red-600 mb-4">[[ rampError ]]</p>',
             '    <div v-if="rampLoading" class="text-sm text-[#58667e] py-6 text-center">…</div>',
             '    <div v-else-if="!rampWallets.length" class="text-sm text-[#58667e] py-6 text-center border border-dashed border-[#eff2f5] rounded-xl">[[ $t(\'main.my_business.ramp_empty\') ]]</div>',
-            '    <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-3">',
+            '    <div v-else>',
+            '    <div v-show="!rampWalletsExpanded" class="rounded-2xl border border-[#eff2f5] bg-[#fafbfc] p-4 mb-3 space-y-3">',
+            '      <div class="flex flex-wrap items-center gap-2 text-xs font-bold">',
+            '        <span class="inline-flex items-center px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-100">[[ $t(\'main.my_business.ramp_stats_external\', { count: rampExternalWalletCount }) ]]</span>',
+            '        <span class="inline-flex items-center px-2.5 py-1 rounded-lg bg-purple-50 text-purple-700 border border-purple-100">[[ $t(\'main.my_business.ramp_stats_multisig\', { count: rampMultisigWalletCount }) ]]</span>',
+            '      </div>',
+            '      <div v-if="rampBalancesLoading" class="text-xs text-[#58667e]">[[ $t(\'main.my_business.ramp_balances_loading\') ]]</div>',
+            '      <p v-else-if="rampBalancesError" class="text-xs text-red-600">[[ rampBalancesError ]]</p>',
+            '      <div v-else class="flex flex-wrap gap-x-4 gap-y-2 text-sm font-semibold text-emerald-600">',
+            '        <span v-for="row in rampAggregatedBalanceRows" :key="\'agg-\' + row.symbol" class="inline-flex items-center gap-1.5 min-w-0">',
+            '          <img :src="collateralStablecoinIconUrl(row.symbol)" :alt="row.symbol" width="16" height="16" class="w-4 h-4 rounded-full object-contain shrink-0 bg-white ring-1 ring-emerald-100" @error="$event.target.style.display=\'none\'" />',
+            '          <span class="font-mono tabular-nums tracking-tight">[[ formatCollateralAmountDisplay(String(row.amount)) ]] [[ row.symbol ]]</span>',
+            '        </span>',
+            '        <span v-if="!rampAggregatedBalanceRows.length" class="text-xs font-normal text-[#58667e]">[[ $t(\'main.my_business.ramp_collapsed_no_balances\') ]]</span>',
+            '      </div>',
+            '    </div>',
+            '    <div v-show="rampWalletsExpanded" class="grid grid-cols-1 md:grid-cols-2 gap-3">',
             '      <div v-for="rw in rampWallets" :key="rw.id" class="bg-[#fafbfc] rounded-2xl border border-[#eff2f5] p-3 md:p-4 relative">',
             '        <div class="flex items-start justify-between gap-2 mb-2">',
             '          <div class="flex items-center gap-2 min-w-0">',
@@ -827,6 +1153,7 @@
             '        <button type="button" @click="deleteRampWallet(rw)" class="mt-2 text-xs font-bold text-[#58667e] hover:text-red-600">[[ $t(\'main.my_business.ramp_delete\') ]]</button>',
             '      </div>',
             '    </div>',
+            '    </div>',
             '  </section>',
 
             '  <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">',
@@ -834,7 +1161,7 @@
             '      <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">',
             '        <div class="flex flex-wrap items-center gap-2 sm:gap-3 min-w-0">',
             '          <h2 class="text-lg font-bold text-[#191d23]">[[ $t(\'main.my_business.my_services\') ]]</h2>',
-            '          <button type="button" @click="showCreateModal = true" class="border-2 border-dashed border-[#eff2f5] rounded-xl inline-flex items-center justify-center gap-2 text-sm font-bold py-2 px-3 sm:py-2.5 sm:px-4 text-[#58667e] hover:border-[#3861fb] hover:bg-blue-50/30 hover:text-[#3861fb] transition-all shrink-0">',
+            '          <button type="button" @click="openCreateServiceModal" class="border-2 border-dashed border-[#eff2f5] rounded-xl inline-flex items-center justify-center gap-2 text-sm font-bold py-2 px-3 sm:py-2.5 sm:px-4 text-[#58667e] hover:border-[#3861fb] hover:bg-blue-50/30 hover:text-[#3861fb] transition-all shrink-0">',
             '            <svg class="w-4 h-4 sm:w-5 sm:h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg>',
             '            [[ $t(\'main.my_business.create_service\') ]]',
             '          </button>',
@@ -844,6 +1171,8 @@
             '          <span class="text-xs font-medium px-2 py-1 rounded-lg bg-purple-50 text-purple-600 border border-purple-100">offRamp: [[ offRampCount ]]</span>',
             '        </div>',
             '      </div>',
+            '      <p v-if="exchangeServicesLoading" class="text-sm text-[#58667e]">[[ $t(\'main.my_business.exchange_loading\') ]]</p>',
+            '      <p v-else-if="exchangeServicesError" class="text-sm text-red-600">[[ $t(\'main.my_business.exchange_error\') ]]</p>',
             '      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">',
             '        <div v-for="service in services" :key="service.id" class="bg-white rounded-2xl border border-[#eff2f5] p-5 hover:border-[#3861fb] transition-all relative overflow-hidden group">',
             '          <div :class="[\'absolute top-0 right-0 w-24 h-24 -mr-8 -mt-8 rounded-full opacity-5 group-hover:opacity-10 transition-opacity\', service.type === \'onRamp\' ? \'bg-blue-500\' : \'bg-purple-500\']"></div>',
@@ -864,19 +1193,28 @@
             '              <div>',
             '                <div class="text-xs text-[#58667e] uppercase font-bold tracking-wider">[[ $t(\'main.my_business.direction\') ]]</div>',
             '                <div class="text-lg font-bold text-[#191d23] flex items-center gap-2">[[ service.fiatCurrency ]] <svg class="w-3.5 h-3.5 text-[#eff2f5]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg> [[ service.cryptoCurrency ]]</div>',
+            '                <p v-if="(service.description || \'\').trim()" class="text-xs text-[#58667e] mt-2 line-clamp-3">[[ service.description ]]</p>',
             '              </div>',
             '              <div class="text-right">',
             '                <div class="text-xs text-[#58667e] uppercase font-bold tracking-wider">[[ $t(\'main.my_business.commission\') ]]</div>',
             '                <div class="text-lg font-bold text-[#3861fb]">[[ service.commission ]]%</div>',
             '              </div>',
             '            </div>',
-            '            <div class="pt-3 border-t border-[#eff2f5] flex items-center justify-between">',
-            '              <div class="flex items-center gap-1.5 text-xs text-[#58667e]"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0h.5a2.5 2.5 0 002.5-2.5V3.935M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> [[ $t(\'main.my_business.rate_label\') ]]: [[ service.rateType === \'forex\' ? $t(\'main.my_business.rate_forex\') : $t(\'main.my_business.rate_request\') ]]</div>',
-            '              <button type="button" class="text-xs font-bold text-[#3861fb] hover:underline flex items-center gap-1">[[ $t(\'main.my_business.integration\') ]] <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg></button>',
+            '            <div class="pt-3 border-t border-[#eff2f5] space-y-2">',
+            '              <div v-if="(service.payment_code || \'\').trim()" class="flex flex-wrap items-center gap-2 text-xs text-[#58667e]">',
+            '                <span class="font-mono bg-gray-50 px-2 py-0.5 rounded">[[ service.payment_code ]]</span>',
+            '                <button type="button" @click="openFormPreview(service.payment_code)" class="text-[#3861fb] font-bold hover:underline">[[ $t(\'main.my_business.preview_payment_form\') ]]</button>',
+            '              </div>',
+            '              <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">',
+            '                <div class="flex items-center gap-1.5 text-xs text-[#58667e] min-w-0"><svg class="w-3 h-3 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0h.5a2.5 2.5 0 002.5-2.5V3.935M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg> <span class="truncate">[[ $t(\'main.my_business.rate_label\') ]]: [[ serviceRateLabel(service) ]]</span></div>',
+            '                <div class="flex items-center gap-2 shrink-0">',
+            '                  <button type="button" @click="deleteExchangeService(service.id)" class="text-xs font-bold text-red-600 hover:underline">[[ $t(\'main.my_business.delete_service\') ]]</button>',
+            '                </div>',
+            '              </div>',
             '            </div>',
             '          </div>',
             '        </div>',
-            '        <button type="button" @click="showCreateModal = true" class="border-2 border-dashed border-[#eff2f5] rounded-2xl p-5 flex flex-col items-center justify-center gap-3 hover:border-[#3861fb] hover:bg-blue-50/30 transition-all group">',
+            '        <button type="button" @click="openCreateServiceModal" class="border-2 border-dashed border-[#eff2f5] rounded-2xl p-5 flex flex-col items-center justify-center gap-3 hover:border-[#3861fb] hover:bg-blue-50/30 transition-all group">',
             '          <div class="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center text-[#58667e] group-hover:bg-[#3861fb] group-hover:text-white transition-all"><svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg></div>',
             '          <span class="text-sm font-bold text-[#58667e] group-hover:text-[#3861fb]">[[ $t(\'main.my_business.add_service\') ]]</span>',
             '        </button>',
@@ -911,14 +1249,15 @@
             '    </div>',
             '  </div>',
 
-            '  <div v-if="showCreateModal" class="fixed inset-0 z-[100] flex items-center justify-center p-4">',
+            '  <div v-if="showCreateModal" class="fixed inset-0 z-[100] overflow-y-auto overscroll-contain">',
+            '    <div class="min-h-[100dvh] min-h-[100svh] flex items-end justify-center sm:items-center p-0 sm:p-4">',
             '    <div class="absolute inset-0 bg-black/60" @click="showCreateModal = false"></div>',
-            '    <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl relative overflow-hidden">',
-            '      <div class="p-6 border-b border-[#eff2f5] flex items-center justify-between">',
+            '    <div class="relative z-10 bg-white w-full max-w-full sm:max-w-2xl lg:max-w-3xl rounded-t-3xl sm:rounded-3xl shadow-2xl grid grid-rows-[auto_minmax(0,1fr)_auto] h-[90dvh] max-h-[90dvh] overflow-hidden my-0 sm:my-4">',
+            '      <div class="p-6 border-b border-[#eff2f5] flex items-center justify-between shrink-0">',
             '        <h3 class="text-xl font-bold text-[#191d23]">[[ $t(\'main.my_business.modal_new_service_title\') ]]</h3>',
             '        <button type="button" @click="showCreateModal = false" class="p-2 hover:bg-gray-100 rounded-full"><svg class="w-6 h-6 text-[#58667e] rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg></button>',
             '      </div>',
-            '      <div class="p-6 space-y-6">',
+            '      <div class="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain touch-pan-y p-6 space-y-6 [scrollbar-gutter:stable]">',
             '        <div class="grid grid-cols-2 gap-4">',
             '          <button type="button" @click="newService.type = \'onRamp\'" :class="[\'p-4 rounded-2xl border-2 transition-all flex flex-col items-center gap-2\', newService.type === \'onRamp\' ? \'border-[#3861fb] bg-blue-50 text-[#3861fb]\' : \'border-[#eff2f5] hover:border-gray-300\']">',
             '            <svg class="w-6 h-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M7 7h10v10"/><path d="M7 17 17 7"/></svg>',
@@ -931,23 +1270,48 @@
             '            <span class="text-[10px] opacity-60">[[ $t(\'main.my_business.off_ramp_desc\') ]]</span>',
             '          </button>',
             '        </div>',
-            '        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">',
-            '          <div class="relative">',
+            '        <div class="create-modal-currency-panel">',
+            '          <p class="create-modal-currency-panel-title">[[ $t(\'main.my_business.currency_pair_section_title\') ]]</p>',
+            '        <div class="create-modal-currency-row">',
+            '          <div class="relative min-w-0" :class="newService.type === \'onRamp\' ? \'order-1\' : \'order-3\'">',
             '            <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.fiat_label\') ]]</label>',
             '            <div class="relative">',
-            '              <input type="text" v-model="newService.fiatCurrency" :placeholder="$t(\'main.my_business.fiat_placeholder\')" class="w-full pl-9 pr-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb]" />',
+            '              <input type="text" v-model="newService.fiatCurrency" :placeholder="$t(\'main.my_business.fiat_placeholder\')" class="w-full min-w-0 max-w-full pl-9 pr-4 py-3 bg-white border border-[#eff2f5] rounded-xl text-sm shadow-sm focus:outline-none focus:border-[#3861fb]" />',
             '              <svg class="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#58667e]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>',
             '            </div>',
             '            <div v-if="filteredFiats.length > 0" class="absolute z-10 w-full mt-1 bg-white border border-[#eff2f5] rounded-xl shadow-xl overflow-hidden">',
             '              <button type="button" v-for="fiat in filteredFiats" :key="fiat" @click="selectFiat(fiat)" class="w-full px-4 py-2.5 text-left text-sm hover:bg-blue-50 flex items-center justify-between">[[ fiat ]]</button>',
             '            </div>',
             '          </div>',
-            '          <div>',
+            '          <div class="order-2 flex items-center justify-center py-1 md:py-0" aria-hidden="true">',
+            '            <svg class="create-modal-currency-arrow" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></svg>',
+            '          </div>',
+            '          <div class="min-w-0" :class="newService.type === \'onRamp\' ? \'order-3\' : \'order-1\'">',
             '            <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.crypto_label\') ]]</label>',
-            '            <select v-model="newService.cryptoCurrency" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb] appearance-none">',
+            '            <select v-model="newService.cryptoCurrency" class="w-full min-w-0 max-w-full px-4 py-3 bg-white border border-[#eff2f5] rounded-xl text-sm shadow-sm focus:outline-none focus:border-[#3861fb] appearance-none">',
             '              <option v-for="opt in cryptoOptions" :key="opt" :value="opt">[[ opt ]]</option>',
             '            </select>',
             '          </div>',
+            '        </div>',
+            '        </div>',
+            '        <div class="create-modal-fiat-limits-row">',
+            '          <div class="min-w-0">',
+            '            <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.min_fiat_label\') ]]</label>',
+            '            <input type="number" v-model.number="newService.minFiat" min="0" step="0.01" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb]" />',
+            '          </div>',
+            '          <div class="min-w-0">',
+            '            <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.max_fiat_label\') ]]</label>',
+            '            <input type="number" v-model.number="newService.maxFiat" min="0" step="0.01" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb]" />',
+            '          </div>',
+            '        </div>',
+            '        <div>',
+            '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.service_description_label\') ]]</label>',
+            '          <textarea v-model="newService.description" rows="2" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb] resize-y min-h-[4rem]" :placeholder="$t(\'main.my_business.service_description_placeholder\')"></textarea>',
+            '        </div>',
+            '        <div>',
+            '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.payment_code_label\') ]]</label>',
+            '          <input type="text" v-model="newService.payment_code" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb] font-mono" :placeholder="$t(\'main.my_business.payment_code_placeholder\')" />',
+            '          <p class="text-[10px] text-[#58667e] mt-1 ml-1">[[ $t(\'main.my_business.payment_code_hint\') ]]</p>',
             '        </div>',
             '        <div>',
             '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-3 ml-1">[[ $t(\'main.my_business.rate_type_label\') ]]</label>',
@@ -962,16 +1326,44 @@
             '            </label>',
             '          </div>',
             '        </div>',
+            '        <div v-show="newService.rateType === \'forex\'">',
+            '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.ratios_engine_key_label\') ]]</label>',
+            '          <input type="text" v-model="newService.ratiosEngineKey" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb] font-mono" :placeholder="$t(\'main.my_business.ratios_engine_key_placeholder\')" />',
+            '        </div>',
             '        <div>',
             '          <div class="flex items-center justify-between mb-1.5 ml-1"><label class="text-[10px] font-bold text-[#58667e] uppercase">[[ $t(\'main.my_business.commission_label\') ]]</label><span class="text-sm font-bold text-[#3861fb]">[[ newService.commission ]]%</span></div>',
             '          <input type="range" v-model.number="newService.commission" min="0.1" max="10" step="0.1" class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer" style="accent-color: #3861fb;" />',
             '          <div class="flex justify-between mt-2 text-[10px] text-[#58667e] font-bold"><span>0.1%</span><span>5.0%</span><span>10.0%</span></div>',
             '        </div>',
             '      </div>',
-            '      <div class="p-6 bg-gray-50 border-t border-[#eff2f5] flex gap-3">',
+            '      <div class="p-6 pt-4 bg-gray-50 border-t border-[#eff2f5] flex gap-3 shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">',
             '        <button type="button" @click="showCreateModal = false" class="flex-1 py-3 border border-[#eff2f5] rounded-xl text-sm font-bold text-[#58667e] hover:bg-white transition-all">[[ $t(\'main.my_business.cancel\') ]]</button>',
-            '        <button type="button" @click="addService" :disabled="!(newService.fiatCurrency || \'\').trim()" class="flex-1 py-3 bg-[#3861fb] text-white rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all">[[ $t(\'main.my_business.launch_service\') ]]</button>',
+            '        <button type="button" @click="addService" :disabled="exchangeSaving || !(newService.fiatCurrency || \'\').trim()" class="flex-1 py-3 bg-[#3861fb] text-white rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all">[[ exchangeSaving ? $t(\'main.my_business.saving\') : $t(\'main.my_business.launch_service\') ]]</button>',
             '      </div>',
+            '    </div>',
+            '    </div>',
+            '  </div>',
+
+            '  <div v-if="showFormPreviewModal" class="fixed inset-0 z-[110] overflow-y-auto overscroll-contain">',
+            '    <div class="min-h-[100dvh] min-h-[100svh] flex items-end justify-center sm:items-center p-0 sm:p-4">',
+            '    <div class="absolute inset-0 bg-black/60" @click="showFormPreviewModal = false"></div>',
+            '    <div class="relative z-10 bg-white w-full max-w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl grid grid-rows-[auto_minmax(0,1fr)] h-[90dvh] max-h-[90dvh] overflow-hidden my-0 sm:my-4">',
+            '      <div class="p-6 border-b border-[#eff2f5] flex items-center justify-between shrink-0">',
+            '        <h3 class="text-xl font-bold text-[#191d23]">[[ $t(\'main.my_business.form_preview_title\') ]] <span class="font-mono text-base text-[#58667e]">[[ formPreviewCode ]]</span></h3>',
+            '        <button type="button" @click="showFormPreviewModal = false" class="p-2 hover:bg-gray-100 rounded-full"><svg class="w-6 h-6 text-[#58667e] rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg></button>',
+            '      </div>',
+            '      <div class="min-h-0 overflow-y-auto touch-pan-y p-6 space-y-3 text-sm">',
+            '        <p v-if="formPreviewLoading" class="text-[#58667e]">[[ $t(\'main.loading\') ]]</p>',
+            '        <p v-else-if="formPreviewError" class="text-red-600">[[ $t(\'main.my_business.form_preview_error\') ]]</p>',
+            '        <template v-else-if="formPreviewPayload">',
+            '          <p class="text-xs text-[#58667e]">[[ $t(\'main.my_business.form_source_label\') ]]: <strong>[[ formPreviewPayload.source ]]</strong></p>',
+            '          <ul v-if="formPreviewPayload.form && formPreviewPayload.form.fields && formPreviewPayload.form.fields.length" class="list-disc pl-5 space-y-1">',
+            '            <li v-for="(f, idx) in formPreviewPayload.form.fields" :key="idx" class="text-[#191d23]"><span class="font-mono text-xs">[[ f.id ]]</span> — [[ f.type ]] <span v-if="f.required" class="text-amber-600 text-xs">([[ $t(\'main.my_business.field_required\') ]])</span></li>',
+            '          </ul>',
+            '          <p v-else class="text-[#58667e]">[[ $t(\'main.my_business.form_preview_empty\') ]]</p>',
+            '        </template>',
+            '      </div>',
+            '    </div>',
             '    </div>',
             '  </div>',
 
@@ -1009,14 +1401,15 @@
             '    </div>',
             '  </div>',
 
-            '  <div v-if="showRampModal" class="fixed inset-0 z-[100] flex items-center justify-center p-4">',
+            '  <div v-if="showRampModal" class="fixed inset-0 z-[100] overflow-y-auto overscroll-contain">',
+            '    <div class="min-h-[100dvh] min-h-[100svh] flex items-end justify-center sm:items-center p-0 sm:p-4">',
             '    <div class="absolute inset-0 bg-black/60" @click="closeRampModal"></div>',
-            '    <div class="bg-white w-full max-w-lg rounded-3xl shadow-2xl relative overflow-hidden max-h-[90vh] overflow-y-auto">',
-            '      <div class="p-6 border-b border-[#eff2f5] flex items-center justify-between">',
+            '    <div class="relative z-10 bg-white w-full max-w-full sm:max-w-lg rounded-t-3xl sm:rounded-3xl shadow-2xl grid grid-rows-[auto_minmax(0,1fr)_auto] h-[90dvh] max-h-[90dvh] overflow-hidden my-0 sm:my-4">',
+            '      <div class="p-6 border-b border-[#eff2f5] flex items-center justify-between shrink-0">',
             '        <h3 class="text-xl font-bold text-[#191d23]">[[ rampEditingId ? $t(\'main.my_business.ramp_modal_edit_title\') : $t(\'main.my_business.ramp_modal_add_title\') ]]</h3>',
             '        <button type="button" @click="closeRampModal" class="p-2 hover:bg-gray-100 rounded-full"><svg class="w-6 h-6 text-[#58667e] rotate-45" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4" /></svg></button>',
             '      </div>',
-            '      <div class="p-6 space-y-4">',
+            '      <div class="min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain touch-pan-y p-6 space-y-4">',
             '        <template v-if="!rampEditingId">',
             '          <div class="flex flex-col sm:flex-row gap-3 sm:gap-4">',
             '            <div class="flex-1 min-w-0">',
@@ -1085,10 +1478,11 @@
             '          </div>',
             '        </template>',
             '      </div>',
-            '      <div class="p-6 bg-gray-50 border-t border-[#eff2f5] flex gap-3">',
+            '      <div class="p-6 pt-4 bg-gray-50 border-t border-[#eff2f5] flex gap-3 shrink-0 pb-[max(1rem,env(safe-area-inset-bottom))]">',
             '        <button type="button" @click="closeRampModal" class="flex-1 py-3 border border-[#eff2f5] rounded-xl text-sm font-bold text-[#58667e] hover:bg-white transition-all">[[ $t(\'main.my_business.cancel\') ]]</button>',
             '        <button type="button" @click="saveRampWallet" :disabled="rampSaving || (rampEditingId ? rampSaveEditDisabled : rampSaveAddDisabled)" class="flex-1 py-3 bg-[#3861fb] text-white rounded-xl text-sm font-bold hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-all">[[ $t(\'main.my_business.ramp_save\') ]]</button>',
             '      </div>',
+            '    </div>',
             '    </div>',
             '  </div>',
 
