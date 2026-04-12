@@ -360,6 +360,7 @@
   "main.my_business.new_service_help_close": "Got it",
   "main.my_business.fiat_placeholder": "e.g. USD, RUB...",
   "main.my_business.fiat_clear": "Clear currency",
+  "main.my_business.payment_code_clear": "Clear payment method code",
   "main.my_business.currency_pair_section_title": "Currency pair",
   "main.my_business.fiat_label": "Fiat currency",
   "main.my_business.crypto_label": "Cryptocurrency",

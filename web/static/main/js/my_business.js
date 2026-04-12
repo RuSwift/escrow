@@ -489,9 +489,6 @@
             },
             clearCreateModalFiatCurrency: function() {
                 this.newService.fiatCurrency = '';
-                this.fiatAutocompleteOpen = false;
-                this.fiatCurrencySuggestions = [];
-                this.fiatCurrencyNoHits = false;
                 this._abortCreateModalFiatCurrencyRequest();
                 this.newService.payment_code = '';
                 this.newService._paymentCodeBackup = '';
@@ -500,6 +497,16 @@
                 this.paymentCodeLoading = false;
                 this._abortCreateModalPaymentCodeRequest();
                 this.applyCashPaymentRules();
+                this.fiatAutocompleteOpen = true;
+                this.fetchCreateModalFiatCurrencies('');
+            },
+            clearCreateModalPaymentCode: function() {
+                if (this.cashLocked) return;
+                if (!this.createModalFiatIso3) return;
+                this.newService.payment_code = '';
+                if (this.newService.cash) this.newService._paymentCodeBackup = '';
+                this.paymentCodeAutocompleteOpen = true;
+                this.fetchCreateModalPaymentDirections('');
             },
             _abortCreateModalFiatCurrencyRequest: function() {
                 if (this._fiatCurrencyAbortController) {
@@ -2104,7 +2111,10 @@
             '          <label class="block text-[10px] font-bold text-[#58667e] uppercase mb-1.5 ml-1">[[ $t(\'main.my_business.payment_code_label\') ]]</label>',
             '          <div class="flex flex-col sm:flex-row gap-2 items-stretch">',
             '            <div class="relative flex-1 min-w-0">',
-            '            <input type="text" v-model="newService.payment_code" autocomplete="off" :disabled="!createModalFiatIso3 || cashLocked" @focus="onPaymentCodeFocus" @input="onPaymentCodeInput" @blur="onPaymentCodeBlur" class="w-full px-4 py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb] font-mono disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed" :placeholder="createModalFiatIso3 ? $t(\'main.my_business.payment_code_placeholder\') : $t(\'main.my_business.payment_code_placeholder_disabled\')" />',
+            '            <input type="text" v-model="newService.payment_code" autocomplete="off" :disabled="!createModalFiatIso3 || cashLocked" @focus="onPaymentCodeFocus" @input="onPaymentCodeInput" @blur="onPaymentCodeBlur" :class="[\'w-full py-3 bg-gray-50 border border-[#eff2f5] rounded-xl text-sm focus:outline-none focus:border-[#3861fb] font-mono disabled:bg-gray-100 disabled:text-gray-500 disabled:cursor-not-allowed\', (newService.payment_code || \'\').trim() && createModalFiatIso3 && !cashLocked ? \'pl-4 pr-10\' : \'px-4\']" :placeholder="createModalFiatIso3 ? $t(\'main.my_business.payment_code_placeholder\') : $t(\'main.my_business.payment_code_placeholder_disabled\')" />',
+            '            <button v-if="(newService.payment_code || \'\').trim() && createModalFiatIso3 && !cashLocked" type="button" @click="clearCreateModalPaymentCode" @mousedown.prevent class="absolute right-1.5 top-1/2 -translate-y-1/2 z-[1] p-1.5 rounded-lg text-[#58667e] hover:bg-[#eff2f5] hover:text-[#191d23] focus:outline-none focus:ring-2 focus:ring-[#3861fb]/40" :title="$t(\'main.my_business.payment_code_clear\')" :aria-label="$t(\'main.my_business.payment_code_clear\')">',
+            '              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>',
+            '            </button>',
             '            <div v-if="paymentCodeAutocompleteOpen && createModalFiatIso3 && !cashLocked" class="absolute z-[60] w-full mt-1 bg-white border border-[#eff2f5] rounded-xl shadow-xl overflow-hidden max-h-48 overflow-y-auto">',
             '              <div v-if="paymentCodeLoading" class="px-3 py-2.5 text-xs text-[#58667e]">[[ $t(\'main.loading\') ]]</div>',
             '              <div v-else>',

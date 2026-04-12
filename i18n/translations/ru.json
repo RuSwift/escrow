@@ -360,6 +360,7 @@
   "main.my_business.new_service_help_close": "Понятно",
   "main.my_business.fiat_placeholder": "Напр. USD, RUB...",
   "main.my_business.fiat_clear": "Очистить валюту",
+  "main.my_business.payment_code_clear": "Очистить код способа оплаты",
   "main.my_business.currency_pair_section_title": "Валютная пара",
   "main.my_business.fiat_label": "Фиатная валюта",
   "main.my_business.crypto_label": "Криптовалюта",
