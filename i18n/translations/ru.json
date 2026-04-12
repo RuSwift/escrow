@@ -557,7 +557,7 @@
   "main.my_business.ramp_delete_blocked_stable": "Нельзя удалить кошелёк: сумма USDT и A7A5 в пересчёте на USDT превышает 5. Выведите средства.",
   "main.my_business.ramp_delete_blocked_trx": "Нельзя удалить кошелёк: баланс TRX больше 10. Выведите TRX.",
   "main.my_business.ramp_delete_blocked_forex": "Не удалось получить курс валют (Forex). Повторите позже.",
-  "main.my_business.ramp_delete_blocked_directions": "Нельзя удалить кошелёк: он указан в направлениях offRamp: {titles}. Смените кошелёк в направлениях или удалите их.",
+  "main.my_business.ramp_delete_blocked_directions": "Нельзя удалить кошелёк: он указан в направлениях offRamp: {{titles}}. Смените кошелёк в направлениях или удалите их.",
   "main.my_business.space_wallet_label": "Корпоративный кошелёк (offRamp)",
   "main.my_business.space_wallet_placeholder": "Выберите кошелёк",
   "main.my_business.space_wallet_empty": "Добавьте корпоративный кошелёк в блоке «Мой бизнес», затем выберите его здесь.",

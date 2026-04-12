@@ -557,7 +557,7 @@
   "main.my_business.ramp_delete_blocked_stable": "Cannot delete the wallet: USDT and A7A5 (in USDT equivalent) exceed 5. Please withdraw funds first.",
   "main.my_business.ramp_delete_blocked_trx": "Cannot delete the wallet: TRX balance is above 10. Please withdraw TRX.",
   "main.my_business.ramp_delete_blocked_forex": "Could not fetch Forex rates. Please try again later.",
-  "main.my_business.ramp_delete_blocked_directions": "Cannot delete the wallet: it is linked to off-ramp directions: {titles}. Change the wallet on those directions or remove them first.",
+  "main.my_business.ramp_delete_blocked_directions": "Cannot delete the wallet: it is linked to off-ramp directions: {{titles}}. Change the wallet on those directions or remove them first.",
   "main.my_business.space_wallet_label": "Corporate wallet (offRamp)",
   "main.my_business.space_wallet_placeholder": "Select a wallet",
   "main.my_business.space_wallet_empty": "Add a corporate wallet in «My business», then select it here.",
