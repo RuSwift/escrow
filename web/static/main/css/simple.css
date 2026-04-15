@@ -647,3 +647,178 @@
   width: 1.5rem;
   height: 1.5rem;
 }
+
+/* --- Simple auth modal (TronLink required) --- */
+.simple-auth__overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(10, 11, 13, 0.45);
+  backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.simple-auth__modal {
+  width: 100%;
+  max-width: 520px;
+  background: var(--p2p-card);
+  color: var(--p2p-fg);
+  border: 1px solid var(--p2p-border-soft);
+  border-radius: 1rem;
+  box-shadow: var(--p2p-window-shadow);
+  padding: 1.25rem;
+}
+
+@media (min-width: 768px) {
+  .simple-auth__modal {
+    padding: 1.5rem;
+    border-radius: 1.25rem;
+  }
+}
+
+.simple-auth__title {
+  font-size: 16px;
+  font-weight: 800;
+  margin: 0 0 0.5rem;
+}
+
+.simple-auth__text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--p2p-muted);
+}
+
+.simple-auth__error {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 0.75rem;
+  background: rgba(234, 57, 67, 0.08);
+  border: 1px solid rgba(234, 57, 67, 0.18);
+  color: #b4232a;
+  font-size: 12px;
+}
+
+.p2p-deal--dark .simple-auth__error {
+  color: #ff9aa0;
+  background: rgba(248, 81, 73, 0.12);
+  border-color: rgba(248, 81, 73, 0.25);
+}
+
+/* /simple: без Tailwind классы tron-login не действуют — оформляем кнопки и блок ошибки */
+.simple-auth__tron {
+  margin-top: 1rem;
+}
+
+.simple-auth__tron > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.875rem;
+}
+
+.simple-auth__tron > div > p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--p2p-muted);
+}
+
+.simple-auth__tron > div > div {
+  padding: 0.75rem 0.875rem;
+  border-radius: 0.75rem;
+  background: rgba(234, 57, 67, 0.08);
+  border: 1px solid rgba(234, 57, 67, 0.2);
+  color: #b4232a;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.simple-auth__tron > div > div p {
+  margin: 0 0 0.5rem;
+}
+
+.simple-auth__tron > div > div p:last-child {
+  margin-bottom: 0;
+}
+
+.simple-auth__tron > div > div button {
+  display: inline-block;
+  margin-top: 0.125rem;
+  padding: 0.35rem 0.6rem;
+  border: none;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.65);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: #9f1a24;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.simple-auth__tron > div > div button:hover {
+  background: rgba(255, 255, 255, 0.95);
+  color: #6f1219;
+}
+
+.p2p-deal--dark .simple-auth__tron > div > div {
+  background: rgba(248, 81, 73, 0.12);
+  border-color: rgba(248, 81, 73, 0.28);
+  color: #ffc9c9;
+}
+
+.p2p-deal--dark .simple-auth__tron > div > div button {
+  background: rgba(18, 21, 26, 0.55);
+  color: #ffb4b8;
+}
+
+.p2p-deal--dark .simple-auth__tron > div > div button:hover {
+  background: rgba(18, 21, 26, 0.85);
+  color: #ffd6d8;
+}
+
+.simple-auth__tron > div > button[type="button"] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.75rem 1.125rem;
+  border: none;
+  border-radius: 0.75rem;
+  background: var(--p2p-primary);
+  color: var(--p2p-primary-fg);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.15) inset,
+    0 4px 14px color-mix(in srgb, var(--p2p-primary) 42%, transparent);
+  transition:
+    transform 0.15s ease,
+    filter 0.15s ease,
+    box-shadow 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.simple-auth__tron > div > button[type="button"]:hover:not(:disabled) {
+  filter: brightness(1.05);
+  transform: translateY(-1px);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.18) inset,
+    0 6px 20px color-mix(in srgb, var(--p2p-primary) 48%, transparent);
+}
+
+.simple-auth__tron > div > button[type="button"]:active:not(:disabled) {
+  transform: translateY(0);
+  filter: brightness(0.98);
+}
+
+.simple-auth__tron > div > button[type="button"]:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}

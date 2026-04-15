@@ -15,8 +15,12 @@ from web.endpoints.dependencies import (
     WalletUserServiceDep,
     Web3AuthDep,
 )
+from sqlalchemy import select, func
+
+from db.models import PrimaryWallet, WalletUser
 from web.endpoints.v1.schemas.auth import (
     AuthResponse,
+    EnsureSpaceResponse,
     InitRequest,
     InitResponse,
     NonceRequest,
@@ -203,6 +207,70 @@ async def init_tron_user(
             detail=str(e),
         )
     return InitResponse(space=nickname)
+
+
+@router.post("/tron/ensure-space", response_model=EnsureSpaceResponse)
+async def ensure_tron_space(
+    current_user: CurrentTronUser,
+    wallet_service: WalletUserServiceDep,
+):
+    """
+    Гарантирует, что для текущего TRON-адреса есть выбранный space:
+    - если spaces не пусты: выбирает space, где primary wallet совпадает с адресом
+      (PrimaryWallet.address или fallback на WalletUser.wallet_address).
+    - если spaces пусты: создаёт новый space с nickname вида simple_<first6> (с суффиксом при коллизии).
+    """
+    wallet_address = (current_user.wallet_address or "").strip()
+    spaces = await wallet_service.get_spaces_for_address(wallet_address, "tron")
+
+    # 1) Если spaces уже есть — пытаемся найти primary-match
+    if spaces:
+        # stable order for fallback
+        sorted_spaces = sorted([s for s in spaces if s])
+
+        stmt = (
+            select(WalletUser.nickname)
+            .select_from(WalletUser)
+            .outerjoin(PrimaryWallet, PrimaryWallet.wallet_user_id == WalletUser.id)
+            .where(WalletUser.nickname.in_(sorted_spaces))
+            .where(func.coalesce(PrimaryWallet.address, WalletUser.wallet_address) == wallet_address)
+            .order_by(WalletUser.nickname.asc())
+            .limit(1)
+        )
+        res = await wallet_service._session.execute(stmt)  # service owns session; private but consistent across codebase
+        match = res.scalar_one_or_none()
+        if match:
+            return EnsureSpaceResponse(space=match, created=False, primary_matched=True)
+        return EnsureSpaceResponse(space=sorted_spaces[0], created=False, primary_matched=False)
+
+    # 2) Нет spaces — создаём новый nickname автоматически
+    prefix = "simple"
+    base = wallet_address[:6] if wallet_address else "anon"
+    base_nick = f"{prefix}_{base}"
+
+    # try base, then base_2, base_3 ...
+    created_nick = None
+    for i in range(1, 50):
+        nick = base_nick if i == 1 else f"{base_nick}_{i}"
+        existing = await wallet_service.get_by_nickname(nick)
+        if existing:
+            continue
+        try:
+            await wallet_service.create_user_for_init(
+                wallet_address=wallet_address,
+                blockchain="tron",
+                nickname=nick,
+            )
+            created_nick = nick
+            break
+        except ValueError:
+            # Nickname could be taken concurrently; try next suffix
+            continue
+
+    if not created_nick:
+        raise HTTPException(status_code=500, detail="Failed to allocate space nickname")
+
+    return EnsureSpaceResponse(space=created_nick, created=True, primary_matched=False)
 
 
 @router.get("/tron/me", response_model=UserInfo)

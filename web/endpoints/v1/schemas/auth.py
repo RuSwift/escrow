@@ -51,3 +51,14 @@ class InitResponse(BaseModel):
     """Ответ после успешной инициации: клиент сохраняет токен от verify и переходит в space."""
 
     space: str = Field(..., description="Nickname (space), в который перейти")
+
+
+class EnsureSpaceResponse(BaseModel):
+    """Ответ для /v1/auth/tron/ensure-space: выбрать или создать подходящий space."""
+
+    space: str = Field(..., description="Nickname (space), который нужно использовать")
+    created: bool = Field(False, description="True если space был создан на лету")
+    primary_matched: bool = Field(
+        False,
+        description="True если найден space, где primary wallet совпал с текущим адресом",
+    )

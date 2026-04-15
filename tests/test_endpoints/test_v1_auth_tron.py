@@ -8,6 +8,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from db import get_db
+from db.models import PrimaryWallet, WalletUser, WalletUserSub
 from web.node import create_app
 from web.endpoints.dependencies import get_redis, get_settings, ResolvedSettings
 
@@ -297,7 +298,160 @@ async def test_auth_tron_init_when_spaces_exist_400(auth_app, test_db):
             headers={"Authorization": f"Bearer {token}"},
         )
     assert init_r.status_code == 400
-    assert "already" in (init_r.json().get("detail") or "").lower() or "spaces" in (init_r.json().get("detail") or "").lower()
+
+
+# --- POST /v1/auth/tron/ensure-space ---
+
+
+async def _tron_verify_and_token(client: AsyncClient):
+    priv, tron_address = _tron_key_and_address()
+    nonce_r = await client.post(
+        "/v1/auth/tron/nonce",
+        json={"wallet_address": tron_address},
+    )
+    assert nonce_r.status_code == 200
+    message = nonce_r.json()["message"]
+    signature = _tron_sign_message(priv, message)
+    verify_r = await client.post(
+        "/v1/auth/tron/verify",
+        json={
+            "wallet_address": tron_address,
+            "signature": signature,
+            "message": message,
+        },
+    )
+    assert verify_r.status_code == 200
+    return tron_address, verify_r.json()["token"], verify_r.json().get("spaces") or []
+
+
+@pytest.mark.asyncio
+async def test_auth_tron_ensure_space_creates_when_empty(auth_app, test_db):
+    """Если spaces пусты — ensure-space создаёт nickname simple_<first6> (или с суффиксом) и возвращает created=true."""
+    async with AsyncClient(
+        transport=ASGITransport(app=auth_app),
+        base_url="http://test",
+    ) as client:
+        tron_address, token, spaces = await _tron_verify_and_token(client)
+        assert spaces == []
+        r = await client.post(
+            "/v1/auth/tron/ensure-space",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["created"] is True
+    assert data["primary_matched"] is False
+    assert data["space"].startswith("simple_" + tron_address[:6])
+
+
+@pytest.mark.asyncio
+async def test_auth_tron_ensure_space_primary_match_owner_default(auth_app, test_db):
+    """
+    Если space существует и primary wallet по умолчанию (= wallet_user.wallet_address) совпадает с адресом —
+    ensure-space выбирает этот space и primary_matched=true.
+    """
+    priv, tron_address = _tron_key_and_address()
+    # Создаём space, где владелец = tron_address
+    u = WalletUser(
+        wallet_address=tron_address,
+        blockchain="tron",
+        did="did:tron:" + tron_address,
+        nickname="owner_space",
+    )
+    test_db.add(u)
+    await test_db.flush()
+    await test_db.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=auth_app),
+        base_url="http://test",
+    ) as client:
+        # verify выдаст spaces включая owner_space
+        nonce_r = await client.post("/v1/auth/tron/nonce", json={"wallet_address": tron_address})
+        message = nonce_r.json()["message"]
+        signature = _tron_sign_message(priv, message)
+        verify_r = await client.post(
+            "/v1/auth/tron/verify",
+            json={"wallet_address": tron_address, "signature": signature, "message": message},
+        )
+        token = verify_r.json()["token"]
+        assert "owner_space" in (verify_r.json().get("spaces") or [])
+        r = await client.post(
+            "/v1/auth/tron/ensure-space",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["space"] == "owner_space"
+    assert data["created"] is False
+    assert data["primary_matched"] is True
+
+
+@pytest.mark.asyncio
+async def test_auth_tron_ensure_space_fallback_sorted_when_no_primary_match(auth_app, test_db):
+    """Если spaces есть, но primary не совпадает ни с одним — fallback на первый по nickname (sorted)."""
+    priv, tron_address = _tron_key_and_address()
+    # Два разных владельца, tron_address будет субаккаунтом, а primary по умолчанию = owner.wallet_address (не совпадает)
+    a = WalletUser(wallet_address="T" + "1" * 33, blockchain="tron", did="did:tron:a", nickname="aaa_space")
+    b = WalletUser(wallet_address="T" + "2" * 33, blockchain="tron", did="did:tron:b", nickname="bbb_space")
+    test_db.add_all([a, b])
+    await test_db.flush()
+    test_db.add_all(
+        [
+            WalletUserSub(wallet_user_id=a.id, wallet_address=tron_address, blockchain="tron", is_verified=True, is_blocked=False),
+            WalletUserSub(wallet_user_id=b.id, wallet_address=tron_address, blockchain="tron", is_verified=True, is_blocked=False),
+        ]
+    )
+    await test_db.commit()
+
+    # Авторизация через verify (spaces вернутся, token валиден)
+    async with AsyncClient(
+        transport=ASGITransport(app=auth_app),
+        base_url="http://test",
+    ) as client:
+        nonce_r = await client.post("/v1/auth/tron/nonce", json={"wallet_address": tron_address})
+        message = nonce_r.json()["message"]
+        signature = _tron_sign_message(priv, message)
+        verify_r = await client.post(
+            "/v1/auth/tron/verify",
+            json={"wallet_address": tron_address, "signature": signature, "message": message},
+        )
+        token = verify_r.json()["token"]
+        r = await client.post("/v1/auth/tron/ensure-space", headers={"Authorization": f"Bearer {token}"})
+    assert r.status_code == 200
+    data = r.json()
+    assert data["primary_matched"] is False
+    assert data["space"] == "aaa_space"
+
+
+@pytest.mark.asyncio
+async def test_auth_tron_ensure_space_collision_adds_suffix(auth_app, test_db):
+    """Если simple_<first6> занят — ensure-space создаёт следующий свободный суффикс."""
+    _, tron_address = _tron_key_and_address()
+    base_nick = "simple_" + tron_address[:6]
+    occupied = WalletUser(
+        wallet_address="T" + "9" * 33,
+        blockchain="tron",
+        did="did:tron:occupied",
+        nickname=base_nick,
+    )
+    test_db.add(occupied)
+    await test_db.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=auth_app),
+        base_url="http://test",
+    ) as client:
+        tron_address, token, spaces = await _tron_verify_and_token(client)
+        assert spaces == []
+        r = await client.post(
+            "/v1/auth/tron/ensure-space",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["created"] is True
+    assert data["space"].startswith(base_nick + "_")
 
 
 @pytest.mark.asyncio

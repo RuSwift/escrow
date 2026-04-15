@@ -17,7 +17,51 @@
         return s;
     }
 
+    Vue.prototype.$t = t;
+
     var STORAGE_KEY = 'simple_theme';
+    var SPACE_KEY = 'simple_space';
+    var TOKEN_KEY = (typeof window !== 'undefined' && window.main_auth_token_key) ? window.main_auth_token_key : 'main_auth_token';
+
+    function getToken() {
+        try { return (localStorage.getItem(TOKEN_KEY) || '').trim(); } catch (e) { return ''; }
+    }
+
+    function setSpace(space) {
+        try { localStorage.setItem(SPACE_KEY, space || ''); } catch (e) {}
+    }
+
+    function getSpace() {
+        try { return (localStorage.getItem(SPACE_KEY) || '').trim(); } catch (e) { return ''; }
+    }
+
+    function clearAuthAndSpace() {
+        try { localStorage.removeItem(TOKEN_KEY); } catch (e) {}
+        try { localStorage.removeItem(SPACE_KEY); } catch (e) {}
+    }
+
+    function themeFromQuery() {
+        try {
+            var raw = new URLSearchParams(window.location.search).get('theme');
+            if (!raw) return null;
+            var q = String(raw).toLowerCase().trim();
+            if (q === 'dark' || q === 'light') return q;
+        } catch (e) {}
+        return null;
+    }
+
+    function ensureSpace(token) {
+        return fetch('/v1/auth/tron/ensure-space', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': token ? ('Bearer ' + token) : ''
+            },
+            credentials: 'same-origin'
+        }).then(function(r) {
+            return r.json().then(function(data) { return { status: r.status, data: data }; });
+        });
+    }
 
     new Vue({
         el: el,
@@ -25,6 +69,10 @@
             return {
                 appName: (el.getAttribute('data-app-name') || '').trim() || 'Escrow',
                 theme: 'light',
+                authReady: false,
+                showAuthModal: false,
+                authError: '',
+                activeSpace: '',
                 navSteps: [
                     { num: '01', titleKey: 'main.simple.nav_step1_title', subKey: 'main.simple.nav_step1_sub', status: 'done' },
                     { num: '02', titleKey: 'main.simple.nav_step2_title', subKey: 'main.simple.nav_step2_sub', status: 'active' },
@@ -34,13 +82,65 @@
             };
         },
         created: function() {
-            var saved = null;
-            try {
-                saved = localStorage.getItem(STORAGE_KEY);
-            } catch (e) {}
-            if (saved === 'dark' || saved === 'light') {
-                this.theme = saved;
+            var self = this;
+            var fromUrl = themeFromQuery();
+            if (fromUrl) {
+                this.theme = fromUrl;
+            } else {
+                var saved = null;
+                try {
+                    saved = localStorage.getItem(STORAGE_KEY);
+                } catch (e) {}
+                if (saved === 'dark' || saved === 'light') {
+                    this.theme = saved;
+                }
             }
+
+            // Auth bootstrap: if no JWT -> require TronLink login; if JWT exists -> ensure correct (primary) space
+            var token = getToken();
+            var getCurrent = window.get_current_user;
+            if (!getCurrent) {
+                // If auth.js wasn't loaded for some reason, still show modal
+                self.showAuthModal = true;
+                self.authReady = true;
+                return;
+            }
+
+            getCurrent().then(function(u) {
+                if (!u) {
+                    self.showAuthModal = true;
+                    return;
+                }
+                token = getToken();
+                if (!token) {
+                    self.showAuthModal = true;
+                    return;
+                }
+                return ensureSpace(token).then(function(res) {
+                    if (!res || res.status !== 200 || !res.data || !res.data.space) {
+                        self.showAuthModal = true;
+                        return;
+                    }
+                    var target = String(res.data.space || '').trim();
+                    var current = getSpace();
+                    // If user is "in чужом спейсе" (saved space differs from primary/fallback target) -> force relogin
+                    if (current && target && current !== target) {
+                        return fetch('/v1/auth/logout', { method: 'POST', credentials: 'same-origin' })
+                            .catch(function() {})
+                            .then(function() {
+                                clearAuthAndSpace();
+                                self.activeSpace = '';
+                                self.showAuthModal = true;
+                            });
+                    }
+                    self.activeSpace = target;
+                    setSpace(target);
+                });
+            }).catch(function() {
+                self.showAuthModal = true;
+            }).finally(function() {
+                self.authReady = true;
+            });
         },
         watch: {
             theme: function(v) {
@@ -68,6 +168,29 @@
         },
         methods: {
             t: t,
+            onTronSuccess: function(payload) {
+                var self = this;
+                self.authError = '';
+                var key = TOKEN_KEY;
+                try { localStorage.setItem(key, payload.token); } catch (e) {}
+                var token = getToken();
+                if (!token) {
+                    self.authError = t('main.simple.auth_error');
+                    return;
+                }
+                ensureSpace(token).then(function(res) {
+                    if (!res || res.status !== 200 || !res.data || !res.data.space) {
+                        self.authError = (res && res.data && res.data.detail) ? String(res.data.detail) : t('main.simple.auth_error');
+                        return;
+                    }
+                    var target = String(res.data.space || '').trim();
+                    self.activeSpace = target;
+                    setSpace(target);
+                    self.showAuthModal = false;
+                }).catch(function() {
+                    self.authError = t('main.simple.auth_error');
+                });
+            },
             navItemClass: function(step) {
                 return {
                     'p2p-deal__nav-item': true,
@@ -82,6 +205,16 @@
         },
         template: '\
 <div :class="rootClass">\
+  <div v-if="authReady && showAuthModal" class="simple-auth__overlay" role="dialog" aria-modal="true">\
+    <div class="simple-auth__modal">\
+      <h2 class="simple-auth__title">{{ t(\'main.simple.auth_modal_title\') }}</h2>\
+      <p class="simple-auth__text">{{ t(\'main.simple.auth_modal_text\') }}</p>\
+      <div class="simple-auth__tron">\
+        <tron-login @success="onTronSuccess"></tron-login>\
+      </div>\
+      <div v-if="authError" class="simple-auth__error">{{ authError }}</div>\
+    </div>\
+  </div>\
   <div class="p2p-deal__window">\
     <div class="p2p-deal__titlebar">\
       <div class="p2p-deal__traffic" aria-hidden="true"><span></span><span></span><span></span></div>\
