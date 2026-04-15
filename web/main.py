@@ -201,6 +201,14 @@ def create_app() -> FastAPI:
             },
         )
 
+    @app.get("/simple", response_class=HTMLResponse)
+    async def simple(request: Request):
+        """Публичная демо-страница потока P2P-сделки (эскроу → lockbox → получатель) в стилях основного приложения."""
+        return templates.TemplateResponse(
+            "main/simple.html",
+            _main_context(request, "dashboard"),
+        )
+
     @app.get("/{space}", response_class=HTMLResponse)
     async def app_space_view(
         request: Request,

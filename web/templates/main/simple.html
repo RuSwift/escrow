@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="{{ locale | default('ru') }}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{ _('main.simple.window_title', app_name=app_name) }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/main/css/site.css" />
+  <link rel="stylesheet" href="/static/main/css/simple.css" />
+</head>
+<body class="m-0 p-0 overflow-x-hidden">
+  <script>
+    window.__LOCALE__ = "{{ locale | default('ru') }}";
+    window.__TRANSLATIONS__ = {{ translations_json | default('{}') | safe }};
+    window.__TRON_NETWORK__ = "{{ tron_network | default('mainnet') | e }}";
+  </script>
+  <div id="simple-root" data-app-name="{{ app_name | e }}"></div>
+  <script src="https://cdn.jsdelivr.net/npm/vue@2.7.16/dist/vue.min.js"></script>
+  <script src="/static/main/js/simple.js"></script>
+</body>
+</html>
