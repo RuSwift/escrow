@@ -40,6 +40,14 @@
         try { localStorage.removeItem(SPACE_KEY); } catch (e) {}
     }
 
+    /** Сессия: не трогает simple_theme (тема остаётся). */
+    function clearSessionClientStorage() {
+        clearAuthAndSpace();
+        try { localStorage.removeItem('main_current_space'); } catch (e) {}
+        try { localStorage.removeItem('main_invite_tron_snapshot'); } catch (e) {}
+        try { sessionStorage.removeItem('main_invite_wallet_reminder'); } catch (e) {}
+    }
+
     function themeFromQuery() {
         try {
             var raw = new URLSearchParams(window.location.search).get('theme');
@@ -213,6 +221,14 @@
             },
             toggleTheme: function() {
                 this.theme = this.theme === 'light' ? 'dark' : 'light';
+            },
+            onLogout: function() {
+                fetch('/v1/auth/logout', { method: 'POST', credentials: 'same-origin' })
+                    .catch(function() {})
+                    .finally(function() {
+                        clearSessionClientStorage();
+                        window.location.reload();
+                    });
             }
         },
         template: '\
@@ -231,7 +247,7 @@
     <div class="simple-page__titlebar">\
       <div class="simple-page__titlebar-text">{{ chromeTitle }}</div>\
       <div class="simple-page__titlebar-actions">\
-        <a class="simple-page__link-home" href="/">{{ t(\'main.simple.back_home\') }}</a>\
+        <button type="button" class="simple-page__link-home simple-page__link-home--btn" @click="onLogout">{{ t(\'main.simple.logout\') }}</button>\
         <button type="button" class="simple-page__theme-btn" :aria-label="themeBtnLabel" :title="themeBtnLabel" @click="toggleTheme">\
           <svg v-if="theme === \'light\'" class="simple-page__svg simple-page__svg--theme" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/></svg>\
           <svg v-else class="simple-page__svg simple-page__svg--theme" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path stroke-linecap="round" d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>\

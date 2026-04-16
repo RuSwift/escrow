@@ -677,7 +677,7 @@
   "main.simple.window_title": "{app_name} — простой режим (Simple)",
   "main.simple.badge": "Обзор этапов в Simple",
   "main.simple.intro": "Статичный интерфейс Simple: этапы сделки, суммы и путь средств через lockbox (смарт-контракт эскроу). Живая сделка выполняется в вашем спейсе.",
-  "main.simple.back_home": "На главную",
+  "main.simple.logout": "Logout",
   "main.simple.sidebar_title": "Ход сделки",
   "main.simple.orders_list_cta": "Список заявок",
   "main.simple.orders_list_hint": "Войдите через TronLink — откроется ваш спейс и заявки",
