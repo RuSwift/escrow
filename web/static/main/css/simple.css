@@ -166,11 +166,202 @@
   }
 }
 
+.simple-page__orders-block {
+  margin-bottom: 0.875rem;
+}
+
+@media (min-width: 768px) {
+  .simple-page__orders-block {
+    margin-bottom: 1rem;
+  }
+}
+
+.simple-page__orders-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.65rem 0.75rem;
+  border-radius: 0.75rem;
+  background: var(--simple-primary);
+  color: var(--simple-primary-fg);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-decoration: none;
+  text-align: center;
+  border: none;
+  cursor: pointer;
+  transition: filter 0.15s ease, opacity 0.15s ease;
+}
+
+.simple-page__orders-cta:hover:not(.simple-page__orders-cta--muted) {
+  filter: brightness(1.06);
+}
+
+.simple-page__orders-cta--muted {
+  display: block;
+  text-align: center;
+  cursor: default;
+  background: color-mix(in srgb, var(--simple-muted) 18%, var(--simple-card-muted));
+  color: var(--simple-muted);
+  font-weight: 600;
+  filter: none;
+}
+
+/* Мобиле: этапы сделки — раскрывающийся список */
+.simple-page__stages-mobile {
+  margin-bottom: 0.75rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--simple-border-soft);
+  background: var(--simple-card);
+  overflow: hidden;
+}
+
+.simple-page__stages-mobile-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--simple-fg);
+}
+
+.simple-page__stages-mobile-summary::-webkit-details-marker {
+  display: none;
+}
+
+.simple-page__stages-mobile-summary-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.simple-page__stages-mobile-summary-title {
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-size: 11px;
+  color: var(--simple-primary);
+}
+
+.simple-page__stages-mobile-summary-sub {
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--simple-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.simple-page__stages-mobile-chevron {
+  flex-shrink: 0;
+  color: var(--simple-muted);
+  transition: transform 0.2s ease;
+}
+
+.simple-page__stages-mobile[open] .simple-page__stages-mobile-chevron {
+  transform: rotate(180deg);
+}
+
+.simple-page__stages-mobile-panel {
+  border-top: 1px solid var(--simple-border-soft);
+  padding: 0.35rem 0 0.5rem;
+}
+
+.simple-page__stages-mobile-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.5rem 0.75rem;
+}
+
+.simple-page__stages-mobile-row--active {
+  background: color-mix(in srgb, var(--simple-primary) 8%, transparent);
+}
+
+.simple-page__stages-mobile-mark {
+  flex-shrink: 0;
+  width: 1.35rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 0.1rem;
+}
+
+.simple-page__stages-mobile-checkico {
+  color: var(--simple-primary);
+}
+
+.simple-page__stages-mobile-cb {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--simple-primary);
+  cursor: default;
+}
+
+.simple-page__stages-mobile-num {
+  font-size: 9px;
+  font-weight: 700;
+  font-family: ui-monospace, monospace;
+  color: var(--simple-muted);
+}
+
+.simple-page__stages-mobile-row-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.simple-page__stages-mobile-row-title {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--simple-fg);
+}
+
+.simple-page__stages-mobile-row--done .simple-page__stages-mobile-row-title {
+  color: var(--simple-muted);
+}
+
+.simple-page__stages-mobile-row--active .simple-page__stages-mobile-row-title {
+  color: var(--simple-primary);
+}
+
+.simple-page__stages-mobile-row-sub {
+  font-size: 10px;
+  color: color-mix(in srgb, var(--simple-primary) 65%, var(--simple-muted));
+  margin-top: 0.2rem;
+  line-height: 1.35;
+}
+
+@media (min-width: 768px) {
+  .simple-page__stages-mobile {
+    display: none;
+  }
+}
+
 .simple-page__nav {
   display: flex;
   flex-direction: row;
   gap: 0.5rem;
   min-width: min-content;
+}
+
+@media (max-width: 767px) {
+  /* Выше по каскаду .simple-page__nav задаёт flex — нужна большая специфичность, иначе дубль с droplist на мобиле */
+  .simple-page__nav.simple-page__nav--desktop {
+    display: none;
+  }
 }
 
 @media (min-width: 768px) {
@@ -321,12 +512,79 @@
   flex: 1;
   overflow-y: auto;
   padding: 1rem;
+  /* Запас под fixed .simple-page__fab (bottom + высота капсулы + safe area), мобиле и десктоп */
+  padding-bottom: calc(1rem + 1.25rem + 3.75rem + 0.75rem + env(safe-area-inset-bottom, 0px));
   -webkit-overflow-scrolling: touch;
 }
 
 @media (min-width: 768px) {
   .simple-page__main-scroll {
     padding: 2rem;
+    padding-bottom: calc(2rem + 2.5rem + 4.25rem + 0.75rem + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+/* Мобиле: карусель показателей */
+.simple-page__stat-rail {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 0.4rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 0.2rem;
+  margin-bottom: 0.5rem;
+  scrollbar-width: thin;
+}
+
+.simple-page__stat-rail .simple-page__stat-card--rail {
+  flex: 0 0 min(62vw, 8.75rem);
+  scroll-snap-align: start;
+  min-height: 0;
+  padding: 0.3rem 0.4rem;
+}
+
+.simple-page__stat-rail .simple-page__stat-label {
+  font-size: 7px;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.1rem;
+  line-height: 1.2;
+}
+
+.simple-page__stat-rail .simple-page__stat-value {
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.simple-page__stat-rail .simple-page__stat-sub {
+  display: none;
+}
+
+.simple-page__stat-value--rail-net {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+}
+
+.simple-page__stat-tron-badge {
+  display: inline-flex;
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 0.3rem;
+  background: #ef4444;
+  color: #fff;
+  font-size: 8px;
+  font-weight: 800;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (min-width: 768px) {
+  .simple-page__stat-rail {
+    display: none;
   }
 }
 
@@ -334,6 +592,12 @@
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 0.75rem;
+}
+
+@media (max-width: 767px) {
+  .simple-page__stat-grid--desktop {
+    display: none;
+  }
 }
 
 @media (min-width: 1024px) {
