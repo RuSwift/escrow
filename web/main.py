@@ -15,8 +15,6 @@ from fastapi.exception_handlers import http_exception_handler as default_http_ex
 from db import init_db
 from db.models import WalletUserSubRole
 from i18n import _
-from i18n.context import get_request_locale, set_request_locale
-from i18n.translations import get_translations_for_locale
 from settings import Settings
 from web.endpoints.dependencies import (
     get_exchange_wallet_service,
@@ -27,7 +25,9 @@ from web.endpoints.dependencies import (
     get_wallet_user_service,
 )
 from web.endpoints.health import router as health_router
+from web.endpoints.simple_html import create_simple_html_router
 from web.endpoints.v1 import router as v1_router
+from web.main_context import collateral_stablecoin_tokens_json, main_context
 from web.middleware import install_locale_middleware
 
 # Пути относительно корня web (как в node.py)
@@ -70,56 +70,9 @@ def create_app() -> FastAPI:
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-    def _collateral_stablecoin_tokens_json() -> str:
-        s = Settings()
-        payload = [
-            {
-                "symbol": t.symbol,
-                "contract_address": t.contract_address,
-                "network": t.network,
-                "decimals": t.decimals,
-            }
-            for t in s.collateral_stablecoin.tokens
-        ]
-        return json.dumps(payload, ensure_ascii=False)
-
     app.include_router(health_router, prefix="/health")
     app.include_router(v1_router)
-
-    def _main_context(request: Request, initial_page: str = "dashboard", space_lang: str | None = None):
-        settings = Settings()
-        # Приоритет языка: 1. query lang, 2. space profile lang, 3. Accept-Language header, 4. default
-        locale = get_request_locale()
-        if space_lang and not request.query_params.get("lang"):
-            locale = space_lang
-            set_request_locale(locale)
-        
-        locale = locale or settings.default_locale
-        translations = get_translations_for_locale(locale)
-        tron_net = (settings.tron.network or "mainnet").strip().lower()
-        if tron_net not in ("mainnet", "shasta", "nile"):
-            tron_net = "mainnet"
-        
-        # Check for 'next' parameter to show a message on landing
-        next_url = request.query_params.get("next")
-        show_auth_required = False
-        if next_url and next_url.startswith("/") and len(next_url) > 1:
-            show_auth_required = True
-
-        return {
-            "request": request,
-            "_": _,
-            "app_name": _("main.app_name"),
-            "splash_title": _("main.splash_title"),
-            "locale": locale,
-            "translations": translations,
-            "translations_json": json.dumps(translations, ensure_ascii=False),
-            "initial_page": initial_page,
-            "tron_network": tron_net,
-            "settings_debug": settings.debug,
-            "show_auth_required": show_auth_required,
-            "next_url": next_url,
-        }
+    app.include_router(create_simple_html_router(templates))
 
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request, space_service=Depends(get_space_service)):
@@ -127,7 +80,7 @@ def create_app() -> FastAPI:
         # but for landing it's better to stick to Accept-Language/query unless a space is specified.
         return templates.TemplateResponse(
             "main/landing.html",
-            _main_context(request),
+            main_context(request),
         )
 
     @app.get("/app", response_class=HTMLResponse)
@@ -147,7 +100,7 @@ def create_app() -> FastAPI:
             return templates.TemplateResponse(
                 "main/invite_verify.html",
                 {
-                    **_main_context(request, "dashboard"),
+                    **main_context(request, "dashboard"),
                     "invite_invalid": True,
                     "invite": None,
                     "invite_token": token,
@@ -167,7 +120,7 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(
             "main/invite_verify.html",
             {
-                **_main_context(request, "dashboard"),
+                **main_context(request, "dashboard"),
                 "invite_invalid": False,
                 "invite": invite_payload,
                 "invite_json": json.dumps(invite_payload, ensure_ascii=False),
@@ -187,7 +140,7 @@ def create_app() -> FastAPI:
             return templates.TemplateResponse(
                 "main/order_sign.html",
                 {
-                    **_main_context(request, "dashboard"),
+                    **main_context(request, "dashboard"),
                     "order_sign_invalid": True,
                     "order_sign_token": token,
                 },
@@ -195,18 +148,10 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(
             "main/order_sign.html",
             {
-                **_main_context(request, "dashboard"),
+                **main_context(request, "dashboard"),
                 "order_sign_invalid": False,
                 "order_sign_token": token,
             },
-        )
-
-    @app.get("/simple", response_class=HTMLResponse)
-    async def simple(request: Request):
-        """Публичная демо-страница потока P2P-сделки (эскроу → lockbox → получатель) в стилях основного приложения."""
-        return templates.TemplateResponse(
-            "main/simple.html",
-            _main_context(request, "dashboard"),
         )
 
     @app.get("/{space}", response_class=HTMLResponse)
@@ -239,7 +184,7 @@ def create_app() -> FastAPI:
 
         if initial_page in ("space-roles", "space-profile") and not is_owner:
             ctx = {
-                **_main_context(request, "dashboard", space_lang=space_lang),
+                **main_context(request, "dashboard", space_lang=space_lang),
                 "space": space_clean,
                 "space_company_name": space_company_name,
                 "space_role": space_role.value,
@@ -294,7 +239,7 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(
             "main/app.html",
             {
-                **_main_context(request, page, space_lang=space_lang),
+                **main_context(request, page, space_lang=space_lang),
                 "initial_page": page,
                 "escrow_id": escrow_id.strip() if page == "detail" else "",
                 "space": space_clean,
@@ -305,7 +250,7 @@ def create_app() -> FastAPI:
                 "space_profile_filled": space_profile_filled,
                 "space_owner_wallet_tron": space_owner_wallet_tron,
                 "space_primary_wallet": space_primary_wallet,
-                "collateral_stablecoin_tokens_json": _collateral_stablecoin_tokens_json(),
+                "collateral_stablecoin_tokens_json": collateral_stablecoin_tokens_json(),
             },
         )
 

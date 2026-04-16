@@ -58,6 +58,8 @@
         return null;
     }
 
+    var ORDERS_SEARCH_DEBOUNCE_MS = 300;
+
     function ensureSpace(token) {
         return fetch('/v1/auth/tron/ensure-space', {
             method: 'POST',
@@ -86,8 +88,24 @@
                     { num: '02', titleKey: 'main.simple.nav_step2_title', subKey: 'main.simple.nav_step2_sub', status: 'active' },
                     { num: '03', titleKey: 'main.simple.nav_step3_title', subKey: 'main.simple.nav_step3_sub', status: 'pending' },
                     { num: '04', titleKey: 'main.simple.nav_step4_title', subKey: 'main.simple.nav_step4_sub', status: 'pending' }
-                ]
+                ],
+                orderId: (el.getAttribute('data-simple-order-id') || '').trim(),
+                ordersItems: [],
+                ordersTotal: 0,
+                ordersLoading: false,
+                ordersError: false,
+                ordersPage: 1,
+                ordersPageSize: 10,
+                ordersSearch: '',
+                ordersFetchSeq: 0,
+                _ordersSearchDebounce: null
             };
+        },
+        beforeDestroy: function() {
+            if (this._ordersSearchDebounce != null) {
+                clearTimeout(this._ordersSearchDebounce);
+                this._ordersSearchDebounce = null;
+            }
         },
         created: function() {
             var self = this;
@@ -148,6 +166,7 @@
                 self.showAuthModal = true;
             }).finally(function() {
                 self.authReady = true;
+                self.maybeFetchOrders();
             });
         },
         watch: {
@@ -155,6 +174,15 @@
                 try {
                     localStorage.setItem(STORAGE_KEY, v);
                 } catch (e) {}
+            },
+            authReady: function() {
+                this.maybeFetchOrders();
+            },
+            showAuthModal: function() {
+                this.maybeFetchOrders();
+            },
+            activeSpace: function() {
+                this.maybeFetchOrders();
             }
         },
         computed: {
@@ -164,8 +192,14 @@
                     'simple-page--dark': this.theme === 'dark'
                 };
             },
+            isDealView: function() {
+                return !!this.orderId;
+            },
             chromeTitle: function() {
-                return t('main.simple.chrome_title', { app_name: this.appName });
+                if (this.isDealView) {
+                    return t('main.simple.chrome_title_deal', { app_name: this.appName, order_id: this.orderId });
+                }
+                return t('main.simple.chrome_title_list', { app_name: this.appName });
             },
             escrowLine: function() {
                 return t('main.simple.escrow_line', { addr: 'TCEu5M…jGesqi' });
@@ -174,9 +208,8 @@
                 return this.theme === 'light' ? t('main.simple.theme_dark') : t('main.simple.theme_light');
             },
             ordersListHref: function() {
-                var s = (this.activeSpace || '').trim();
-                if (!s) return '';
-                return '/' + encodeURIComponent(s);
+                if (!this.isDealView) return '';
+                return '/simple';
             },
             activeNavStep: function() {
                 var steps = this.navSteps;
@@ -184,10 +217,128 @@
                     if (steps[i].status === 'active') return steps[i];
                 }
                 return steps.length ? steps[0] : null;
+            },
+            ordersTotalPages: function() {
+                var sz = this.ordersPageSize || 10;
+                var tot = typeof this.ordersTotal === 'number' ? this.ordersTotal : 0;
+                if (tot <= 0) return 0;
+                return Math.ceil(tot / sz);
+            },
+            ordersPaginationLabel: function() {
+                var m = this.ordersTotalPages;
+                if (m <= 1) return '';
+                return t('main.simple.orders_pagination_page', {
+                    current: String(this.ordersPage),
+                    total: String(m)
+                });
+            },
+            ordersPrevDisabled: function() {
+                return this.ordersLoading || this.ordersPage <= 1;
+            },
+            ordersNextDisabled: function() {
+                return this.ordersLoading || this.ordersPage >= this.ordersTotalPages;
             }
         },
         methods: {
             t: t,
+            maybeFetchOrders: function() {
+                if (this.isDealView || !this.authReady || this.showAuthModal) return;
+                var space = (this.activeSpace || '').trim();
+                if (!space) return;
+                this.ordersPage = 1;
+                this.fetchOrders();
+            },
+            onOrdersSearchInput: function() {
+                var self = this;
+                if (self._ordersSearchDebounce != null) {
+                    clearTimeout(self._ordersSearchDebounce);
+                    self._ordersSearchDebounce = null;
+                }
+                self._ordersSearchDebounce = setTimeout(function() {
+                    self._ordersSearchDebounce = null;
+                    self.ordersPage = 1;
+                    self.fetchOrders();
+                }, ORDERS_SEARCH_DEBOUNCE_MS);
+            },
+            ordersGoPrev: function() {
+                if (this.ordersPrevDisabled) return;
+                this.ordersPage = Math.max(1, this.ordersPage - 1);
+                this.fetchOrders();
+            },
+            ordersGoNext: function() {
+                if (this.ordersNextDisabled) return;
+                var m = this.ordersTotalPages;
+                if (m <= 0) return;
+                this.ordersPage = Math.min(m, this.ordersPage + 1);
+                this.fetchOrders();
+            },
+            fetchOrders: function() {
+                var self = this;
+                if (self.isDealView) return;
+                var space = (self.activeSpace || '').trim();
+                if (!space) return;
+                var mySeq = ++self.ordersFetchSeq;
+                self.ordersLoading = true;
+                self.ordersError = false;
+                var params = new URLSearchParams();
+                params.set('page', String(self.ordersPage));
+                params.set('page_size', String(self.ordersPageSize));
+                var q = (self.ordersSearch || '').trim();
+                if (q) params.set('q', q);
+                var url = '/v1/spaces/' + encodeURIComponent(space) + '/orders?' + params.toString();
+                var headers = { Accept: 'application/json' };
+                var tok = getToken();
+                if (tok) headers.Authorization = 'Bearer ' + tok;
+                fetch(url, { method: 'GET', headers: headers, credentials: 'same-origin' })
+                    .then(function(r) {
+                        if (!r.ok) throw new Error('orders');
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        if (mySeq !== self.ordersFetchSeq) return;
+                        self.ordersItems = data && data.items ? data.items : [];
+                        self.ordersTotal = data && typeof data.total === 'number' ? data.total : 0;
+                        var sz = self.ordersPageSize || 10;
+                        var tot = self.ordersTotal;
+                        var tp = tot <= 0 ? 0 : Math.ceil(tot / sz);
+                        if (tp > 0 && self.ordersPage > tp) {
+                            self.ordersPage = tp;
+                            return self.fetchOrders();
+                        }
+                    })
+                    .catch(function() {
+                        if (mySeq !== self.ordersFetchSeq) return;
+                        self.ordersError = true;
+                        self.ordersItems = [];
+                        self.ordersTotal = 0;
+                    })
+                    .finally(function() {
+                        if (mySeq === self.ordersFetchSeq) {
+                            self.ordersLoading = false;
+                        }
+                    });
+            },
+            formatOrderUpdated: function(order) {
+                var raw = (order && order.updated_at) || (order && order.created_at) || '';
+                if (!raw) return '—';
+                try {
+                    var d = new Date(raw);
+                    if (isNaN(d.getTime())) return String(raw).slice(0, 16);
+                    return d.toLocaleString();
+                } catch (e) {
+                    return String(raw).slice(0, 16);
+                }
+            },
+            truncateDedupe: function(order) {
+                var s = String((order && order.dedupe_key) || '').trim();
+                if (s.length <= 28) return s || '—';
+                return s.slice(0, 14) + '…' + s.slice(-8);
+            },
+            orderPayloadStatus: function(order) {
+                var p = order && order.payload;
+                if (!p || typeof p.status !== 'string') return '';
+                return p.status.trim();
+            },
             onTronSuccess: function(payload) {
                 var self = this;
                 self.authError = '';
@@ -207,6 +358,7 @@
                     self.activeSpace = target;
                     setSpace(target);
                     self.showAuthModal = false;
+                    self.maybeFetchOrders();
                 }).catch(function() {
                     self.authError = t('main.simple.auth_error');
                 });
@@ -254,12 +406,50 @@
         </button>\
       </div>\
     </div>\
-    <div class="simple-page__body">\
+    <div v-if="!isDealView" class="simple-page__list-root">\
+      <div class="simple-page__main-scroll simple-page__main-scroll--list">\
+        <div v-if="authReady && !showAuthModal" class="simple-page__list-inner">\
+        <p class="simple-page__list-intro">{{ t(\'main.simple.orders_list_intro\') }}</p>\
+        <div class="simple-page__orders-toolbar">\
+          <input type="search" class="simple-page__orders-search" v-model="ordersSearch" @input="onOrdersSearchInput" :placeholder="t(\'main.simple.orders_search_placeholder\')" autocomplete="off" />\
+        </div>\
+        <div v-if="ordersError" class="simple-page__list-msg simple-page__list-msg--err">{{ t(\'main.simple.orders_error\') }}</div>\
+        <div v-else class="simple-page__orders-stage" :aria-busy="ordersLoading ? \'true\' : \'false\'">\
+          <div v-if="ordersLoading" class="simple-page__orders-overlay" role="status">\
+            <div class="simple-page__orders-spinner-el" aria-hidden="true"></div>\
+            <span class="simple-page__sr-only">{{ t(\'main.simple.orders_loading_aria\') }}</span>\
+          </div>\
+          <div v-if="!ordersLoading && !ordersItems.length" class="simple-page__list-msg">{{ t(\'main.simple.orders_empty\') }}</div>\
+          <div v-if="!ordersLoading && ordersItems.length" class="simple-page__order-list" role="list">\
+            <a v-for="order in ordersItems" :key="order.id" class="simple-page__order-card" role="listitem" :href="\'/simple/\' + encodeURIComponent(String(order.id))">\
+              <div class="simple-page__order-card-main">\
+                <span class="simple-page__order-id">#{{ order.id }}</span>\
+                <span class="simple-page__order-cat">{{ order.category }}</span>\
+                <span v-if="orderPayloadStatus(order)" class="simple-page__order-st">{{ orderPayloadStatus(order) }}</span>\
+              </div>\
+              <div class="simple-page__order-card-sub">\
+                <span class="simple-page__order-mono">{{ truncateDedupe(order) }}</span>\
+                <span class="simple-page__order-date">{{ formatOrderUpdated(order) }}</span>\
+                <span class="simple-page__order-cta">{{ t(\'main.simple.orders_open\') }}</span>\
+              </div>\
+            </a>\
+          </div>\
+        </div>\
+        <div v-if="!ordersError && ordersTotalPages > 1" class="simple-page__orders-pagination">\
+          <button type="button" class="simple-page__orders-page-btn" :disabled="ordersPrevDisabled" @click="ordersGoPrev" :aria-label="t(\'main.simple.orders_pagination_prev\')">{{ t(\'main.simple.orders_pagination_prev\') }}</button>\
+          <span class="simple-page__orders-page-label">{{ ordersPaginationLabel }}</span>\
+          <button type="button" class="simple-page__orders-page-btn" :disabled="ordersNextDisabled" @click="ordersGoNext" :aria-label="t(\'main.simple.orders_pagination_next\')">{{ t(\'main.simple.orders_pagination_next\') }}</button>\
+        </div>\
+        </div>\
+        <div v-else-if="!authReady" class="simple-page__list-msg">{{ t(\'main.simple.orders_loading\') }}</div>\
+      </div>\
+    </div>\
+    <div v-else class="simple-page__body">\
       <aside class="simple-page__aside">\
         <div class="simple-page__aside-scroll">\
           <div class="simple-page__aside-label">{{ t(\'main.simple.sidebar_title\') }}</div>\
           <div class="simple-page__orders-block">\
-            <a v-if="ordersListHref" :href="ordersListHref" class="simple-page__orders-cta">\
+            <a v-if="isDealView && ordersListHref" :href="ordersListHref" class="simple-page__orders-cta">\
               <svg class="simple-page__svg--sm" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>\
               {{ t(\'main.simple.orders_list_cta\') }}\
             </a>\
@@ -405,7 +595,7 @@
       </main>\
     </div>\
   </div>\
-  <div class="simple-page__fab" role="status">\
+  <div v-if="isDealView" class="simple-page__fab" role="status">\
     <svg class="simple-page__svg" style="color:var(--simple-primary);flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>\
     <span>{{ t(\'main.simple.protected_badge\') }}</span>\
   </div>\
