@@ -13,6 +13,7 @@ from web.endpoints.v1 import (
     node,
     orders,
     profile,
+    simple_mode,
     space_balances,
     space_exchange_services,
     space_participants,
@@ -24,6 +25,7 @@ from web.endpoints.v1 import (
 
 router = APIRouter(prefix="/v1", tags=["v1"])
 router.include_router(auth.router)
+router.include_router(simple_mode.router)
 router.include_router(admin.router)
 router.include_router(autocomplete.router)
 router.include_router(arbiter.router)

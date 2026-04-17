@@ -6,8 +6,10 @@ import logging
 from typing import List, Optional, Tuple
 
 from redis.asyncio import Redis
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from db.models import PrimaryWallet, WalletUser
 from repos.wallet_user import WalletUserRepository, WalletUserResource
 from services.tron_auth import TronAuth
 from settings import Settings
@@ -90,6 +92,35 @@ class WalletUserService:
         и родительские WalletUser для субаккаунтов с этим адресом.
         """
         return await self._repo.get_spaces_for_address(wallet_address, blockchain)
+
+    async def resolve_primary_space_nickname(
+        self, wallet_address: str, blockchain: str = "tron"
+    ) -> Optional[str]:
+        """
+        Текущий space (nickname) для адреса: совпадение с primary wallet спейса,
+        иначе первый nickname — как POST /v1/auth/tron/ensure-space.
+        """
+        addr = (wallet_address or "").strip()
+        if not addr:
+            return None
+        spaces = await self.get_spaces_for_address(addr, blockchain)
+        if not spaces:
+            return None
+        sorted_spaces = sorted([s for s in spaces if s])
+        stmt = (
+            select(WalletUser.nickname)
+            .select_from(WalletUser)
+            .outerjoin(PrimaryWallet, PrimaryWallet.wallet_user_id == WalletUser.id)
+            .where(WalletUser.nickname.in_(sorted_spaces))
+            .where(func.coalesce(PrimaryWallet.address, WalletUser.wallet_address) == addr)
+            .order_by(WalletUser.nickname.asc())
+            .limit(1)
+        )
+        res = await self._session.execute(stmt)
+        match = res.scalar_one_or_none()
+        if match:
+            return match
+        return sorted_spaces[0]
 
     async def list_managers(self) -> List[WalletUserResource.Get]:
         """Список пользователей с доступом в админку (менеджеры)."""

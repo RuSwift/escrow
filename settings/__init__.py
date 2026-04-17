@@ -470,6 +470,17 @@ class Settings(BaseSettings):
         description="Коды валют (ISO 4217), используемые в системе",
     )
 
+    deal_simple_placeholder_receiver_did: str = Field(
+        default="did:tron:simple_pending",
+        description=(
+            "DID-заглушка для receiver_did в черновых Simple-заявках (Deal.receiver_did NOT NULL)"
+        ),
+        validation_alias=AliasChoices(
+            "DEAL_SIMPLE_PLACEHOLDER_RECEIVER_DID",
+            "deal_simple_placeholder_receiver_did",
+        ),
+    )
+
     payment_forms_yaml: str = Field(
         default="forms.yaml",
         description=(

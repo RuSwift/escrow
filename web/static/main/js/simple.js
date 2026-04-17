@@ -60,6 +60,123 @@
 
     var ORDERS_SEARCH_DEBOUNCE_MS = 300;
 
+    function stablecoinsList() {
+        var raw = typeof window !== 'undefined' ? window.__SIMPLE_STABLECOINS__ : null;
+        return Array.isArray(raw) ? raw : [];
+    }
+
+    function fiatCodesList() {
+        var raw = typeof window !== 'undefined' ? window.__SIMPLE_FIAT_CODES__ : null;
+        return Array.isArray(raw) ? raw : [];
+    }
+
+    function buildUnifiedAssetOptions() {
+        var seen = {};
+        var out = [];
+        stablecoinsList().forEach(function(x) {
+            var sym = (x && x.symbol) ? String(x.symbol).trim().toUpperCase() : '';
+            if (!sym || seen[sym]) return;
+            seen[sym] = true;
+            out.push({ code: sym, kind: 'stable' });
+        });
+        fiatCodesList().forEach(function(code) {
+            var c = String(code || '').trim().toUpperCase();
+            if (!c || seen[c]) return;
+            seen[c] = true;
+            out.push({ code: c, kind: 'fiat' });
+        });
+        return out;
+    }
+
+    function amountLocaleTag() {
+        try {
+            var L = (typeof window !== 'undefined' && window.__LOCALE__) ? String(window.__LOCALE__).trim() : '';
+            if (!L) return 'ru';
+            return L.replace(/_/g, '-');
+        } catch (e) {
+            return 'ru';
+        }
+    }
+
+    function localePrefersCommaDecimal() {
+        var low = amountLocaleTag().toLowerCase();
+        return low.indexOf('en') !== 0;
+    }
+
+    /**
+     * Ввод суммы: цифры, один десятичный разделитель; пробелы как в форматировании убираются.
+     * При вставке "1,234.56" / "1.234,56" десятичным считается последний разделитель.
+     */
+    function sanitizeDecimalAmountInput(raw) {
+        var s = raw === undefined || raw === null ? '' : String(raw);
+        s = s.replace(/[\s\u00A0\u202F]/g, '');
+        var lastComma = s.lastIndexOf(',');
+        var lastDot = s.lastIndexOf('.');
+        if (lastComma >= 0 && lastDot >= 0) {
+            if (lastDot > lastComma) {
+                s = s.split(',').join('');
+            } else {
+                s = s.split('.').join('');
+            }
+        } else if (lastComma >= 0 && lastDot < 0 && !localePrefersCommaDecimal()) {
+            if (/^\d{1,3}(,\d{3})+$/.test(s)) {
+                s = s.replace(/,/g, '');
+            }
+        } else if (lastDot >= 0 && lastComma < 0 && localePrefersCommaDecimal()) {
+            if (/^\d{1,3}(\.\d{3})+$/.test(s)) {
+                s = s.split('.').join('');
+            }
+        }
+        var out = '';
+        var sep = false;
+        for (var i = 0; i < s.length; i++) {
+            var c = s.charAt(i);
+            if (c >= '0' && c <= '9') {
+                out += c;
+                continue;
+            }
+            if ((c === '.' || c === ',') && !sep) {
+                sep = true;
+                out += '.';
+            }
+        }
+        return out;
+    }
+
+    /** Нормализация к двум знакам после точки (хранение и отправка). */
+    function normalizeAmountTwoDecimals(raw) {
+        var s = sanitizeDecimalAmountInput(raw);
+        if (!s) return '';
+        var n = parseFloat(s);
+        if (!isFinite(n)) return '';
+        var r = Math.round(n * 1e2) / 1e2;
+        return r.toFixed(2);
+    }
+
+    /** Отображение с группировкой тысяч и ровно 2 дробными знаками (Intl + __LOCALE__). */
+    function formatAmountForLocale(rawDot) {
+        var s = String(rawDot || '').trim();
+        if (!s) return '';
+        var n = parseFloat(sanitizeDecimalAmountInput(s));
+        if (!isFinite(n)) return '';
+        var loc = amountLocaleTag();
+        try {
+            return new Intl.NumberFormat(loc, {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }).format(n);
+        } catch (e) {
+            try {
+                return new Intl.NumberFormat('ru', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                }).format(n);
+            } catch (e2) {
+                return n.toFixed(2);
+            }
+        }
+    }
+
     function ensureSpace(token) {
         return fetch('/v1/auth/tron/ensure-space', {
             method: 'POST',
@@ -90,6 +207,7 @@
                     { num: '04', titleKey: 'main.simple.nav_step4_title', subKey: 'main.simple.nav_step4_sub', status: 'pending' }
                 ],
                 orderId: (el.getAttribute('data-simple-order-id') || '').trim(),
+                dealUid: (el.getAttribute('data-simple-deal-uid') || '').trim(),
                 ordersItems: [],
                 ordersTotal: 0,
                 ordersLoading: false,
@@ -98,8 +216,55 @@
                 ordersPageSize: 10,
                 ordersSearch: '',
                 ordersFetchSeq: 0,
-                _ordersSearchDebounce: null
+                _ordersSearchDebounce: null,
+                showCreateModal: false,
+                createSubmitting: false,
+                createError: '',
+                giveCode: '',
+                giveAmount: '',
+                giveAmountFocus: false,
+                receiveCode: '',
+                receiveAmount: '',
+                receiveAmountFocus: false,
+                receiveAmountMode: 'negotiable',
+                /** Кэш payload GET /ui-prefs для мгновенного применения при повторном открытии модалки. */
+                _uiPrefsPayloadCache: null
             };
+        },
+        watch: {
+            giveCode: function(newVal) {
+                var self = this;
+                /* Срабатывает только при реальном изменении giveCode; не полагаемся на oldVal —
+                   в одном тике Vue иногда отдаёт oldVal === newVal. */
+                self.giveAmountFocus = false;
+                self.giveAmount = '';
+                if (!newVal) {
+                    self.receiveCode = '';
+                    self.receiveAmount = '';
+                    return;
+                }
+                var gv = String(newVal).trim().toUpperCase();
+                if (self.receiveCode === gv) {
+                    self.receiveCode = '';
+                    self.receiveAmount = '';
+                }
+                self.$nextTick(function() {
+                    var ro = self.receiveOptions;
+                    var rc = (self.receiveCode || '').trim().toUpperCase();
+                    if (!rc) return;
+                    var ok = false;
+                    for (var j = 0; j < ro.length; j++) {
+                        if (ro[j].code === rc) {
+                            ok = true;
+                            break;
+                        }
+                    }
+                    if (!ok) {
+                        self.receiveCode = '';
+                        self.receiveAmount = '';
+                    }
+                });
+            }
         },
         beforeDestroy: function() {
             if (this._ordersSearchDebounce != null) {
@@ -193,13 +358,61 @@
                 };
             },
             isDealView: function() {
-                return !!this.orderId;
+                return !!(this.dealUid || this.orderId);
             },
             chromeTitle: function() {
-                if (this.isDealView) {
+                if (this.dealUid) {
+                    return t('main.simple.chrome_title_deal_uid', { app_name: this.appName, deal_uid: this.dealUid });
+                }
+                if (this.orderId) {
                     return t('main.simple.chrome_title_deal', { app_name: this.appName, order_id: this.orderId });
                 }
                 return t('main.simple.chrome_title_list', { app_name: this.appName });
+            },
+            unifiedAssetOptions: function() {
+                return buildUnifiedAssetOptions();
+            },
+            /** Пока нет актива «Отдаю» — нельзя вводить сумму отдачи. */
+            giveAssetEmpty: function() {
+                return !(this.giveCode || '').trim();
+            },
+            /** «Получаю» недоступно, пока не выбран актив и не введена сумма «Отдаю». */
+            receiveLocked: function() {
+                if (this.giveAssetEmpty) return true;
+                return !(this.giveAmount || '').trim();
+            },
+            giveAmountInputDisplay: function() {
+                if (this.giveAmountFocus) return this.giveAmount;
+                return formatAmountForLocale(this.giveAmount);
+            },
+            receiveAmountInputDisplay: function() {
+                if (this.receiveAmountFocus) return this.receiveAmount;
+                return formatAmountForLocale(this.receiveAmount);
+            },
+            receiveOptions: function() {
+                var g = (this.giveCode || '').trim().toUpperCase();
+                if (!g) return [];
+                var opts = this.unifiedAssetOptions;
+                var giveMeta = null;
+                for (var i = 0; i < opts.length; i++) {
+                    if (opts[i].code === g) {
+                        giveMeta = opts[i];
+                        break;
+                    }
+                }
+                if (!giveMeta) return [];
+                var wantKind = giveMeta.kind === 'fiat' ? 'stable' : 'fiat';
+                return opts.filter(function(o) {
+                    return o.code !== g && o.kind === wantKind;
+                });
+            },
+            createSubmitDisabled: function() {
+                if (this.createSubmitting) return true;
+                if (this.receiveLocked) return true;
+                if (!(this.giveAmount || '').trim()) return true;
+                if (!(this.receiveCode || '').trim()) return true;
+                if (this.receiveAmountMode === 'fixed' && !(this.receiveAmount || '').trim()) return true;
+                return false;
             },
             escrowLine: function() {
                 return t('main.simple.escrow_line', { addr: 'TCEu5M…jGesqi' });
@@ -243,8 +456,6 @@
             t: t,
             maybeFetchOrders: function() {
                 if (this.isDealView || !this.authReady || this.showAuthModal) return;
-                var space = (this.activeSpace || '').trim();
-                if (!space) return;
                 this.ordersPage = 1;
                 this.fetchOrders();
             },
@@ -275,8 +486,6 @@
             fetchOrders: function() {
                 var self = this;
                 if (self.isDealView) return;
-                var space = (self.activeSpace || '').trim();
-                if (!space) return;
                 var mySeq = ++self.ordersFetchSeq;
                 self.ordersLoading = true;
                 self.ordersError = false;
@@ -285,13 +494,13 @@
                 params.set('page_size', String(self.ordersPageSize));
                 var q = (self.ordersSearch || '').trim();
                 if (q) params.set('q', q);
-                var url = '/v1/spaces/' + encodeURIComponent(space) + '/orders?' + params.toString();
+                var url = '/v1/simple/deals?' + params.toString();
                 var headers = { Accept: 'application/json' };
                 var tok = getToken();
                 if (tok) headers.Authorization = 'Bearer ' + tok;
                 fetch(url, { method: 'GET', headers: headers, credentials: 'same-origin' })
                     .then(function(r) {
-                        if (!r.ok) throw new Error('orders');
+                        if (!r.ok) throw new Error('deals');
                         return r.json();
                     })
                     .then(function(data) {
@@ -329,15 +538,275 @@
                     return String(raw).slice(0, 16);
                 }
             },
-            truncateDedupe: function(order) {
-                var s = String((order && order.dedupe_key) || '').trim();
-                if (s.length <= 28) return s || '—';
-                return s.slice(0, 14) + '…' + s.slice(-8);
+            onGiveCodeSelectChange: function() {
+                this.giveAmountFocus = false;
+                this.giveAmount = '';
             },
-            orderPayloadStatus: function(order) {
-                var p = order && order.payload;
-                if (!p || typeof p.status !== 'string') return '';
-                return p.status.trim();
+            /** Снимает нецифровой ввод и принудительно чистит DOM (иначе при giveAmount === '' Vue не обновляет поле). */
+            syncAmountInputDom: function(e, field) {
+                var el = e.target;
+                var v = sanitizeDecimalAmountInput(el.value);
+                this[field] = v;
+                if (el.value !== v) el.value = v;
+            },
+            onAmountFieldKeydown: function(e) {
+                if (e.isComposing) return;
+                if (e.ctrlKey || e.metaKey || e.altKey) return;
+                var k = e.key;
+                if (k === 'Backspace' || k === 'Delete' || k === 'Tab' || k === 'Escape') return;
+                if (k === 'ArrowLeft' || k === 'ArrowRight' || k === 'ArrowUp' || k === 'ArrowDown' || k === 'Home' || k === 'End') return;
+                if (k === 'Enter') return;
+                if (k.length === 1) {
+                    if (k >= '0' && k <= '9') return;
+                    if (k === '.' || k === ',') return;
+                    e.preventDefault();
+                }
+            },
+            onGiveAmountInput: function(e) {
+                this.syncAmountInputDom(e, 'giveAmount');
+            },
+            onGiveAmountFocus: function() {
+                this.giveAmountFocus = true;
+            },
+            onGiveAmountBlur: function() {
+                this.giveAmountFocus = false;
+                this.giveAmount = normalizeAmountTwoDecimals(this.giveAmount);
+            },
+            onReceiveAmountInput: function(e) {
+                this.syncAmountInputDom(e, 'receiveAmount');
+            },
+            onReceiveAmountFocus: function() {
+                this.receiveAmountFocus = true;
+            },
+            onReceiveAmountBlur: function() {
+                this.receiveAmountFocus = false;
+                this.receiveAmount = normalizeAmountTwoDecimals(this.receiveAmount);
+            },
+            openCreateModal: function() {
+                var self = this;
+                self.createError = '';
+                self.giveCode = '';
+                self.giveAmount = '';
+                self.giveAmountFocus = false;
+                self.receiveCode = '';
+                self.receiveAmount = '';
+                self.receiveAmountFocus = false;
+                self.receiveAmountMode = 'negotiable';
+                self.showCreateModal = true;
+                if (self._uiPrefsPayloadCache) {
+                    self.applySimpleCreatePrefsFromPayload(self._uiPrefsPayloadCache);
+                }
+                self.fetchSimpleCreateUiPrefs().then(function(payload) {
+                    if (!self.showCreateModal) return;
+                    if (payload && typeof payload === 'object') {
+                        self._uiPrefsPayloadCache = Object.assign({}, self._uiPrefsPayloadCache || {}, payload);
+                    }
+                    self.applySimpleCreatePrefsFromPayload(self._uiPrefsPayloadCache || {});
+                });
+            },
+            closeCreateModal: function() {
+                if (this.createSubmitting) return;
+                this.giveAmountFocus = false;
+                this.receiveAmountFocus = false;
+                this.showCreateModal = false;
+            },
+            simpleUiPrefsUrl: function() {
+                var space = (this.activeSpace || '').trim();
+                if (!space) return '';
+                return '/v1/spaces/' + encodeURIComponent(space) + '/ui-prefs';
+            },
+            fetchSimpleCreateUiPrefs: function() {
+                var url = this.simpleUiPrefsUrl();
+                if (!url) return Promise.resolve(null);
+                var tok = getToken();
+                var headers = { Accept: 'application/json' };
+                if (tok) headers.Authorization = 'Bearer ' + tok;
+                return fetch(url, { method: 'GET', headers: headers, credentials: 'same-origin' })
+                    .then(function(r) {
+                        if (!r.ok) return null;
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        if (!data || typeof data !== 'object') return null;
+                        return data.payload && typeof data.payload === 'object' ? data.payload : {};
+                    })
+                    .catch(function() {
+                        return null;
+                    });
+            },
+            _assetCodeInUnified: function(code) {
+                var c = (code || '').trim().toUpperCase();
+                if (!c) return false;
+                var opts = this.unifiedAssetOptions;
+                for (var i = 0; i < opts.length; i++) {
+                    if (opts[i].code === c) return true;
+                }
+                return false;
+            },
+            _receiveCodeAllowedForGive: function(recvCode) {
+                var rc = (recvCode || '').trim().toUpperCase();
+                if (!rc) return false;
+                var ro = this.receiveOptions;
+                for (var j = 0; j < ro.length; j++) {
+                    if (ro[j].code === rc) return true;
+                }
+                return false;
+            },
+            applySimpleCreatePrefsFromPayload: function(payload) {
+                var p = payload && typeof payload === 'object' ? payload : {};
+                var sc = p.simple_create;
+                if (!sc || typeof sc !== 'object') return;
+                var give = (sc.give_code || '').trim().toUpperCase();
+                var recv = (sc.receive_code || '').trim().toUpperCase();
+                var mode = sc.receive_amount_mode === 'fixed' ? 'fixed' : 'negotiable';
+                if (!this._assetCodeInUnified(give)) return;
+                this.giveCode = give;
+                if (mode === 'fixed') {
+                    this.setReceiveMode('fixed');
+                } else {
+                    this.setReceiveMode('negotiable');
+                }
+                var self = this;
+                this.$nextTick(function() {
+                    if (self._receiveCodeAllowedForGive(recv)) {
+                        self.receiveCode = recv;
+                    }
+                });
+            },
+            persistSimpleCreateUiPrefs: function() {
+                var url = this.simpleUiPrefsUrl();
+                if (!url) return;
+                var tok = getToken();
+                if (!tok) return;
+                var gc = (this.giveCode || '').trim().toUpperCase();
+                var rc = (this.receiveCode || '').trim().toUpperCase();
+                var mode = this.receiveAmountMode === 'fixed' ? 'fixed' : 'negotiable';
+                var body = {
+                    simple_create: {
+                        give_code: gc || null,
+                        receive_code: rc || null,
+                        receive_amount_mode: mode
+                    }
+                };
+                var self = this;
+                fetch(url, {
+                    method: 'PATCH',
+                    headers: {
+                        Accept: 'application/json',
+                        'Content-Type': 'application/json',
+                        Authorization: 'Bearer ' + tok
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(body)
+                })
+                    .then(function(r) {
+                        return r.ok ? r.json() : null;
+                    })
+                    .then(function(data) {
+                        if (data && data.payload && typeof data.payload === 'object') {
+                            self._uiPrefsPayloadCache = Object.assign({}, self._uiPrefsPayloadCache || {}, data.payload);
+                        }
+                    })
+                    .catch(function() { /* ignore */ });
+            },
+            assetMeta: function(code) {
+                var c = (code || '').trim().toUpperCase();
+                if (!c) return null;
+                var opts = this.unifiedAssetOptions;
+                for (var i = 0; i < opts.length; i++) {
+                    if (opts[i].code === c) return opts[i];
+                }
+                return null;
+            },
+            setReceiveMode: function(mode) {
+                this.receiveAmountMode = mode;
+                if (mode === 'negotiable') {
+                    this.receiveAmountFocus = false;
+                    this.receiveAmount = '';
+                }
+            },
+            onReceiveFixedChange: function(ev) {
+                if (ev.target.checked) {
+                    this.setReceiveMode('fixed');
+                } else {
+                    this.setReceiveMode('negotiable');
+                }
+            },
+            onReceiveNegotiableChange: function(ev) {
+                if (ev.target.checked) {
+                    this.setReceiveMode('negotiable');
+                } else {
+                    this.setReceiveMode('fixed');
+                }
+            },
+            submitCreateApplication: function() {
+                var self = this;
+                if (self.createSubmitting || self.createSubmitDisabled) return;
+                self.createError = '';
+                self.giveAmount = normalizeAmountTwoDecimals(self.giveAmount);
+                self.receiveAmount = normalizeAmountTwoDecimals(self.receiveAmount);
+                var giveMeta = self.assetMeta(self.giveCode);
+                var recvMeta = self.assetMeta(self.receiveCode);
+                if (!giveMeta || !recvMeta) {
+                    self.createError = t('main.simple.create_invalid_assets');
+                    return;
+                }
+                if (giveMeta.kind === recvMeta.kind) {
+                    self.createError = t('main.simple.create_invalid_same_kind');
+                    return;
+                }
+                var direction = (giveMeta.kind === 'fiat' && recvMeta.kind === 'stable')
+                    ? 'fiat_to_stable'
+                    : 'stable_to_fiat';
+                var leg1 = {
+                    asset_type: giveMeta.kind === 'stable' ? 'stable' : 'fiat',
+                    code: giveMeta.code,
+                    amount: (self.giveAmount || '').trim(),
+                    side: 'give'
+                };
+                var cAmt = (self.receiveAmount || '').trim();
+                var leg2 = {
+                    asset_type: recvMeta.kind === 'stable' ? 'stable' : 'fiat',
+                    code: recvMeta.code,
+                    amount: self.receiveAmountMode === 'fixed' ? (cAmt || null) : null,
+                    side: 'receive',
+                    amount_discussed: self.receiveAmountMode === 'negotiable'
+                };
+                var body = { direction: direction, primary_leg: leg1, counter_leg: leg2 };
+                self.createSubmitting = true;
+                var tok = getToken();
+                var headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
+                if (tok) headers.Authorization = 'Bearer ' + tok;
+                fetch('/v1/simple/deals/simple-application', {
+                    method: 'POST',
+                    headers: headers,
+                    credentials: 'same-origin',
+                    body: JSON.stringify(body)
+                })
+                    .then(function(r) {
+                        return r.json().then(function(j) { return { ok: r.ok, status: r.status, j: j }; });
+                    })
+                    .then(function(res) {
+                        if (!res.ok) {
+                            var det = res.j && res.j.detail;
+                            if (Array.isArray(det)) {
+                                det = det.map(function(x) { return x && x.msg ? x.msg : JSON.stringify(x); }).join('; ');
+                            }
+                            if (det == null && res.j && res.j.message) det = res.j.message;
+                            self.createError = det ? String(det) : t('main.simple.create_error');
+                            return;
+                        }
+                        self.persistSimpleCreateUiPrefs();
+                        self.showCreateModal = false;
+                        self.ordersPage = 1;
+                        self.fetchOrders();
+                    })
+                    .catch(function() {
+                        self.createError = t('main.simple.create_error');
+                    })
+                    .finally(function() {
+                        self.createSubmitting = false;
+                    });
             },
             onTronSuccess: function(payload) {
                 var self = this;
@@ -395,6 +864,57 @@
       <div v-if="authError" class="simple-auth__error">{{ authError }}</div>\
     </div>\
   </div>\
+  <div v-if="showCreateModal" class="simple-create__overlay" @click.self="closeCreateModal">\
+    <div class="simple-create__modal" role="dialog" aria-modal="true" @click.stop>\
+      <h2 class="simple-create__title">{{ t(\'main.simple.create_modal_title\') }}</h2>\
+      <div class="simple-create__grid">\
+        <div class="simple-create__col">\
+          <div class="simple-create__col-title">{{ t(\'main.simple.give_label\') }}</div>\
+          <label class="simple-create__label">{{ t(\'main.simple.asset_label\') }}</label>\
+          <select v-model="giveCode" class="simple-create__select" @change="onGiveCodeSelectChange">\
+            <option value="">{{ t(\'main.simple.give_select_placeholder\') }}</option>\
+            <option v-for="o in unifiedAssetOptions" :key="\'g-\' + o.code" :value="o.code">\
+              {{ o.code }} — {{ o.kind === \'stable\' ? t(\'main.simple.asset_kind_crypto\') : t(\'main.simple.asset_kind_fiat\') }}\
+            </option>\
+          </select>\
+          <label class="simple-create__label">{{ t(\'main.simple.amount_label\') }}</label>\
+          <input type="text" class="simple-create__input" :value="giveAmountInputDisplay" inputmode="decimal" autocomplete="off" :disabled="giveAssetEmpty" :placeholder="t(\'main.simple.amount_ph\')" @focus="onGiveAmountFocus" @blur="onGiveAmountBlur" @keydown="onAmountFieldKeydown" @input="onGiveAmountInput" @compositionend="onGiveAmountInput" />\
+        </div>\
+        <div class="simple-create__col" :class="{ \'simple-create__col--muted\': receiveLocked }" :aria-disabled="receiveLocked ? \'true\' : \'false\'">\
+          <div class="simple-create__col-title">{{ t(\'main.simple.receive_label\') }}</div>\
+          <label class="simple-create__label">{{ t(\'main.simple.asset_label\') }}</label>\
+          <select v-model="receiveCode" class="simple-create__select" :disabled="receiveLocked">\
+            <option value="">{{ t(\'main.simple.receive_select_placeholder\') }}</option>\
+            <option v-for="o in receiveOptions" :key="\'r-\' + o.code" :value="o.code">\
+              {{ o.code }} — {{ o.kind === \'stable\' ? t(\'main.simple.asset_kind_crypto\') : t(\'main.simple.asset_kind_fiat\') }}\
+            </option>\
+          </select>\
+          <div class="simple-create__row simple-create__row--checks">\
+            <label class="simple-create__check">\
+              <input type="checkbox" :checked="receiveAmountMode === \'negotiable\'" @change="onReceiveNegotiableChange" :disabled="receiveLocked" />\
+              {{ t(\'main.simple.receive_negotiable_rate\') }}\
+            </label>\
+            <label class="simple-create__check">\
+              <input type="checkbox" :checked="receiveAmountMode === \'fixed\'" @change="onReceiveFixedChange" :disabled="receiveLocked" />\
+              {{ t(\'main.simple.receive_fixed_rate\') }}\
+            </label>\
+          </div>\
+          <template v-if="receiveAmountMode === \'fixed\'">\
+            <label class="simple-create__label">{{ t(\'main.simple.amount_label\') }}</label>\
+            <input type="text" class="simple-create__input" :value="receiveAmountInputDisplay" inputmode="decimal" autocomplete="off" :disabled="receiveLocked" :placeholder="t(\'main.simple.amount_optional_ph\')" @focus="onReceiveAmountFocus" @blur="onReceiveAmountBlur" @keydown="onAmountFieldKeydown" @input="onReceiveAmountInput" @compositionend="onReceiveAmountInput" />\
+          </template>\
+        </div>\
+      </div>\
+      <div v-if="createError" class="simple-create__err">{{ createError }}</div>\
+      <div class="simple-create__actions">\
+        <button type="button" class="simple-create__btn simple-create__btn--ghost" @click="closeCreateModal" :disabled="createSubmitting">{{ t(\'main.simple.cancel\') }}</button>\
+        <button type="button" class="simple-create__btn simple-create__btn--primary" @click="submitCreateApplication" :disabled="createSubmitDisabled">\
+          <span v-if="createSubmitting" class="simple-create__btn-spinner" aria-hidden="true"></span>\
+          {{ t(\'main.simple.submit_create\') }}\
+        </button>\
+      </div>\
+    </div>\
+  </div>\
   <div class="simple-page__window">\
     <div class="simple-page__titlebar">\
       <div class="simple-page__titlebar-text">{{ chromeTitle }}</div>\
@@ -409,28 +929,28 @@
     <div v-if="!isDealView" class="simple-page__list-root">\
       <div class="simple-page__main-scroll simple-page__main-scroll--list">\
         <div v-if="authReady && !showAuthModal" class="simple-page__list-inner">\
-        <p class="simple-page__list-intro">{{ t(\'main.simple.orders_list_intro\') }}</p>\
+        <p class="simple-page__list-intro">{{ t(\'main.simple.deals_list_intro\') }}</p>\
         <div class="simple-page__orders-toolbar">\
-          <input type="search" class="simple-page__orders-search" v-model="ordersSearch" @input="onOrdersSearchInput" :placeholder="t(\'main.simple.orders_search_placeholder\')" autocomplete="off" />\
+          <button type="button" class="simple-page__create-deal-btn" @click="openCreateModal">{{ t(\'main.simple.create_deal_btn\') }}</button>\
+          <input type="search" class="simple-page__orders-search" v-model="ordersSearch" @input="onOrdersSearchInput" :placeholder="t(\'main.simple.deals_search_placeholder\')" autocomplete="off" />\
         </div>\
-        <div v-if="ordersError" class="simple-page__list-msg simple-page__list-msg--err">{{ t(\'main.simple.orders_error\') }}</div>\
+        <div v-if="ordersError" class="simple-page__list-msg simple-page__list-msg--err">{{ t(\'main.simple.deals_error\') }}</div>\
         <div v-else class="simple-page__orders-stage" :aria-busy="ordersLoading ? \'true\' : \'false\'">\
           <div v-if="ordersLoading" class="simple-page__orders-overlay" role="status">\
             <div class="simple-page__orders-spinner-el" aria-hidden="true"></div>\
-            <span class="simple-page__sr-only">{{ t(\'main.simple.orders_loading_aria\') }}</span>\
+            <span class="simple-page__sr-only">{{ t(\'main.simple.deals_loading_aria\') }}</span>\
           </div>\
-          <div v-if="!ordersLoading && !ordersItems.length" class="simple-page__list-msg">{{ t(\'main.simple.orders_empty\') }}</div>\
+          <div v-if="!ordersLoading && !ordersItems.length" class="simple-page__list-msg">{{ t(\'main.simple.deals_empty\') }}</div>\
           <div v-if="!ordersLoading && ordersItems.length" class="simple-page__order-list" role="list">\
-            <a v-for="order in ordersItems" :key="order.id" class="simple-page__order-card" role="listitem" :href="\'/simple/\' + encodeURIComponent(String(order.id))">\
+            <a v-for="deal in ordersItems" :key="deal.uid" class="simple-page__order-card" role="listitem" :href="\'/simple/deal/\' + encodeURIComponent(String(deal.uid))">\
               <div class="simple-page__order-card-main">\
-                <span class="simple-page__order-id">#{{ order.id }}</span>\
-                <span class="simple-page__order-cat">{{ order.category }}</span>\
-                <span v-if="orderPayloadStatus(order)" class="simple-page__order-st">{{ orderPayloadStatus(order) }}</span>\
+                <span class="simple-page__order-id">{{ deal.uid }}</span>\
+                <span class="simple-page__order-cat">{{ deal.label }}</span>\
               </div>\
               <div class="simple-page__order-card-sub">\
-                <span class="simple-page__order-mono">{{ truncateDedupe(order) }}</span>\
-                <span class="simple-page__order-date">{{ formatOrderUpdated(order) }}</span>\
-                <span class="simple-page__order-cta">{{ t(\'main.simple.orders_open\') }}</span>\
+                <span class="simple-page__order-mono">{{ deal.status }}</span>\
+                <span class="simple-page__order-date">{{ formatOrderUpdated(deal) }}</span>\
+                <span class="simple-page__order-cta">{{ t(\'main.simple.deals_open\') }}</span>\
               </div>\
             </a>\
           </div>\

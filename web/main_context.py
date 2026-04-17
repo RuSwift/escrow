@@ -25,6 +25,13 @@ def collateral_stablecoin_tokens_json() -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
+def system_currencies_codes_json() -> str:
+    """ISO-коды фиата из Settings для Simple UI."""
+    s = Settings()
+    codes = [str(c).strip().upper() for c in (s.system_currencies or []) if str(c).strip()]
+    return json.dumps(codes, ensure_ascii=False)
+
+
 def main_context(
     request: Request, initial_page: str = "dashboard", space_lang: str | None = None
 ) -> dict:
