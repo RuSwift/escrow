@@ -200,14 +200,27 @@
                 showAuthModal: false,
                 authError: '',
                 activeSpace: '',
-                navSteps: [
-                    { num: '01', titleKey: 'main.simple.nav_step1_title', subKey: 'main.simple.nav_step1_sub', status: 'done' },
-                    { num: '02', titleKey: 'main.simple.nav_step2_title', subKey: 'main.simple.nav_step2_sub', status: 'active' },
-                    { num: '03', titleKey: 'main.simple.nav_step3_title', subKey: 'main.simple.nav_step3_sub', status: 'pending' },
-                    { num: '04', titleKey: 'main.simple.nav_step4_title', subKey: 'main.simple.nav_step4_sub', status: 'pending' }
-                ],
+                navSteps: (function initialNavSteps() {
+                    var du = (el.getAttribute('data-simple-deal-uid') || '').trim();
+                    /* /simple/deal/{uid}: до resolve показываем активным этап «Условия», не Lockbox */
+                    var s1 = du ? 'active' : 'done';
+                    var s2 = du ? 'pending' : 'active';
+                    return [
+                        { num: '01', titleKey: 'main.simple.nav_step1_title', subKey: 'main.simple.nav_step1_sub', status: s1 },
+                        { num: '02', titleKey: 'main.simple.nav_step2_title', subKey: 'main.simple.nav_step2_sub', status: s2 },
+                        { num: '03', titleKey: 'main.simple.nav_step3_title', subKey: 'main.simple.nav_step3_sub', status: 'pending' },
+                        { num: '04', titleKey: 'main.simple.nav_step4_title', subKey: 'main.simple.nav_step4_sub', status: 'pending' }
+                    ];
+                })(),
                 orderId: (el.getAttribute('data-simple-order-id') || '').trim(),
                 dealUid: (el.getAttribute('data-simple-deal-uid') || '').trim(),
+                resolveLoading: false,
+                resolveError: false,
+                resolveErrorMsg: '',
+                resolveKind: null,
+                resolvePaymentRequest: null,
+                resolveDeal: null,
+                _resolveFetchSeq: 0,
                 ordersItems: [],
                 ordersTotal: 0,
                 ordersLoading: false,
@@ -274,6 +287,22 @@
                         self.receiveAmount = '';
                     }
                 });
+            },
+            theme: function(v) {
+                try {
+                    localStorage.setItem(STORAGE_KEY, v);
+                } catch (e) {}
+            },
+            authReady: function() {
+                this.maybeFetchOrders();
+                this.maybeFetchResolve();
+            },
+            showAuthModal: function() {
+                this.maybeFetchOrders();
+                this.maybeFetchResolve();
+            },
+            activeSpace: function() {
+                this.maybeFetchOrders();
             }
         },
         beforeDestroy: function() {
@@ -288,6 +317,9 @@
         },
         created: function() {
             var self = this;
+            if (self.dealUid) {
+                self.resolveLoading = true;
+            }
             this.countdownTick = Date.now();
             this._countdownInterval = setInterval(function() {
                 self.countdownTick = Date.now();
@@ -313,6 +345,7 @@
                 // If auth.js wasn't loaded for some reason, still show modal
                 self.showAuthModal = true;
                 self.authReady = true;
+                self.maybeFetchResolve();
                 return;
             }
 
@@ -351,23 +384,8 @@
             }).finally(function() {
                 self.authReady = true;
                 self.maybeFetchOrders();
+                self.maybeFetchResolve();
             });
-        },
-        watch: {
-            theme: function(v) {
-                try {
-                    localStorage.setItem(STORAGE_KEY, v);
-                } catch (e) {}
-            },
-            authReady: function() {
-                this.maybeFetchOrders();
-            },
-            showAuthModal: function() {
-                this.maybeFetchOrders();
-            },
-            activeSpace: function() {
-                this.maybeFetchOrders();
-            }
         },
         computed: {
             rootClass: function() {
@@ -381,12 +399,26 @@
             },
             chromeTitle: function() {
                 if (this.dealUid) {
+                    if (!this.resolveLoading && !this.resolveError && this.resolveKind === 'payment_request_only' && this.resolvePaymentRequest) {
+                        return this.appName + ' — ' + this.orderListTitle(this.resolvePaymentRequest);
+                    }
+                    if (!this.resolveLoading && !this.resolveError && this.resolveKind === 'deal_only' && this.resolveDeal) {
+                        var dd = this.resolveDeal;
+                        var lb = (dd.label || '').trim();
+                        if (lb) return this.appName + ' — ' + lb;
+                        var du = String(dd.uid || '').trim();
+                        return du ? (this.appName + ' — ' + du.slice(0, 20)) : (this.appName + ' — ' + String(this.dealUid).slice(0, 20));
+                    }
                     return t('main.simple.chrome_title_deal_uid', { app_name: this.appName, deal_uid: this.dealUid });
                 }
                 if (this.orderId) {
                     return t('main.simple.chrome_title_deal', { app_name: this.appName, order_id: this.orderId });
                 }
                 return t('main.simple.chrome_title_list', { app_name: this.appName });
+            },
+            /** Страница /simple/deal/{uid}: данные resolve загружены и можно рисовать блоки. */
+            dealViewShowResolved: function() {
+                return !!(this.dealUid && !this.resolveLoading && !this.resolveError && this.resolveKind);
             },
             unifiedAssetOptions: function() {
                 return buildUnifiedAssetOptions();
@@ -434,7 +466,15 @@
                 return false;
             },
             escrowLine: function() {
-                return t('main.simple.escrow_line', { addr: 'TCEu5M…jGesqi' });
+                if (this.resolveKind === 'deal_only' && this.resolveDeal && this.resolveDeal.uid) {
+                    var u = String(this.resolveDeal.uid).trim();
+                    var short = u.length > 18 ? u.slice(0, 10) + '…' + u.slice(-6) : u;
+                    return t('main.simple.deal_uid_footer', { uid: short });
+                }
+                if (this.resolveKind === 'payment_request_only') {
+                    return t('main.simple.deal_escrow_pending_footer');
+                }
+                return t('main.simple.escrow_line', { addr: '…' });
             },
             themeBtnLabel: function() {
                 return this.theme === 'light' ? t('main.simple.theme_dark') : t('main.simple.theme_light');
@@ -482,6 +522,161 @@
                 if (this.isDealView || !this.authReady || this.showAuthModal) return;
                 this.ordersPage = 1;
                 this.fetchOrders();
+            },
+            maybeFetchResolve: function() {
+                if (!this.dealUid) return;
+                if (!this.authReady || this.showAuthModal) {
+                    this.resolveLoading = false;
+                    return;
+                }
+                this.fetchResolve();
+            },
+            /** Этапы сайдбара: заявка — «Условия»; созданная сделка — Lockbox. */
+            applyNavStepsForResolveKind: function(kind) {
+                var steps = this.navSteps;
+                if (!steps || !steps.length) return;
+                if (kind === 'deal_only') {
+                    if (steps[0]) steps[0].status = 'done';
+                    if (steps[1]) steps[1].status = 'active';
+                    if (steps[2]) steps[2].status = 'pending';
+                    if (steps[3]) steps[3].status = 'pending';
+                    return;
+                }
+                if (kind === 'payment_request_only') {
+                    if (steps[0]) steps[0].status = 'active';
+                    if (steps[1]) steps[1].status = 'pending';
+                    if (steps[2]) steps[2].status = 'pending';
+                    if (steps[3]) steps[3].status = 'pending';
+                }
+            },
+            fetchResolve: function() {
+                var self = this;
+                if (!self.dealUid) return;
+                var mySeq = ++self._resolveFetchSeq;
+                self.resolveLoading = true;
+                self.resolveError = false;
+                self.resolveErrorMsg = '';
+                var tok = getToken();
+                var headers = { Accept: 'application/json' };
+                if (tok) headers.Authorization = 'Bearer ' + tok;
+                fetch('/v1/simple/resolve/' + encodeURIComponent(self.dealUid), {
+                    method: 'GET',
+                    headers: headers,
+                    credentials: 'same-origin'
+                })
+                    .then(function(r) {
+                        return r.json().then(function(data) {
+                            return { ok: r.ok, data: data };
+                        });
+                    })
+                    .then(function(res) {
+                        if (mySeq !== self._resolveFetchSeq) return;
+                        self.resolveLoading = false;
+                        if (!res.ok) {
+                            self.resolveError = true;
+                            var d = res.data && res.data.detail;
+                            self.resolveErrorMsg = typeof d === 'string' ? d : '';
+                            self.resolveKind = null;
+                            self.resolvePaymentRequest = null;
+                            self.resolveDeal = null;
+                            return;
+                        }
+                        var data = res.data || {};
+                        self.resolveKind = data.kind || null;
+                        self.resolvePaymentRequest = data.payment_request || null;
+                        self.resolveDeal = data.deal || null;
+                        self.applyNavStepsForResolveKind(self.resolveKind);
+                    })
+                    .catch(function() {
+                        if (mySeq !== self._resolveFetchSeq) return;
+                        self.resolveLoading = false;
+                        self.resolveError = true;
+                        self.resolveErrorMsg = t('main.simple.resolve_error');
+                        self.resolveKind = null;
+                        self.resolvePaymentRequest = null;
+                        self.resolveDeal = null;
+                    });
+            },
+            /** Подзаголовок шага 02 в сайдбаре (динамика из resolve). */
+            navStepActiveSub: function(step) {
+                if (step.status !== 'active') return '';
+                if (step.num !== '02') return t(step.subKey);
+                if (this.resolveLoading) return '…';
+                if (this.resolveKind === 'payment_request_only' && this.resolvePaymentRequest) {
+                    var line = this.dealLockboxHintFromPr(this.resolvePaymentRequest);
+                    return line || t('main.simple.nav_step2_sub');
+                }
+                if (this.resolveKind === 'deal_only' && this.resolveDeal) {
+                    return String(this.resolveDeal.status || '') || t('main.simple.nav_step2_sub');
+                }
+                return t('main.simple.nav_step2_sub');
+            },
+            /** Строка для блока lockbox inner при заявке (сумма стейбла / контекст). */
+            dealLockboxHintFromPr: function(req) {
+                if (!req) return '';
+                var dir = String(req.direction || '');
+                var pl = req.primary_leg || {};
+                var cl = req.counter_leg || {};
+                var stableLeg = dir === 'stable_to_fiat' ? pl : cl;
+                var at = String(stableLeg.asset_type || '').toLowerCase();
+                if (at !== 'stable') return '';
+                var amt = stableLeg.amount != null ? String(stableLeg.amount).trim() : '';
+                var code = stableLeg.code ? String(stableLeg.code).trim().toUpperCase() : '';
+                var fmt = amt ? formatAmountForLocale(amt) : '';
+                if (fmt && code) return fmt + ' ' + code;
+                return code || '';
+            },
+            /** Текст под заголовком мобильного summary для активного шага. */
+            mobileSummarySub: function() {
+                if (!this.activeNavStep) return '';
+                return this.navStepActiveSub(this.activeNavStep);
+            },
+            dealViewStatGive: function() {
+                if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) return '—';
+                var pr = this.resolvePaymentRequest;
+                var pl = pr.primary_leg || {};
+                var amt = pl.amount != null ? String(pl.amount).trim() : '';
+                var code = pl.code ? String(pl.code).trim().toUpperCase() : '';
+                var fmt = amt ? formatAmountForLocale(amt) : '';
+                return fmt ? fmt + ' ' + code : (code || '—');
+            },
+            dealViewStatReceive: function() {
+                if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) return '—';
+                var pr = this.resolvePaymentRequest;
+                var cl = pr.counter_leg || {};
+                var amt = cl.amount != null ? String(cl.amount).trim() : '';
+                var code = cl.code ? String(cl.code).trim().toUpperCase() : '';
+                if (!amt && cl.amount_discussed) {
+                    return code ? code + ' (' + t('main.simple.counter_discussed_short') + ')' : '—';
+                }
+                var fmt = amt ? formatAmountForLocale(amt) : '';
+                return fmt ? fmt + ' ' + code : (code || '—');
+            },
+            dealViewStatRate: function() {
+                if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) return '—';
+                var pr = this.resolvePaymentRequest;
+                var pl = pr.primary_leg || {};
+                var cl = pr.counter_leg || {};
+                var pa = pl.amount != null ? parseFloat(sanitizeDecimalAmountInput(String(pl.amount))) : NaN;
+                var ca = cl.amount != null ? parseFloat(sanitizeDecimalAmountInput(String(cl.amount))) : NaN;
+                if (!isFinite(pa) || !isFinite(ca) || pa <= 0) return '—';
+                var r = ca / pa;
+                return r.toFixed(4);
+            },
+            dealViewDealAmountLine: function() {
+                if (this.resolveKind !== 'deal_only' || !this.resolveDeal) return '—';
+                var d = this.resolveDeal;
+                if (d.amount != null && String(d.amount).trim() !== '') {
+                    return formatAmountForLocale(String(d.amount).trim());
+                }
+                return '—';
+            },
+            dealDealLabelPreview: function() {
+                var d = this.resolveDeal;
+                if (!d) return '';
+                var s = String(d.label || '').trim();
+                if (!s) return String(d.uid || '').slice(0, 24);
+                return s.length > 52 ? s.slice(0, 49) + '…' : s;
             },
             onOrdersSearchInput: function() {
                 var self = this;
@@ -1008,6 +1203,7 @@
                     setSpace(target);
                     self.showAuthModal = false;
                     self.maybeFetchOrders();
+                    self.maybeFetchResolve();
                 }).catch(function() {
                     self.authError = t('main.simple.auth_error');
                 });
@@ -1201,7 +1397,7 @@
             <summary class="simple-page__stages-mobile-summary" :aria-label="t(\'main.simple.stages_expand_aria\')">\
               <span class="simple-page__stages-mobile-summary-inner">\
                 <span v-if="activeNavStep" class="simple-page__stages-mobile-summary-title">{{ t(activeNavStep.titleKey) }}</span>\
-                <span v-if="activeNavStep" class="simple-page__stages-mobile-summary-sub">{{ t(activeNavStep.subKey) }}</span>\
+                <span v-if="activeNavStep" class="simple-page__stages-mobile-summary-sub">{{ mobileSummarySub() }}</span>\
               </span>\
               <svg class="simple-page__stages-mobile-chevron" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/></svg>\
             </summary>\
@@ -1214,7 +1410,7 @@
                 </span>\
                 <div class="simple-page__stages-mobile-row-text">\
                   <div class="simple-page__stages-mobile-row-title">{{ t(step.titleKey) }}</div>\
-                  <div v-if="step.status === \'active\'" class="simple-page__stages-mobile-row-sub">{{ t(step.subKey) }}</div>\
+                  <div v-if="step.status === \'active\'" class="simple-page__stages-mobile-row-sub">{{ navStepActiveSub(step) }}</div>\
                 </div>\
               </div>\
             </div>\
@@ -1227,7 +1423,7 @@
               </div>\
               <div class="simple-page__nav-text">\
                 <div class="simple-page__nav-title">{{ t(step.titleKey) }}</div>\
-                <div v-if="step.status === \'active\'" class="simple-page__nav-sub">{{ t(step.subKey) }}</div>\
+                <div v-if="step.status === \'active\'" class="simple-page__nav-sub">{{ navStepActiveSub(step) }}</div>\
               </div>\
               <svg v-if="step.status === \'done\'" class="simple-page__nav-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>\
               <span v-if="step.status === \'active\'" class="simple-page__nav-pulse" aria-hidden="true"></span>\
@@ -1241,6 +1437,150 @@
       </aside>\
       <main class="simple-page__main">\
         <div class="simple-page__main-scroll">\
+          <div v-if="dealUid && resolveLoading" class="simple-page__orders-overlay simple-page__resolve-loading" role="status">\
+            <div class="simple-page__orders-spinner-el" aria-hidden="true"></div>\
+            <span>{{ t(\'main.simple.resolve_loading\') }}</span>\
+          </div>\
+          <div v-else-if="dealUid && resolveError" class="simple-page__list-msg simple-page__list-msg--err">{{ resolveErrorMsg || t(\'main.simple.resolve_error\') }}</div>\
+          <template v-else-if="dealViewShowResolved && resolveKind === \'payment_request_only\'">\
+          <div class="simple-page__stat-rail" role="region" :aria-label="t(\'main.simple.stat_carousel_aria\')">\
+            <div class="simple-page__stat-card simple-page__stat-card--rail">\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_amount_short\') }}</div>\
+              <div class="simple-page__stat-value">{{ dealViewStatGive() }}</div>\
+            </div>\
+            <div class="simple-page__stat-card simple-page__stat-card--rail">\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_receives_short\') }}</div>\
+              <div class="simple-page__stat-value">{{ dealViewStatReceive() }}</div>\
+            </div>\
+            <div class="simple-page__stat-card simple-page__stat-card--rail">\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_rate_short\') }}</div>\
+              <div class="simple-page__stat-value">{{ dealViewStatRate() }}</div>\
+            </div>\
+            <div class="simple-page__stat-card simple-page__stat-card--rail">\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_network_short\') }}</div>\
+              <div class="simple-page__stat-value simple-page__stat-value--rail-net">\
+                <span class="simple-page__stat-tron-badge">T</span>\
+                TRON\
+              </div>\
+              <div class="simple-page__stat-sub">TRON</div>\
+            </div>\
+          </div>\
+          <div class="simple-page__stat-grid simple-page__stat-grid--desktop">\
+            <div class="simple-page__stat-card">\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_amount\') }}</div>\
+              <div class="simple-page__stat-value">{{ dealViewStatGive() }}</div>\
+            </div>\
+            <div class="simple-page__stat-card">\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_receives\') }}</div>\
+              <div class="simple-page__stat-value">{{ dealViewStatReceive() }}</div>\
+            </div>\
+            <div class="simple-page__stat-card">\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_rate\') }}</div>\
+              <div class="simple-page__stat-value">{{ dealViewStatRate() }}</div>\
+            </div>\
+            <div class="simple-page__stat-card">\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_network\') }}</div>\
+              <div class="simple-page__stat-value" style="display:flex;align-items:center;gap:0.5rem;justify-content:center">\
+                <span style="display:inline-flex;width:2rem;height:2rem;border-radius:0.5rem;background:#ef4444;color:#fff;font-size:10px;font-weight:800;align-items:center;justify-content:center">T</span>\
+                TRON\
+              </div>\
+              <div class="simple-page__stat-sub">TRON</div>\
+            </div>\
+          </div>\
+          <div class="simple-page__flow-shell">\
+            <div class="simple-page__flow-row">\
+              <div class="simple-page__flow-icon">\
+                <svg class="simple-page__svg--lg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>\
+              </div>\
+              <div class="simple-page__flow-body">\
+                <div class="simple-page__flow-title">{{ t(\'main.simple.deal_flow_offer_title\') }}</div>\
+                <div class="simple-page__flow-mono">{{ orderAmountsLine(resolvePaymentRequest) }}</div>\
+              </div>\
+              <div class="simple-page__flow-status">{{ t(\'main.simple.request_status_terms\') }}</div>\
+            </div>\
+            <div class="simple-page__lockbox">\
+              <div class="simple-page__lockbox-tag">{{ t(\'main.simple.lockbox_title\') }}</div>\
+              <div class="simple-page__lockbox-head">\
+                <svg class="simple-page__svg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>\
+                <span class="simple-page__lockbox-brand">{{ t(\'main.simple.lockbox_subtitle\') }}</span>\
+              </div>\
+              <div class="simple-page__flow-mono" style="margin-bottom:1rem">{{ t(\'main.simple.lockbox_pending_help\') }}</div>\
+              <div class="simple-page__lockbox-inner">\
+                <svg class="simple-page__svg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>\
+                {{ dealLockboxHintFromPr(resolvePaymentRequest) || t(\'main.simple.lockbox_inner_placeholder\') }}\
+              </div>\
+            </div>\
+            <div class="simple-page__recipient-wrap">\
+              <div class="simple-page__flow-row">\
+                <div class="simple-page__flow-icon simple-page__flow-icon--muted">\
+                  <svg class="simple-page__svg--lg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>\
+                </div>\
+                <div class="simple-page__flow-body">\
+                  <div class="simple-page__flow-title">{{ t(\'main.simple.counter_leg\') }}</div>\
+                  <div class="simple-page__flow-mono">{{ dealViewStatReceive() }}</div>\
+                </div>\
+              </div>\
+            </div>\
+          </div>\
+          </template>\
+          <template v-else-if="dealViewShowResolved && resolveKind === \'deal_only\'">\
+          <div class="simple-page__stat-rail" role="region" :aria-label="t(\'main.simple.stat_carousel_aria\')">\
+            <div class="simple-page__stat-card simple-page__stat-card--rail">\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_amount_short\') }}</div>\
+              <div class="simple-page__stat-value">{{ dealViewDealAmountLine() }}</div>\
+            </div>\
+            <div class="simple-page__stat-card simple-page__stat-card--rail">\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.deal_stat_status\') }}</div>\
+              <div class="simple-page__stat-value">{{ resolveDeal.status }}</div>\
+            </div>\
+            <div class="simple-page__stat-card simple-page__stat-card--rail">\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.heading_label\') }}</div>\
+              <div class="simple-page__stat-value simple-page__stat-value--clamp">{{ dealDealLabelPreview() }}</div>\
+            </div>\
+            <div class="simple-page__stat-card simple-page__stat-card--rail">\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_network_short\') }}</div>\
+              <div class="simple-page__stat-value simple-page__stat-value--rail-net">\
+                <span class="simple-page__stat-tron-badge">T</span>\
+                TRON\
+              </div>\
+              <div class="simple-page__stat-sub">TRON</div>\
+            </div>\
+          </div>\
+          <div class="simple-page__stat-grid simple-page__stat-grid--desktop">\
+            <div class="simple-page__stat-card">\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_amount\') }}</div>\
+              <div class="simple-page__stat-value">{{ dealViewDealAmountLine() }}</div>\
+            </div>\
+            <div class="simple-page__stat-card">\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.deal_stat_status\') }}</div>\
+              <div class="simple-page__stat-value">{{ resolveDeal.status }}</div>\
+            </div>\
+            <div class="simple-page__stat-card">\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.heading_label\') }}</div>\
+              <div class="simple-page__stat-value">{{ dealDealLabelPreview() }}</div>\
+            </div>\
+            <div class="simple-page__stat-card">\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_network\') }}</div>\
+              <div class="simple-page__stat-value" style="display:flex;align-items:center;gap:0.5rem;justify-content:center">\
+                <span style="display:inline-flex;width:2rem;height:2rem;border-radius:0.5rem;background:#ef4444;color:#fff;font-size:10px;font-weight:800;align-items:center;justify-content:center">T</span>\
+                TRON\
+              </div>\
+              <div class="simple-page__stat-sub">TRON</div>\
+            </div>\
+          </div>\
+          <div class="simple-page__flow-shell">\
+            <div class="simple-page__flow-row">\
+              <div class="simple-page__flow-icon">\
+                <svg class="simple-page__svg--lg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>\
+              </div>\
+              <div class="simple-page__flow-body">\
+                <div class="simple-page__flow-title">{{ t(\'main.simple.deal_flow_deal_title\') }}</div>\
+                <div class="simple-page__flow-mono">{{ dealDealLabelPreview() }} · {{ resolveDeal.uid }}</div>\
+              </div>\
+            </div>\
+          </div>\
+          </template>\
+          <template v-else-if="orderId && !dealUid">\
           <div class="simple-page__stat-rail" role="region" :aria-label="t(\'main.simple.stat_carousel_aria\')">\
             <div class="simple-page__stat-card simple-page__stat-card--rail">\
               <div class="simple-page__stat-label">{{ t(\'main.simple.stat_amount_short\') }}</div>\
@@ -1323,6 +1663,7 @@
               </div>\
             </div>\
           </div>\
+          </template>\
         <div class="simple-page__footer">\
           <div class="simple-page__footer-row">\
             <svg class="simple-page__svg--sm" style="color:var(--simple-primary)" viewBox="0 0 24 24" fill="currentColor"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>\

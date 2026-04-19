@@ -89,6 +89,22 @@ class PaymentRequestRepository(BaseRepository):
         rows = [(r[0], str(r[1])) for r in raw]
         return rows, total
 
+    async def get_by_uid(self, uid: str) -> Optional[Tuple[PaymentRequest, str]]:
+        """Публичная заявка по uid (без фильтра по владельцу)."""
+        uid_norm = (uid or "").strip().lower()
+        if not uid_norm:
+            return None
+        stmt = (
+            select(PaymentRequest, WalletUser.nickname)
+            .join(WalletUser, PaymentRequest.space_id == WalletUser.id)
+            .where(func.lower(PaymentRequest.uid) == uid_norm)
+        )
+        res = await self._session.execute(stmt)
+        row = res.first()
+        if row is None:
+            return None
+        return row[0], str(row[1])
+
     async def deactivate_for_owner(
         self,
         owner_did: str,

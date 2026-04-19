@@ -8,7 +8,12 @@ from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 
 from core.exceptions import SpacePermissionDenied
 from services.payment_request import PaymentRequestService
-from web.endpoints.dependencies import CurrentWalletUser, get_payment_request_service
+from services.simple_resolve import ResolvedDeal, ResolvedPaymentRequest, SimpleResolveService
+from web.endpoints.dependencies import (
+    CurrentWalletUser,
+    get_payment_request_service,
+    get_simple_resolve_service,
+)
 from web.endpoints.v1.schemas.payment_requests import (
     PaymentRequestCreateBody,
     PaymentRequestCreateResponse,
@@ -17,8 +22,38 @@ from web.endpoints.v1.schemas.payment_requests import (
     PaymentRequestListResponse,
     PaymentRequestOut,
 )
+from web.endpoints.v1.schemas.simple_resolve import SimpleDealOut, SimpleResolveResponse
 
 router = APIRouter(prefix="/simple", tags=["simple"])
+
+
+@router.get("/resolve/{public_uid}", response_model=SimpleResolveResponse)
+async def resolve_simple_context(
+    _user: CurrentWalletUser,
+    public_uid: str,
+    svc: SimpleResolveService = Depends(get_simple_resolve_service),
+):
+    """Контекст для /simple/deal/{uid}: сначала PaymentRequest, иначе Deal по uid."""
+    result = await svc.resolve_public_uid(public_uid)
+    if result is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Заявка или сделка не найдена",
+        )
+    if isinstance(result, ResolvedPaymentRequest):
+        return SimpleResolveResponse(
+            kind="payment_request_only",
+            payment_request=PaymentRequestOut.from_model(
+                result.row, space_nickname=result.space_nickname
+            ),
+            deal=None,
+        )
+    assert isinstance(result, ResolvedDeal)
+    return SimpleResolveResponse(
+        kind="deal_only",
+        payment_request=None,
+        deal=SimpleDealOut.from_model(result.row),
+    )
 
 
 @router.get("/payment-requests", response_model=PaymentRequestListResponse)

@@ -30,6 +30,7 @@ from services.exchange_wallets import ExchangeWalletService
 from services.space_exchange_service import SpaceExchangeService
 from services.space_payment_form_admin import SpacePaymentFormAdminService
 from services.payment_request import PaymentRequestService
+from services.simple_resolve import SimpleResolveService
 from services.order import OrderService
 from services.guarantor import GuarantorService
 from services.space import SpaceService
@@ -221,6 +222,15 @@ def get_payment_request_service(
 ) -> PaymentRequestService:
     """Заявки PaymentRequest (Simple UI)."""
     return PaymentRequestService(session=db, redis=redis, settings=settings.settings)
+
+
+def get_simple_resolve_service(
+    db: DbSession,
+    redis: RedisClient,
+    settings: AppSettings,
+) -> SimpleResolveService:
+    """Разрешение публичного uid для страницы Simple (/simple/deal/...)."""
+    return SimpleResolveService(session=db, redis=redis, settings=settings.settings)
 
 
 def get_balances_service(
