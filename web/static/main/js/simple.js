@@ -220,7 +220,8 @@
                 resolveKind: null,
                 resolvePaymentRequest: null,
                 resolveDeal: null,
-                _resolveFetchSeq: 0,
+                /* Без префикса _: Vue 2 не проксирует data._* на this — иначе ++ даёт NaN. */
+                resolveFetchSeq: 0,
                 ordersItems: [],
                 ordersTotal: 0,
                 ordersLoading: false,
@@ -293,10 +294,6 @@
                     localStorage.setItem(STORAGE_KEY, v);
                 } catch (e) {}
             },
-            authReady: function() {
-                this.maybeFetchOrders();
-                this.maybeFetchResolve();
-            },
             showAuthModal: function() {
                 this.maybeFetchOrders();
                 this.maybeFetchResolve();
@@ -345,6 +342,7 @@
                 // If auth.js wasn't loaded for some reason, still show modal
                 self.showAuthModal = true;
                 self.authReady = true;
+                self.maybeFetchOrders();
                 self.maybeFetchResolve();
                 return;
             }
@@ -552,7 +550,7 @@
             fetchResolve: function() {
                 var self = this;
                 if (!self.dealUid) return;
-                var mySeq = ++self._resolveFetchSeq;
+                var mySeq = ++self.resolveFetchSeq;
                 self.resolveLoading = true;
                 self.resolveError = false;
                 self.resolveErrorMsg = '';
@@ -570,8 +568,7 @@
                         });
                     })
                     .then(function(res) {
-                        if (mySeq !== self._resolveFetchSeq) return;
-                        self.resolveLoading = false;
+                        if (mySeq !== self.resolveFetchSeq) return;
                         if (!res.ok) {
                             self.resolveError = true;
                             var d = res.data && res.data.detail;
@@ -588,13 +585,17 @@
                         self.applyNavStepsForResolveKind(self.resolveKind);
                     })
                     .catch(function() {
-                        if (mySeq !== self._resolveFetchSeq) return;
-                        self.resolveLoading = false;
+                        if (mySeq !== self.resolveFetchSeq) return;
                         self.resolveError = true;
                         self.resolveErrorMsg = t('main.simple.resolve_error');
                         self.resolveKind = null;
                         self.resolvePaymentRequest = null;
                         self.resolveDeal = null;
+                    })
+                    .finally(function() {
+                        /* Снимаем спиннер только для актуального запроса (без гонки двух fetchResolve). */
+                        if (mySeq !== self.resolveFetchSeq) return;
+                        self.resolveLoading = false;
                     });
             },
             /** Подзаголовок шага 02 в сайдбаре (динамика из resolve). */
