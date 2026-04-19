@@ -175,6 +175,7 @@ async def test_db(db_engine) -> AsyncGenerator[AsyncSession, None]:
         await conn.execute(text("TRUNCATE TABLE node_settings CASCADE"))
         await conn.execute(text("TRUNCATE TABLE admin_users CASCADE"))
         await conn.execute(text("TRUNCATE TABLE admin_tron_addresses CASCADE"))
+        await conn.execute(text("TRUNCATE TABLE payment_request CASCADE"))
         await conn.execute(text("TRUNCATE TABLE wallet_users CASCADE"))
         await conn.execute(text("TRUNCATE TABLE billing CASCADE"))
         await conn.execute(text("TRUNCATE TABLE storage CASCADE"))

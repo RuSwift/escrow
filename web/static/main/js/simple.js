@@ -218,6 +218,11 @@
                 ordersFetchSeq: 0,
                 _ordersSearchDebounce: null,
                 showCreateModal: false,
+                showDeactivateModal: false,
+                deactivateTargetPk: null,
+                deactivateConfirm: '',
+                deactivateError: '',
+                deactivateSubmitting: false,
                 createSubmitting: false,
                 createError: '',
                 giveCode: '',
@@ -227,8 +232,13 @@
                 receiveAmount: '',
                 receiveAmountFocus: false,
                 receiveAmountMode: 'negotiable',
+                createHeading: '',
+                createLifetime: '72h',
+                /** Тик для перерисовки countdown по expires_at заявок. */
+                countdownTick: 0,
                 /** Кэш payload GET /ui-prefs для мгновенного применения при повторном открытии модалки. */
-                _uiPrefsPayloadCache: null
+                _uiPrefsPayloadCache: null,
+                _countdownInterval: null
             };
         },
         watch: {
@@ -271,9 +281,18 @@
                 clearTimeout(this._ordersSearchDebounce);
                 this._ordersSearchDebounce = null;
             }
+            if (this._countdownInterval != null) {
+                clearInterval(this._countdownInterval);
+                this._countdownInterval = null;
+            }
         },
         created: function() {
             var self = this;
+            this.countdownTick = Date.now();
+            this._countdownInterval = setInterval(function() {
+                self.countdownTick = Date.now();
+            }, 1000);
+
             var fromUrl = themeFromQuery();
             if (fromUrl) {
                 this.theme = fromUrl;
@@ -450,6 +469,11 @@
             },
             ordersNextDisabled: function() {
                 return this.ordersLoading || this.ordersPage >= this.ordersTotalPages;
+            },
+            deactivateSubmitDisabled: function() {
+                if (this.deactivateSubmitting) return true;
+                if (this.deactivateTargetPk == null) return true;
+                return !(String(this.deactivateConfirm || '').trim());
             }
         },
         methods: {
@@ -494,7 +518,7 @@
                 params.set('page_size', String(self.ordersPageSize));
                 var q = (self.ordersSearch || '').trim();
                 if (q) params.set('q', q);
-                var url = '/v1/simple/deals?' + params.toString();
+                var url = '/v1/simple/payment-requests?' + params.toString();
                 var headers = { Accept: 'application/json' };
                 var tok = getToken();
                 if (tok) headers.Authorization = 'Bearer ' + tok;
@@ -527,16 +551,88 @@
                         }
                     });
             },
-            formatOrderUpdated: function(order) {
-                var raw = (order && order.updated_at) || (order && order.created_at) || '';
-                if (!raw) return '—';
-                try {
-                    var d = new Date(raw);
-                    if (isNaN(d.getTime())) return String(raw).slice(0, 16);
-                    return d.toLocaleString();
-                } catch (e) {
-                    return String(raw).slice(0, 16);
+            /** Есть сумма в ноге «Получаю» (counter_leg) — режим «Выставлен счет». */
+            orderHasReceiveAmount: function(req) {
+                var cl = req && req.counter_leg;
+                var recvAmt = '';
+                if (cl && cl.amount != null && cl.amount !== undefined) {
+                    recvAmt = String(cl.amount).trim();
                 }
+                return recvAmt.length > 0;
+            },
+            /**
+             * Выставлен счет: суммы обеих ног + коды.
+             * Запрос условий: сумма отдачи + направление (получение без суммы).
+             */
+            orderAmountsLine: function(req) {
+                if (!req) return '';
+                var pl = req.primary_leg;
+                var cl = req.counter_leg;
+                var gc = pl && pl.code ? String(pl.code).trim().toUpperCase() : '';
+                var rc = cl && cl.code ? String(cl.code).trim().toUpperCase() : '';
+                var gaRaw = pl && pl.amount != null ? String(pl.amount).trim() : '';
+                var raRaw = cl && cl.amount != null ? String(cl.amount).trim() : '';
+                var ga = gaRaw ? formatAmountForLocale(gaRaw) : '';
+                var ra = raRaw ? formatAmountForLocale(raRaw) : '';
+                var arrow = ' → ';
+                if (this.orderHasReceiveAmount(req)) {
+                    var leftInv = ga ? ga + ' ' + gc : (gc || '—');
+                    var rightInv = ra ? ra + ' ' + rc : (rc || '—');
+                    return leftInv + arrow + rightInv;
+                }
+                var leftTerms = ga ? ga + ' ' + gc : (gc || '—');
+                var rightTerms = rc || '—';
+                return leftTerms + arrow + rightTerms;
+            },
+            /** Оставшееся время до expires_at; тикает раз в секунду через countdownTick. */
+            formatExpiryCountdown: function(order) {
+                var _tick = this.countdownTick;
+                void _tick;
+                if (!order) return '';
+                if (!order.expires_at) return t('main.simple.request_expires_never');
+                var end = new Date(order.expires_at).getTime();
+                if (isNaN(end)) return '';
+                var now = Date.now();
+                var ms = end - now;
+                if (ms <= 0) return t('main.simple.request_expired');
+                var sec = Math.floor(ms / 1000);
+                var days = Math.floor(sec / 86400);
+                var h = Math.floor((sec % 86400) / 3600);
+                var m = Math.floor((sec % 3600) / 60);
+                var s = sec % 60;
+                var hh = h < 10 ? '0' + h : String(h);
+                var mm = m < 10 ? '0' + m : String(m);
+                var ss = s < 10 ? '0' + s : String(s);
+                if (days >= 1) {
+                    return t('main.simple.countdown_days', {
+                        days: String(days),
+                        hh: hh,
+                        mm: mm,
+                        ss: ss
+                    });
+                }
+                return hh + ':' + mm + ':' + ss;
+            },
+            orderListTitle: function(req) {
+                var pk = req && req.pk != null ? String(req.pk) : '';
+                var h = req && req.heading ? String(req.heading).trim() : '';
+                var hasReceiveAmount = this.orderHasReceiveAmount(req);
+                if (h) {
+                    if (hasReceiveAmount) {
+                        return t('main.simple.request_title_invoice_with_heading', {
+                            pk: pk,
+                            heading: h
+                        });
+                    }
+                    return t('main.simple.request_title_terms_with_heading', {
+                        pk: pk,
+                        heading: h
+                    });
+                }
+                if (hasReceiveAmount) {
+                    return t('main.simple.request_title_invoice', { pk: pk });
+                }
+                return t('main.simple.request_title_terms', { pk: pk });
             },
             onGiveCodeSelectChange: function() {
                 this.giveAmountFocus = false;
@@ -592,6 +688,8 @@
                 self.receiveAmount = '';
                 self.receiveAmountFocus = false;
                 self.receiveAmountMode = 'negotiable';
+                self.createHeading = '';
+                self.createLifetime = '72h';
                 self.showCreateModal = true;
                 if (self._uiPrefsPayloadCache) {
                     self.applySimpleCreatePrefsFromPayload(self._uiPrefsPayloadCache);
@@ -609,6 +707,76 @@
                 this.giveAmountFocus = false;
                 this.receiveAmountFocus = false;
                 this.showCreateModal = false;
+            },
+            openDeactivateModal: function(req) {
+                if (!req || req.deactivated_at) return;
+                this.deactivateTargetPk = req.pk;
+                this.deactivateConfirm = '';
+                this.deactivateError = '';
+                this.showDeactivateModal = true;
+            },
+            closeDeactivateModal: function() {
+                if (this.deactivateSubmitting) return;
+                this.showDeactivateModal = false;
+                this.deactivateTargetPk = null;
+                this.deactivateConfirm = '';
+                this.deactivateError = '';
+            },
+            submitDeactivate: function() {
+                var self = this;
+                if (self.deactivateSubmitDisabled) return;
+                var pk = self.deactivateTargetPk;
+                var confirm = String(self.deactivateConfirm || '').trim();
+                self.deactivateSubmitting = true;
+                self.deactivateError = '';
+                var tok = getToken();
+                var headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
+                if (tok) headers.Authorization = 'Bearer ' + tok;
+                fetch(
+                    '/v1/simple/payment-requests/' + encodeURIComponent(String(pk)) + '/deactivate',
+                    {
+                        method: 'POST',
+                        headers: headers,
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ confirm_pk: confirm })
+                    }
+                )
+                    .then(function(r) {
+                        return r.json().then(function(data) {
+                            return { status: r.status, data: data };
+                        });
+                    })
+                    .then(function(res) {
+                        if (res.status === 200 && res.data && res.data.payment_request) {
+                            var updated = res.data.payment_request;
+                            var items = self.ordersItems.slice();
+                            for (var i = 0; i < items.length; i++) {
+                                if (items[i].pk === updated.pk) {
+                                    items[i] = updated;
+                                    break;
+                                }
+                            }
+                            self.ordersItems = items;
+                            self.showDeactivateModal = false;
+                            self.deactivateTargetPk = null;
+                            self.deactivateConfirm = '';
+                            return;
+                        }
+                        var detail = res.data && res.data.detail;
+                        var msg = '';
+                        if (typeof detail === 'string') {
+                            msg = detail;
+                        } else if (Array.isArray(detail) && detail.length && detail[0].msg) {
+                            msg = detail[0].msg;
+                        }
+                        self.deactivateError = msg || t('main.simple.deactivate_error_generic');
+                    })
+                    .catch(function() {
+                        self.deactivateError = t('main.simple.deactivate_error_generic');
+                    })
+                    .finally(function() {
+                        self.deactivateSubmitting = false;
+                    });
             },
             simpleUiPrefsUrl: function() {
                 var space = (this.activeSpace || '').trim();
@@ -656,6 +824,10 @@
                 var p = payload && typeof payload === 'object' ? payload : {};
                 var sc = p.simple_create;
                 if (!sc || typeof sc !== 'object') return;
+                var lt = (sc.lifetime != null ? String(sc.lifetime) : '').trim();
+                if (lt === '24h' || lt === '48h' || lt === '72h' || lt === 'forever') {
+                    this.createLifetime = lt;
+                }
                 var give = (sc.give_code || '').trim().toUpperCase();
                 var recv = (sc.receive_code || '').trim().toUpperCase();
                 var mode = sc.receive_amount_mode === 'fixed' ? 'fixed' : 'negotiable';
@@ -685,7 +857,8 @@
                     simple_create: {
                         give_code: gc || null,
                         receive_code: rc || null,
-                        receive_amount_mode: mode
+                        receive_amount_mode: mode,
+                        lifetime: this.createLifetime || '72h'
                     }
                 };
                 var self = this;
@@ -772,12 +945,19 @@
                     side: 'receive',
                     amount_discussed: self.receiveAmountMode === 'negotiable'
                 };
-                var body = { direction: direction, primary_leg: leg1, counter_leg: leg2 };
+                var body = {
+                    direction: direction,
+                    primary_leg: leg1,
+                    counter_leg: leg2,
+                    lifetime: self.createLifetime || '72h'
+                };
+                var gh = (self.createHeading || '').trim();
+                if (gh) body.heading = gh;
                 self.createSubmitting = true;
                 var tok = getToken();
                 var headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
                 if (tok) headers.Authorization = 'Bearer ' + tok;
-                fetch('/v1/simple/deals/simple-application', {
+                fetch('/v1/simple/payment-requests', {
                     method: 'POST',
                     headers: headers,
                     credentials: 'same-origin',
@@ -905,12 +1085,39 @@
           </template>\
         </div>\
       </div>\
+      <div class="simple-create__extra">\
+        <label class="simple-create__label">{{ t(\'main.simple.heading_label\') }}</label>\
+        <input type="text" class="simple-create__input" v-model.trim="createHeading" maxlength="256" :placeholder="t(\'main.simple.heading_placeholder\')" autocomplete="off" />\
+        <label class="simple-create__label" for="simple-create-lifetime">{{ t(\'main.simple.lifetime_label\') }}</label>\
+        <select id="simple-create-lifetime" v-model="createLifetime" class="simple-create__select simple-create__select--lifetime" @change="persistSimpleCreateUiPrefs">\
+          <option value="24h">{{ t(\'main.simple.lifetime_24h\') }}</option>\
+          <option value="48h">{{ t(\'main.simple.lifetime_48h\') }}</option>\
+          <option value="72h">{{ t(\'main.simple.lifetime_72h\') }}</option>\
+          <option value="forever">{{ t(\'main.simple.lifetime_forever\') }}</option>\
+        </select>\
+      </div>\
       <div v-if="createError" class="simple-create__err">{{ createError }}</div>\
       <div class="simple-create__actions">\
         <button type="button" class="simple-create__btn simple-create__btn--ghost" @click="closeCreateModal" :disabled="createSubmitting">{{ t(\'main.simple.cancel\') }}</button>\
         <button type="button" class="simple-create__btn simple-create__btn--primary" @click="submitCreateApplication" :disabled="createSubmitDisabled">\
           <span v-if="createSubmitting" class="simple-create__btn-spinner" aria-hidden="true"></span>\
           {{ t(\'main.simple.submit_create\') }}\
+        </button>\
+      </div>\
+    </div>\
+  </div>\
+  <div v-if="showDeactivateModal" class="simple-deactivate__overlay" @click.self="closeDeactivateModal">\
+    <div class="simple-create__modal simple-deactivate__modal" role="dialog" aria-modal="true" @click.stop>\
+      <h2 class="simple-create__title">{{ t(\'main.simple.deactivate_modal_title\') }}</h2>\
+      <p class="simple-deactivate__hint">{{ t(\'main.simple.deactivate_modal_hint\', { pk: deactivateTargetPk }) }}</p>\
+      <label class="simple-create__label" for="simple-deactivate-confirm">{{ t(\'main.simple.deactivate_modal_label\') }}</label>\
+      <input id="simple-deactivate-confirm" type="text" class="simple-create__input" v-model.trim="deactivateConfirm" autocomplete="off" inputmode="numeric" :placeholder="t(\'main.simple.deactivate_modal_placeholder\')" />\
+      <div v-if="deactivateError" class="simple-create__err">{{ deactivateError }}</div>\
+      <div class="simple-create__actions">\
+        <button type="button" class="simple-create__btn simple-create__btn--ghost" @click="closeDeactivateModal" :disabled="deactivateSubmitting">{{ t(\'main.simple.cancel\') }}</button>\
+        <button type="button" class="simple-create__btn simple-create__btn--primary" @click="submitDeactivate" :disabled="deactivateSubmitDisabled">\
+          <span v-if="deactivateSubmitting" class="simple-create__btn-spinner" aria-hidden="true"></span>\
+          {{ t(\'main.simple.deactivate_confirm\') }}\
         </button>\
       </div>\
     </div>\
@@ -942,17 +1149,32 @@
           </div>\
           <div v-if="!ordersLoading && !ordersItems.length" class="simple-page__list-msg">{{ t(\'main.simple.deals_empty\') }}</div>\
           <div v-if="!ordersLoading && ordersItems.length" class="simple-page__order-list" role="list">\
-            <a v-for="deal in ordersItems" :key="deal.uid" class="simple-page__order-card" role="listitem" :href="\'/simple/deal/\' + encodeURIComponent(String(deal.uid))">\
-              <div class="simple-page__order-card-main">\
-                <span class="simple-page__order-id">{{ deal.uid }}</span>\
-                <span class="simple-page__order-cat">{{ deal.label }}</span>\
+            <div v-for="req in ordersItems" :key="req.uid" class="simple-page__order-card" :class="{ \'simple-page__order-card--deactivated\': req.deactivated_at }" role="listitem">\
+              <a class="simple-page__order-card-hit" :href="\'/simple/deal/\' + encodeURIComponent(String(req.uid))">\
+                <div class="simple-page__order-card-main">\
+                  <div class="simple-page__order-titles">\
+                    <span class="simple-page__order-list-title">{{ orderListTitle(req) }}</span>\
+                  </div>\
+                </div>\
+                <div class="simple-page__order-card-sub">\
+                  <span class="simple-page__order-amounts">{{ orderAmountsLine(req) }}</span>\
+                  <div class="simple-page__order-sub-right">\
+                    <div class="simple-page__order-countdown-row" :class="{ \'simple-page__order-countdown-row--muted\': !req.expires_at }">\
+                      <svg class="simple-page__ico-clock" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\
+                        <circle cx="12" cy="12" r="10" stroke-linecap="round"/>\
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l4 2"/>\
+                      </svg>\
+                      <span class="simple-page__order-countdown">{{ formatExpiryCountdown(req) }}</span>\
+                    </div>\
+                    <span class="simple-page__order-cta">{{ t(\'main.simple.deals_open\') }}</span>\
+                  </div>\
+                </div>\
+              </a>\
+              <div class="simple-page__order-card-actions">\
+                <button v-if="!req.deactivated_at" type="button" class="simple-page__order-deactivate-btn" @click.stop="openDeactivateModal(req)">{{ t(\'main.simple.deactivate_btn\') }}</button>\
+                <span v-else class="simple-page__order-deactivated-badge">{{ t(\'main.simple.deactivated_badge\') }}</span>\
               </div>\
-              <div class="simple-page__order-card-sub">\
-                <span class="simple-page__order-mono">{{ deal.status }}</span>\
-                <span class="simple-page__order-date">{{ formatOrderUpdated(deal) }}</span>\
-                <span class="simple-page__order-cta">{{ t(\'main.simple.deals_open\') }}</span>\
-              </div>\
-            </a>\
+            </div>\
           </div>\
         </div>\
         <div v-if="!ordersError && ordersTotalPages > 1" class="simple-page__orders-pagination">\

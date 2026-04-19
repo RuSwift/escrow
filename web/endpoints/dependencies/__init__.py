@@ -29,7 +29,7 @@ from services.invite import InviteService
 from services.exchange_wallets import ExchangeWalletService
 from services.space_exchange_service import SpaceExchangeService
 from services.space_payment_form_admin import SpacePaymentFormAdminService
-from services.deal import DealService
+from services.payment_request import PaymentRequestService
 from services.order import OrderService
 from services.guarantor import GuarantorService
 from services.space import SpaceService
@@ -214,13 +214,13 @@ def get_order_service(
     return OrderService(session=db, redis=redis, settings=settings)
 
 
-def get_deal_service(
+def get_payment_request_service(
     db: DbSession,
     redis: RedisClient,
     settings: AppSettings,
-) -> DealService:
-    """Сделки (Deal), в т.ч. Simple-заявки."""
-    return DealService(session=db, redis=redis, settings=settings.settings)
+) -> PaymentRequestService:
+    """Заявки PaymentRequest (Simple UI)."""
+    return PaymentRequestService(session=db, redis=redis, settings=settings.settings)
 
 
 def get_balances_service(
@@ -585,7 +585,7 @@ __all__ = [
     "get_space_exchange_service",
     "get_space_payment_form_admin_service",
     "get_order_service",
-    "get_deal_service",
+    "get_payment_request_service",
     "get_balances_service",
     "BalancesServiceDep",
     "get_invite_service",

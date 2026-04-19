@@ -1,0 +1,157 @@
+"""Схемы API /v1/simple/payment-requests (Simple UI)."""
+
+from __future__ import annotations
+
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, Field, field_validator
+
+from db.models import PaymentRequest
+from services.payment_request import PaymentRequestService, SimplePaymentLifetime
+
+
+class PaymentRequestLegIn(BaseModel):
+    asset_type: Literal["fiat", "stable"] = Field(..., description="Тип актива ноги")
+    code: str = Field(..., min_length=1, max_length=32, description="Код валюты / символ стейбла")
+    amount: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        description="Десятичная сумма строкой; для counter может быть null",
+    )
+    side: Literal["give", "receive"] = Field(..., description="Отдаю / принимаю")
+    amount_discussed: bool = Field(
+        default=False,
+        description="Для counter: сумма обсуждается с контрагентом",
+    )
+
+
+class PaymentRequestCreateBody(BaseModel):
+    direction: Literal["fiat_to_stable", "stable_to_fiat"] = Field(...)
+    primary_leg: PaymentRequestLegIn
+    counter_leg: PaymentRequestLegIn
+    heading: Optional[str] = Field(
+        default=None,
+        max_length=256,
+        description="Заголовок заявки; пустой — только «Заявка #{pk}» на фронте",
+    )
+    lifetime: SimplePaymentLifetime = Field(
+        default="72h",
+        description="Срок действия: 24ч / 48ч / 72ч или без ограничения",
+    )
+
+    @field_validator("heading", mode="before")
+    @classmethod
+    def _strip_heading(cls, v: object) -> Optional[str]:
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s if s else None
+
+
+class PaymentRequestOut(BaseModel):
+    pk: int
+    uid: str
+    pair_label: str = Field(..., description="Пара активов, напр. CNY — USDT")
+    amount: Optional[Decimal] = None
+    direction: str
+    heading: Optional[str] = None
+    space_id: int
+    space_nickname: Optional[str] = Field(
+        default=None,
+        description="Nickname WalletUser для отображения (primary space)",
+    )
+    primary_leg: Dict[str, Any]
+    counter_leg: Dict[str, Any]
+    primary_ramp_wallet_id: Optional[int] = None
+    deal_id: Optional[int] = None
+    expires_at: Optional[datetime] = Field(
+        default=None,
+        description="Окончание срока; null — без ограничения",
+    )
+    deactivated_at: Optional[datetime] = Field(
+        default=None,
+        description="Деактивация владельцем; null — активна",
+    )
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+    @classmethod
+    def from_model(
+        cls,
+        row: PaymentRequest,
+        *,
+        space_nickname: Optional[str] = None,
+    ) -> PaymentRequestOut:
+        pl = dict(row.primary_leg) if isinstance(row.primary_leg, dict) else {}
+        cl = dict(row.counter_leg) if isinstance(row.counter_leg, dict) else {}
+        direction_out = str(row.direction or "").strip()
+        if direction_out not in ("fiat_to_stable", "stable_to_fiat"):
+            direction_out = "fiat_to_stable"
+        pair_label = PaymentRequestService.build_pair_label(direction_out, pl, cl)
+        raw_head = getattr(row, "heading", None)
+        head_out: Optional[str] = None
+        if raw_head is not None:
+            sh = str(raw_head).strip()
+            head_out = sh if sh else None
+        amt: Optional[Decimal] = None
+        raw_amt = pl.get("amount")
+        if raw_amt is not None:
+            s = str(raw_amt).strip()
+            if s:
+                try:
+                    amt = Decimal(s)
+                except InvalidOperation:
+                    amt = None
+        return cls(
+            pk=int(row.pk),
+            uid=str(row.uid),
+            pair_label=pair_label,
+            amount=amt,
+            direction=direction_out,
+            heading=head_out,
+            space_id=int(row.space_id),
+            space_nickname=space_nickname,
+            primary_leg=pl,
+            counter_leg=cl,
+            primary_ramp_wallet_id=(
+                int(row.primary_ramp_wallet_id)
+                if row.primary_ramp_wallet_id is not None
+                else None
+            ),
+            deal_id=int(row.deal_id) if row.deal_id is not None else None,
+            expires_at=getattr(row, "expires_at", None),
+            deactivated_at=getattr(row, "deactivated_at", None),
+            created_at=row.created_at,
+            updated_at=row.updated_at,
+        )
+
+
+class PaymentRequestDeactivateBody(BaseModel):
+    confirm_pk: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description="Должен совпадать с номером заявки (pk)",
+    )
+
+    @field_validator("confirm_pk", mode="before")
+    @classmethod
+    def _strip_confirm_pk(cls, v: object) -> str:
+        return str(v).strip() if v is not None else ""
+
+
+class PaymentRequestListResponse(BaseModel):
+    items: List[PaymentRequestOut]
+    total: int
+
+
+class PaymentRequestCreateResponse(BaseModel):
+    payment_request: PaymentRequestOut
+
+
+class PaymentRequestDeactivateResponse(BaseModel):
+    payment_request: PaymentRequestOut

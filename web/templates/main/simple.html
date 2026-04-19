@@ -2,7 +2,7 @@
 <html lang="{{ locale | default('ru') }}">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>{% if simple_deal_uid %}{{ _('main.simple.window_title_deal_uid', app_name=app_name, deal_uid=simple_deal_uid) }}{% elif simple_order_id %}{{ _('main.simple.window_title_deal', app_name=app_name, order_id=simple_order_id) }}{% else %}{{ _('main.simple.window_title_list', app_name=app_name) }}{% endif %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

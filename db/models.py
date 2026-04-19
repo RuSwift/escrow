@@ -515,6 +515,108 @@ class Deal(Base):
         return f"<Deal(uid={self.uid}, status={self.status})>"
 
 
+class PaymentRequest(Base):
+    """Заявка на обмен fiat↔stable до создания Deal (Simple UI). Статус только в UX, не в БД."""
+
+    __tablename__ = "payment_request"
+
+    pk = Column(
+        BigInteger,
+        primary_key=True,
+        autoincrement=True,
+        index=True,
+        comment="Autoincrement primary key",
+    )
+    uid = Column(
+        String(255),
+        unique=True,
+        nullable=False,
+        index=True,
+        comment="Публичный UUID заявки (hex)",
+    )
+    space_id = Column(
+        Integer,
+        ForeignKey("wallet_users.id", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+        comment="Primary space (WalletUser row)",
+    )
+    owner_did = Column(
+        String(255),
+        nullable=False,
+        index=True,
+        comment="DID автора заявки",
+    )
+    direction = Column(
+        String(32),
+        nullable=False,
+        comment="fiat_to_stable или stable_to_fiat",
+    )
+    primary_leg = Column(JSONB, nullable=False, comment="Нога отдачи (give)")
+    counter_leg = Column(JSONB, nullable=False, comment="Нога получения (receive)")
+    heading = Column(
+        String(256),
+        nullable=True,
+        comment="Пользовательский заголовок (опционально)",
+    )
+    expires_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        index=True,
+        comment="Срок действия заявки; NULL — без ограничения по времени",
+    )
+    deactivated_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Деактивация владельцем; NULL — заявка активна в списке",
+    )
+    primary_ramp_wallet_id = Column(
+        BigInteger,
+        nullable=True,
+        index=True,
+        comment="Primary ramp wallet для спейса при создании",
+    )
+    deal_id = Column(
+        BigInteger,
+        ForeignKey("deal.pk", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        comment="Связанная сделка после принятия контрагентом",
+    )
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        comment="Creation timestamp (UTC)",
+    )
+    updated_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+        comment="Last update timestamp (UTC)",
+    )
+
+    __table_args__ = (
+        Index("ix_payment_request_owner_did", "owner_did"),
+        Index("ix_payment_request_space_id", "space_id"),
+        Index("ix_payment_request_uid", "uid"),
+        Index(
+            "ix_payment_request_primary_leg",
+            "primary_leg",
+            postgresql_using="gin",
+        ),
+        Index(
+            "ix_payment_request_counter_leg",
+            "counter_leg",
+            postgresql_using="gin",
+        ),
+    )
+
+    def __repr__(self):
+        return f"<PaymentRequest(uid={self.uid}, space_id={self.space_id})>"
+
+
 class Wallet(Base):
     """Model for storing encrypted wallet mnemonics and addresses"""
     

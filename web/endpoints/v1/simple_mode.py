@@ -4,34 +4,36 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 
 from core.exceptions import SpacePermissionDenied
-from services.deal import DealService
-from web.endpoints.dependencies import CurrentWalletUser, get_deal_service
-from web.endpoints.v1.schemas.simple_deals import (
-    SimpleApplicationCreateRequest,
-    SimpleApplicationCreateResponse,
-    SimpleDealListResponse,
-    SimpleDealOut,
+from services.payment_request import PaymentRequestService
+from web.endpoints.dependencies import CurrentWalletUser, get_payment_request_service
+from web.endpoints.v1.schemas.payment_requests import (
+    PaymentRequestCreateBody,
+    PaymentRequestCreateResponse,
+    PaymentRequestDeactivateBody,
+    PaymentRequestDeactivateResponse,
+    PaymentRequestListResponse,
+    PaymentRequestOut,
 )
 
 router = APIRouter(prefix="/simple", tags=["simple"])
 
 
-@router.get("/deals", response_model=SimpleDealListResponse)
-async def list_simple_deals(
+@router.get("/payment-requests", response_model=PaymentRequestListResponse)
+async def list_payment_requests(
     user: CurrentWalletUser,
-    svc: DealService = Depends(get_deal_service),
+    svc: PaymentRequestService = Depends(get_payment_request_service),
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     q: Optional[str] = Query(None, max_length=512),
 ):
-    """Список Simple-заявок (Deal) для текущего кошелька / спейса из авторизации."""
+    """Список заявок PaymentRequest для текущего кошелька."""
     try:
-        rows, total = await svc.list_simple_applications(
+        rows, total = await svc.list_payment_requests(
             wallet_address=user.wallet_address,
-            actor_did=user.did,
+            owner_did=user.did,
             standard=user.standard,
             page=page,
             page_size=page_size,
@@ -47,31 +49,36 @@ async def list_simple_deals(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
         ) from e
-    return SimpleDealListResponse(
-        items=[SimpleDealOut.model_validate(r) for r in rows],
+    return PaymentRequestListResponse(
+        items=[
+            PaymentRequestOut.from_model(r, space_nickname=nick)
+            for r, nick in rows
+        ],
         total=total,
     )
 
 
 @router.post(
-    "/deals/simple-application",
-    response_model=SimpleApplicationCreateResponse,
+    "/payment-requests",
+    response_model=PaymentRequestCreateResponse,
     status_code=status.HTTP_201_CREATED,
 )
-async def create_simple_deal_application(
+async def create_payment_request(
     user: CurrentWalletUser,
-    body: SimpleApplicationCreateRequest,
-    svc: DealService = Depends(get_deal_service),
+    body: PaymentRequestCreateBody,
+    svc: PaymentRequestService = Depends(get_payment_request_service),
 ):
-    """Создать заявку fiat↔stable как Deal (Simple)."""
+    """Создать заявку fiat↔stable (без записи в deal)."""
     try:
-        deal = await svc.create_simple_application(
+        row, space_nickname = await svc.create_payment_request(
             wallet_address=user.wallet_address,
-            sender_did=user.did,
+            owner_did=user.did,
             standard=user.standard,
             direction=body.direction,
             primary_leg=body.primary_leg.model_dump(),
             counter_leg=body.counter_leg.model_dump(),
+            heading=body.heading,
+            lifetime=body.lifetime,
         )
     except SpacePermissionDenied as e:
         raise HTTPException(
@@ -80,13 +87,54 @@ async def create_simple_deal_application(
         ) from e
     except ValueError as e:
         msg = str(e)
-        if "Arbiter not configured" in msg:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=msg,
+        ) from e
+    return PaymentRequestCreateResponse(
+        payment_request=PaymentRequestOut.from_model(
+            row, space_nickname=space_nickname
+        )
+    )
+
+
+@router.post(
+    "/payment-requests/{pk}/deactivate",
+    response_model=PaymentRequestDeactivateResponse,
+)
+async def deactivate_payment_request(
+    user: CurrentWalletUser,
+    body: PaymentRequestDeactivateBody,
+    svc: PaymentRequestService = Depends(get_payment_request_service),
+    pk: int = Path(..., ge=1),
+):
+    """Деактивировать заявку после подтверждения номера (pk)."""
+    try:
+        row, space_nickname = await svc.deactivate_payment_request(
+            wallet_address=user.wallet_address,
+            owner_did=user.did,
+            standard=user.standard,
+            pk=pk,
+            confirm_pk=body.confirm_pk,
+        )
+    except SpacePermissionDenied as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e),
+        ) from e
+    except ValueError as e:
+        msg = str(e)
+        if msg == "Заявка не найдена":
             raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail=msg,
             ) from e
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=msg,
         ) from e
-    return SimpleApplicationCreateResponse(deal=SimpleDealOut.model_validate(deal))
+    return PaymentRequestDeactivateResponse(
+        payment_request=PaymentRequestOut.from_model(
+            row, space_nickname=space_nickname
+        )
+    )

@@ -3,7 +3,7 @@
 Ориентир: https://github.com/RuSwift/garantex/blob/main/services/wallet_user.py
 """
 import logging
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, cast
 
 from redis.asyncio import Redis
 from sqlalchemy import func, select
@@ -93,12 +93,12 @@ class WalletUserService:
         """
         return await self._repo.get_spaces_for_address(wallet_address, blockchain)
 
-    async def resolve_primary_space_nickname(
+    async def _resolve_primary_space_nickname_and_id(
         self, wallet_address: str, blockchain: str = "tron"
-    ) -> Optional[str]:
+    ) -> Optional[Tuple[str, int]]:
         """
-        Текущий space (nickname) для адреса: совпадение с primary wallet спейса,
-        иначе первый nickname — как POST /v1/auth/tron/ensure-space.
+        Текущий space (nickname, wallet_users.id) для адреса — та же логика, что у
+        resolve_primary_space_nickname / POST ensure-space.
         """
         addr = (wallet_address or "").strip()
         if not addr:
@@ -108,7 +108,7 @@ class WalletUserService:
             return None
         sorted_spaces = sorted([s for s in spaces if s])
         stmt = (
-            select(WalletUser.nickname)
+            select(WalletUser.nickname, WalletUser.id)
             .select_from(WalletUser)
             .outerjoin(PrimaryWallet, PrimaryWallet.wallet_user_id == WalletUser.id)
             .where(WalletUser.nickname.in_(sorted_spaces))
@@ -117,10 +117,45 @@ class WalletUserService:
             .limit(1)
         )
         res = await self._session.execute(stmt)
-        match = res.scalar_one_or_none()
-        if match:
-            return match
-        return sorted_spaces[0]
+        row = res.first()
+        if row:
+            nick, uid = row[0], cast(int, row[1])
+            return (nick, uid)
+        nick_fallback = sorted_spaces[0]
+        stmt2 = select(WalletUser.id).where(WalletUser.nickname == nick_fallback).limit(1)
+        uid = (await self._session.execute(stmt2)).scalar_one_or_none()
+        if uid is None:
+            return None
+        return (nick_fallback, int(uid))
+
+    async def resolve_primary_space_nickname_and_id(
+        self, wallet_address: str, blockchain: str = "tron"
+    ) -> Optional[Tuple[str, int]]:
+        """nickname и wallet_users.id primary space — одна пара запросов к БД."""
+        return await self._resolve_primary_space_nickname_and_id(
+            wallet_address, blockchain
+        )
+
+    async def resolve_primary_space_nickname(
+        self, wallet_address: str, blockchain: str = "tron"
+    ) -> Optional[str]:
+        """
+        Текущий space (nickname) для адреса: совпадение с primary wallet спейса,
+        иначе первый nickname — как POST /v1/auth/tron/ensure-space.
+        """
+        pair = await self.resolve_primary_space_nickname_and_id(
+            wallet_address, blockchain
+        )
+        return pair[0] if pair else None
+
+    async def resolve_primary_space_wallet_user_id(
+        self, wallet_address: str, blockchain: str = "tron"
+    ) -> Optional[int]:
+        """wallet_users.id primary space для адреса (alias Simple / payment_request.space_id)."""
+        pair = await self.resolve_primary_space_nickname_and_id(
+            wallet_address, blockchain
+        )
+        return pair[1] if pair else None
 
     async def list_managers(self) -> List[WalletUserResource.Get]:
         """Список пользователей с доступом в админку (менеджеры)."""
