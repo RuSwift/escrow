@@ -177,6 +177,30 @@
         }
     }
 
+    /** Нога заявки: fiat | stable по direction (fiat_to_stable / stable_to_fiat). */
+    function prLegForAsset(pr, wantFiat) {
+        if (!pr) return null;
+        var d = String(pr.direction || '');
+        if (d === 'fiat_to_stable') {
+            return wantFiat ? pr.primary_leg : pr.counter_leg;
+        }
+        if (d === 'stable_to_fiat') {
+            return wantFiat ? pr.counter_leg : pr.primary_leg;
+        }
+        return null;
+    }
+
+    function formatPaymentRequestLegLine(leg, allowDiscussed) {
+        if (!leg) return '—';
+        var amt = leg.amount != null ? String(leg.amount).trim() : '';
+        var code = leg.code ? String(leg.code).trim().toUpperCase() : '';
+        if (allowDiscussed && !amt && leg.amount_discussed) {
+            return code ? code + ' (' + t('main.simple.counter_discussed_short') + ')' : '—';
+        }
+        var fmt = amt ? formatAmountForLocale(amt) : '';
+        return fmt ? fmt + ' ' + code : (code || '—');
+    }
+
     function ensureSpace(token) {
         return fetch('/v1/auth/tron/ensure-space', {
             method: 'POST',
@@ -652,6 +676,16 @@
                 }
                 var fmt = amt ? formatAmountForLocale(amt) : '';
                 return fmt ? fmt + ' ' + code : (code || '—');
+            },
+            /** Карточка «Сумма»: только фиат-нога. */
+            dealViewStatFiatAmount: function() {
+                if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) return '—';
+                return formatPaymentRequestLegLine(prLegForAsset(this.resolvePaymentRequest, true), false);
+            },
+            /** Карточка «Залог»: только стейбл-нога. */
+            dealViewStatStableAmount: function() {
+                if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) return '—';
+                return formatPaymentRequestLegLine(prLegForAsset(this.resolvePaymentRequest, false), true);
             },
             dealViewStatRate: function() {
                 if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) return '—';
@@ -1444,14 +1478,14 @@
           </div>\
           <div v-else-if="dealUid && resolveError" class="simple-page__list-msg simple-page__list-msg--err">{{ resolveErrorMsg || t(\'main.simple.resolve_error\') }}</div>\
           <template v-else-if="dealViewShowResolved && resolveKind === \'payment_request_only\'">\
-          <div class="simple-page__stat-rail" role="region" :aria-label="t(\'main.simple.stat_carousel_aria\')">\
+            <div class="simple-page__stat-rail" role="region" :aria-label="t(\'main.simple.stat_carousel_aria\')">\
             <div class="simple-page__stat-card simple-page__stat-card--rail">\
               <div class="simple-page__stat-label">{{ t(\'main.simple.stat_amount_short\') }}</div>\
-              <div class="simple-page__stat-value">{{ dealViewStatGive() }}</div>\
+              <div class="simple-page__stat-value">{{ dealViewStatFiatAmount() }}</div>\
             </div>\
             <div class="simple-page__stat-card simple-page__stat-card--rail">\
-              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_receives_short\') }}</div>\
-              <div class="simple-page__stat-value">{{ dealViewStatReceive() }}</div>\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_pledge_short\') }}</div>\
+              <div class="simple-page__stat-value">{{ dealViewStatStableAmount() }}</div>\
             </div>\
             <div class="simple-page__stat-card simple-page__stat-card--rail">\
               <div class="simple-page__stat-label">{{ t(\'main.simple.stat_rate_short\') }}</div>\
@@ -1466,14 +1500,14 @@
               <div class="simple-page__stat-sub">TRON</div>\
             </div>\
           </div>\
-          <div class="simple-page__stat-grid simple-page__stat-grid--desktop">\
+            <div class="simple-page__stat-grid simple-page__stat-grid--desktop">\
             <div class="simple-page__stat-card">\
               <div class="simple-page__stat-label">{{ t(\'main.simple.stat_amount\') }}</div>\
-              <div class="simple-page__stat-value">{{ dealViewStatGive() }}</div>\
+              <div class="simple-page__stat-value">{{ dealViewStatFiatAmount() }}</div>\
             </div>\
             <div class="simple-page__stat-card">\
-              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_receives\') }}</div>\
-              <div class="simple-page__stat-value">{{ dealViewStatReceive() }}</div>\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_pledge\') }}</div>\
+              <div class="simple-page__stat-value">{{ dealViewStatStableAmount() }}</div>\
             </div>\
             <div class="simple-page__stat-card">\
               <div class="simple-page__stat-label">{{ t(\'main.simple.stat_rate\') }}</div>\
@@ -1494,7 +1528,16 @@
                 <svg class="simple-page__svg--lg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>\
               </div>\
               <div class="simple-page__flow-body">\
-                <div class="simple-page__flow-title">{{ t(\'main.simple.deal_flow_offer_title\') }}</div>\
+                <div class="simple-page__flow-title-row">\
+                  <span class="simple-page__flow-title">{{ t(\'main.simple.deal_flow_offer_title\') }}</span>\
+                  <span v-if="resolvePaymentRequest && resolvePaymentRequest.expires_at" class="simple-page__flow-deadline" role="status" :aria-label="t(\'main.simple.deal_flow_deadline_aria\')">\
+                    <svg class="simple-page__ico-clock simple-page__ico-clock--flow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\
+                      <circle cx="12" cy="12" r="10" stroke-linecap="round"/>\
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l4 2"/>\
+                    </svg>\
+                    <span class="simple-page__flow-deadline-text">{{ formatExpiryCountdown(resolvePaymentRequest) }}</span>\
+                  </span>\
+                </div>\
                 <div class="simple-page__flow-mono">{{ orderAmountsLine(resolvePaymentRequest) }}</div>\
               </div>\
               <div class="simple-page__flow-status">{{ t(\'main.simple.request_status_terms\') }}</div>\
@@ -1509,6 +1552,10 @@
               <div class="simple-page__lockbox-inner">\
                 <svg class="simple-page__svg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>\
                 {{ dealLockboxHintFromPr(resolvePaymentRequest) || t(\'main.simple.lockbox_inner_placeholder\') }}\
+              </div>\
+              <div class="simple-page__lockbox-pending-foot" role="status">\
+                <div class="simple-page__lockbox-spinner" aria-hidden="true"></div>\
+                <p class="simple-page__lockbox-pending-text">{{ t(\'main.simple.lockbox_terms_pending_detail\') }}</p>\
               </div>\
             </div>\
             <div class="simple-page__recipient-wrap">\
