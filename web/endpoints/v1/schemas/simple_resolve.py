@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from db.models import Deal
 
@@ -47,8 +47,20 @@ class SimpleDealOut(BaseModel):
 
 class SimpleResolveResponse(BaseModel):
     kind: SimpleResolveKind
+    viewer_did: Optional[str] = Field(
+        default=None,
+        description="DID текущего пользователя (сеанс); для сравнения с owner_did в UI",
+    )
     payment_request: Optional[PaymentRequestOut] = None
     deal: Optional[SimpleDealOut] = None
+
+    @field_validator("viewer_did", mode="before")
+    @classmethod
+    def _strip_viewer_did(cls, v: object) -> Optional[str]:
+        if v is None:
+            return None
+        s = str(v).strip()
+        return s if s else None
 
     @model_validator(mode="after")
     def _consistent_kind(self) -> SimpleResolveResponse:

@@ -143,6 +143,16 @@
         return out;
     }
 
+    /** Процент посредника перепродажи: 0.1–100 для API (строка с точкой). */
+    function parseIntermediaryPercentForResell(raw) {
+        var s = sanitizeDecimalAmountInput(raw);
+        if (!s) return { ok: false, code: 'empty' };
+        var n = parseFloat(s);
+        if (!isFinite(n)) return { ok: false, code: 'invalid' };
+        if (n < 0.1 || n > 100) return { ok: false, code: 'range' };
+        return { ok: true, apiValue: s };
+    }
+
     /** Нормализация к двум знакам после точки (хранение и отправка). */
     function normalizeAmountTwoDecimals(raw) {
         var s = sanitizeDecimalAmountInput(raw);
@@ -242,7 +252,7 @@
         data: function() {
             return {
                 appName: (el.getAttribute('data-app-name') || '').trim() || 'Escrow',
-                theme: 'light',
+                theme: 'dark',
                 authReady: false,
                 showAuthModal: false,
                 authError: '',
@@ -268,6 +278,15 @@
                 resolveKind: null,
                 resolvePaymentRequest: null,
                 resolveDeal: null,
+                viewerDid: '',
+                showResellOwnerModal: false,
+                showResellCommissionModal: false,
+                resellCommissionPercent: '0.5',
+                resellModalError: '',
+                resellSubmitting: false,
+                resellBanner: null,
+                copyLinkBanner: '',
+                _termsFeedbackTimer: null,
                 /* Без префикса _: Vue 2 не проксирует data._* на this — иначе ++ даёт NaN. */
                 resolveFetchSeq: 0,
                 ordersItems: [],
@@ -358,6 +377,10 @@
             if (this._countdownInterval != null) {
                 clearInterval(this._countdownInterval);
                 this._countdownInterval = null;
+            }
+            if (this._termsFeedbackTimer) {
+                clearTimeout(this._termsFeedbackTimer);
+                this._termsFeedbackTimer = null;
             }
         },
         created: function() {
@@ -577,6 +600,44 @@
                 if (this.deactivateSubmitting) return true;
                 if (this.deactivateTargetPk == null) return true;
                 return !(String(this.deactivateConfirm || '').trim());
+            },
+            dealPrTermsPhase: function() {
+                var pr = this.resolvePaymentRequest;
+                return !!(
+                    this.resolveKind === 'payment_request_only' &&
+                    pr &&
+                    !pr.deal_id &&
+                    !pr.deactivated_at
+                );
+            },
+            isPaymentRequestOwner: function() {
+                var v = (this.viewerDid || '').trim();
+                var pr = this.resolvePaymentRequest;
+                var o = pr && (pr.owner_did || '').trim();
+                return !!(v && o && v === o);
+            },
+            resellModalSubmitDisabled: function() {
+                return (
+                    this.resellSubmitting ||
+                    !(String(this.resellCommissionPercent || '').trim())
+                );
+            },
+            /** Ползунок только 0.1–10 %; при большем числе в поле — позиция «10» без подмены текста. */
+            resellSliderValue: function() {
+                var clampS = function(n) {
+                    return Math.min(10, Math.max(0.1, Math.round(n * 100) / 100));
+                };
+                var p = parseIntermediaryPercentForResell(this.resellCommissionPercent);
+                if (p.ok) {
+                    var n = parseFloat(p.apiValue);
+                    return clampS(n > 10 ? 10 : n);
+                }
+                var s = sanitizeDecimalAmountInput(this.resellCommissionPercent);
+                var n2 = parseFloat(s);
+                if (!isFinite(n2) || !String(s).trim()) return 0.5;
+                if (n2 < 0.1) return 0.1;
+                if (n2 > 10) return 10;
+                return clampS(n2);
             }
         },
         methods: {
@@ -653,12 +714,23 @@
                             self.resolveKind = null;
                             self.resolvePaymentRequest = null;
                             self.resolveDeal = null;
+                            self.viewerDid = '';
+                            self.showResellCommissionModal = false;
+                            self.resellModalError = '';
                             return;
                         }
                         var data = res.data || {};
                         self.resolveKind = data.kind || null;
                         self.resolvePaymentRequest = data.payment_request || null;
                         self.resolveDeal = data.deal || null;
+                        self.viewerDid =
+                            data.viewer_did !== undefined && data.viewer_did !== null
+                                ? String(data.viewer_did).trim()
+                                : '';
+                        self.resellBanner = null;
+                        self.copyLinkBanner = '';
+                        self.showResellCommissionModal = false;
+                        self.resellModalError = '';
                         self.applyNavStepsForResolveKind(self.resolveKind);
                     })
                     .catch(function() {
@@ -668,12 +740,225 @@
                         self.resolveKind = null;
                         self.resolvePaymentRequest = null;
                         self.resolveDeal = null;
+                        self.viewerDid = '';
                     })
                     .finally(function() {
                         /* Снимаем спиннер только для актуального запроса (без гонки двух fetchResolve). */
                         if (mySeq !== self.resolveFetchSeq) return;
                         self.resolveLoading = false;
                     });
+            },
+            _clearTermsFeedbackLater: function() {
+                var self = this;
+                if (this._termsFeedbackTimer) {
+                    clearTimeout(this._termsFeedbackTimer);
+                }
+                this._termsFeedbackTimer = setTimeout(function() {
+                    self.resellBanner = null;
+                    self.copyLinkBanner = '';
+                    self._termsFeedbackTimer = null;
+                }, 3500);
+            },
+            dealPublicPageUrl: function() {
+                try {
+                    var o =
+                        typeof window !== 'undefined' && window.location && window.location.origin
+                            ? String(window.location.origin).trim()
+                            : '';
+                    var du = (this.dealUid || '').trim();
+                    var a = (this.arbiterSpaceDid || '').trim();
+                    if (!o || !du || !a) return '';
+                    return o + '/arbiter/' + encodeURIComponent(a) + '/deal/' + encodeURIComponent(du);
+                } catch (e) {
+                    return '';
+                }
+            },
+            /** Текущий % из заявки (слот resell), иначе значение по умолчанию для поля модалки. */
+            initialResellCommissionPercentForModal: function() {
+                var pr = this.resolvePaymentRequest;
+                if (!pr || !pr.commissioners || typeof pr.commissioners !== 'object') {
+                    return '0.5';
+                }
+                var slot = pr.commissioners.resell;
+                if (!slot || typeof slot !== 'object') return '0.5';
+                var c = slot.commission;
+                if (!c || typeof c !== 'object') return '0.5';
+                if (String(c.kind || '').toLowerCase() !== 'percent') return '0.5';
+                var raw = c.value;
+                if (raw === undefined || raw === null) return '0.5';
+                var s = sanitizeDecimalAmountInput(String(raw).trim());
+                if (!s) return '0.5';
+                var parsed = parseIntermediaryPercentForResell(s);
+                if (parsed.ok) return parsed.apiValue;
+                return s;
+            },
+            onResellClick: function() {
+                if (this.isPaymentRequestOwner) {
+                    this.showResellOwnerModal = true;
+                    return;
+                }
+                var tok = getToken();
+                if (!tok) {
+                    this.showAuthModal = true;
+                    return;
+                }
+                this.resellModalError = '';
+                this.resellCommissionPercent = this.initialResellCommissionPercentForModal();
+                this.showResellCommissionModal = true;
+            },
+            closeResellOwnerModal: function() {
+                this.showResellOwnerModal = false;
+            },
+            closeResellCommissionModal: function() {
+                if (this.resellSubmitting) return;
+                this.showResellCommissionModal = false;
+                this.resellModalError = '';
+            },
+            onResellSliderInput: function(e) {
+                var t = e && e.target ? e.target : null;
+                if (!t) return;
+                var raw = parseFloat(t.value);
+                if (!isFinite(raw)) return;
+                var r = Math.round(raw * 100) / 100;
+                r = Math.min(10, Math.max(0.1, r));
+                this.resellCommissionPercent = String(r);
+            },
+            /** Только цифры и один десятичный разделитель (как sanitizeDecimalAmountInput). */
+            onResellPercentFieldInput: function(e) {
+                var el = e && e.target ? e.target : null;
+                if (!el) return;
+                var cleaned = sanitizeDecimalAmountInput(el.value);
+                this.resellCommissionPercent = cleaned;
+            },
+            formatPercentForUi: function(dotStr) {
+                var s = dotStr === undefined || dotStr === null ? '' : String(dotStr).trim();
+                if (!s) return '';
+                if (localePrefersCommaDecimal()) return s.replace(/\./g, ',');
+                return s;
+            },
+            confirmResellCommissionModal: function() {
+                var self = this;
+                self.resellModalError = '';
+                var parsed = parseIntermediaryPercentForResell(self.resellCommissionPercent);
+                if (!parsed.ok) {
+                    if (parsed.code === 'range') {
+                        self.resellModalError = t('main.simple.pr_resell_modal_percent_range');
+                    } else {
+                        self.resellModalError = t('main.simple.pr_resell_modal_percent_invalid');
+                    }
+                    return;
+                }
+                self.submitResellIntermediary(parsed.apiValue);
+            },
+            submitResellIntermediary: function(intermediaryPercent) {
+                var self = this;
+                var pctStr =
+                    intermediaryPercent !== undefined && intermediaryPercent !== null
+                        ? String(intermediaryPercent).trim()
+                        : '0.5';
+                if (!self.dealUid || self.resellSubmitting) return;
+                var tok = getToken();
+                if (!tok) {
+                    self.showAuthModal = true;
+                    return;
+                }
+                self.resellSubmitting = true;
+                self.resellBanner = null;
+                fetch(
+                    self.simpleV1Prefix() +
+                        'payment-requests/' +
+                        encodeURIComponent(String(self.dealUid).trim()) +
+                        '/resell',
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: 'Bearer ' + tok
+                        },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ intermediary_percent: pctStr })
+                    }
+                )
+                    .then(function(r) {
+                        return r.json().then(function(data) {
+                            return { ok: r.ok, data: data };
+                        });
+                    })
+                    .then(function(res) {
+                        if (!res.ok) {
+                            var d = res.data && res.data.detail;
+                            var msg = typeof d === 'string' ? d : t('main.simple.pr_resell_error');
+                            if (self.showResellCommissionModal) {
+                                self.resellModalError = msg;
+                            } else {
+                                self.resellBanner = { type: 'error', text: msg };
+                                self._clearTermsFeedbackLater();
+                            }
+                            return;
+                        }
+                        self.showResellCommissionModal = false;
+                        self.resellModalError = '';
+                        var pr = res.data && res.data.payment_request;
+                        var pctDisp = pctStr;
+                        if (pr && pr.commissioners && pr.commissioners.resell && pr.commissioners.resell.commission) {
+                            var v = pr.commissioners.resell.commission.value;
+                            if (v !== undefined && v !== null && String(v).trim()) {
+                                pctDisp = String(v).trim();
+                            }
+                        }
+                        if (pr) {
+                            self.resolvePaymentRequest = pr;
+                        }
+                        self.resellBanner = {
+                            type: 'success',
+                            text: t('main.simple.pr_resell_done', {
+                                percent: self.formatPercentForUi(pctDisp)
+                            })
+                        };
+                        self._clearTermsFeedbackLater();
+                    })
+                    .catch(function() {
+                        var msg = t('main.simple.pr_resell_error');
+                        if (self.showResellCommissionModal) {
+                            self.resellModalError = msg;
+                        } else {
+                            self.resellBanner = { type: 'error', text: msg };
+                            self._clearTermsFeedbackLater();
+                        }
+                    })
+                    .finally(function() {
+                        self.resellSubmitting = false;
+                    });
+            },
+            copyDealPublicLink: function() {
+                var self = this;
+                var text = self.dealPublicPageUrl();
+                if (!text) return;
+                var done = function() {
+                    self.copyLinkBanner = t('main.simple.pr_copy_link_done');
+                    self._clearTermsFeedbackLater();
+                };
+                if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).then(done).catch(function() {
+                        self._copyDealLinkFallback(text, done);
+                    });
+                } else {
+                    self._copyDealLinkFallback(text, done);
+                }
+            },
+            _copyDealLinkFallback: function(text, done) {
+                try {
+                    var ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.setAttribute('readonly', '');
+                    ta.style.position = 'fixed';
+                    ta.style.left = '-9999px';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    if (typeof done === 'function') done();
+                } catch (e) {}
             },
             /** Подзаголовок шага 02 в сайдбаре (динамика из resolve). */
             navStepActiveSub: function(step) {
@@ -1427,6 +1712,32 @@
       </div>\
     </div>\
   </div>\
+  <div v-if="showResellOwnerModal" class="simple-deactivate__overlay" @click.self="closeResellOwnerModal">\
+    <div class="simple-create__modal simple-deactivate__modal" role="alertdialog" aria-modal="true" @click.stop>\
+      <h2 class="simple-create__title">{{ t(\'main.simple.pr_resell_owner_modal_title\') }}</h2>\
+      <p class="simple-deactivate__hint">{{ t(\'main.simple.pr_resell_owner_modal_text\') }}</p>\
+      <div class="simple-create__actions">\
+        <button type="button" class="simple-create__btn simple-create__btn--primary" @click="closeResellOwnerModal">{{ t(\'main.simple.pr_resell_owner_modal_close\') }}</button>\
+      </div>\
+    </div>\
+  </div>\
+  <div v-if="showResellCommissionModal" class="simple-deactivate__overlay" @click.self="closeResellCommissionModal">\
+    <div class="simple-create__modal simple-deactivate__modal" role="dialog" aria-modal="true" aria-labelledby="simple-resell-modal-title" @click.stop>\
+      <h2 id="simple-resell-modal-title" class="simple-create__title">{{ t(\'main.simple.pr_resell_modal_title\') }}</h2>\
+      <p class="simple-deactivate__hint">{{ t(\'main.simple.pr_resell_modal_hint\') }}</p>\
+      <label class="simple-create__label" for="simple-resell-pct">{{ t(\'main.simple.pr_resell_modal_label\') }}</label>\
+      <input id="simple-resell-pct" type="text" class="simple-create__input" :value="resellCommissionPercent" inputmode="decimal" autocomplete="off" :placeholder="t(\'main.simple.pr_resell_modal_placeholder\')" @input="onResellPercentFieldInput" @compositionend="onResellPercentFieldInput" />\
+      <input type="range" class="simple-page__resell-pct-slider" min="0.1" max="10" step="0.01" :value="resellSliderValue" @input="onResellSliderInput" :aria-label="t(\'main.simple.pr_resell_modal_slider_aria\')" />\
+      <div v-if="resellModalError" class="simple-create__err">{{ resellModalError }}</div>\
+      <div class="simple-create__actions">\
+        <button type="button" class="simple-create__btn simple-create__btn--ghost" @click="closeResellCommissionModal" :disabled="resellSubmitting">{{ t(\'main.simple.cancel\') }}</button>\
+        <button type="button" class="simple-create__btn simple-create__btn--primary" @click="confirmResellCommissionModal" :disabled="resellModalSubmitDisabled">\
+          <span v-if="resellSubmitting" class="simple-create__btn-spinner" aria-hidden="true"></span>\
+          {{ t(\'main.simple.pr_resell_modal_submit\') }}\
+        </button>\
+      </div>\
+    </div>\
+  </div>\
   <div class="simple-page__window">\
     <div class="simple-page__titlebar">\
       <div class="simple-page__titlebar-text">{{ chromeTitle }}</div>\
@@ -1599,14 +1910,33 @@
             </div>\
           </div>\
           <div class="simple-page__flow-shell">\
-            <div class="simple-page__flow-row">\
+            <div class="simple-page__flow-row" :class="{ \'simple-page__flow-row--pr-split\': dealPrTermsPhase }">\
               <div class="simple-page__flow-icon">\
                 <svg class="simple-page__svg--lg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>\
               </div>\
               <div class="simple-page__flow-body">\
-                <div class="simple-page__flow-title-row">\
-                  <span class="simple-page__flow-title">{{ t(\'main.simple.deal_flow_offer_title\') }}</span>\
-                  <span v-if="resolvePaymentRequest && resolvePaymentRequest.expires_at && !resolvePaymentRequest.deactivated_at" class="simple-page__flow-deadline" role="status" :aria-label="t(\'main.simple.deal_flow_deadline_aria\')">\
+                <div class="simple-page__flow-title-row" :class="{ \'simple-page__flow-title-row--pr-tools\': dealPrTermsPhase }">\
+                  <div v-if="!dealPrTermsPhase" class="simple-page__flow-title-cluster">\
+                    <span class="simple-page__flow-title">{{ t(\'main.simple.deal_flow_offer_title\') }}</span>\
+                  </div>\
+                  <template v-else>\
+                    <span class="simple-page__flow-title">{{ t(\'main.simple.deal_flow_offer_title\') }}</span>\
+                    <div class="simple-page__pr-terms-actions">\
+                      <button type="button" class="simple-page__pr-terms-btn simple-page__pr-terms-btn--resell" @click="onResellClick" :disabled="resellSubmitting" :aria-busy="resellSubmitting ? \'true\' : \'false\'">\
+                        <svg class="simple-page__pr-terms-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4 4 4m6 0v12m0 0l4-4m-4 4-4-4"/>\
+                        </svg>\
+                        <span>{{ t(\'main.simple.pr_btn_resell\') }}</span>\
+                      </button>\
+                      <button type="button" class="simple-page__pr-terms-btn simple-page__pr-terms-btn--link" @click="copyDealPublicLink">\
+                        <svg class="simple-page__pr-terms-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>\
+                        </svg>\
+                        <span>{{ t(\'main.simple.pr_btn_copy_link\') }}</span>\
+                      </button>\
+                    </div>\
+                  </template>\
+                  <span v-if="!dealPrTermsPhase && resolvePaymentRequest && resolvePaymentRequest.expires_at && !resolvePaymentRequest.deactivated_at" class="simple-page__flow-deadline" role="status" :aria-label="t(\'main.simple.deal_flow_deadline_aria\')">\
                     <svg class="simple-page__ico-clock simple-page__ico-clock--flow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\
                       <circle cx="12" cy="12" r="10" stroke-linecap="round"/>\
                       <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l4 2"/>\
@@ -1614,8 +1944,19 @@
                     <span class="simple-page__flow-deadline-text">{{ formatExpiryCountdown(resolvePaymentRequest) }}</span>\
                   </span>\
                 </div>\
+                <div v-if="dealPrTermsPhase && (resellBanner || copyLinkBanner)" class="simple-page__pr-terms-feedback">\
+                  <div v-if="resellBanner" class="simple-page__pr-inline-msg" :class="resellBanner.type === \'error\' ? \'simple-page__pr-inline-msg--err\' : \'\'">{{ resellBanner.text }}</div>\
+                  <div v-if="copyLinkBanner" class="simple-page__pr-inline-msg">{{ copyLinkBanner }}</div>\
+                </div>\
                 <div class="simple-page__flow-mono">{{ orderAmountsLine(resolvePaymentRequest) }}</div>\
               </div>\
+              <span v-if="dealPrTermsPhase && resolvePaymentRequest && resolvePaymentRequest.expires_at && !resolvePaymentRequest.deactivated_at" class="simple-page__flow-deadline simple-page__flow-deadline--pr-split" role="status" :aria-label="t(\'main.simple.deal_flow_deadline_aria\')">\
+                <svg class="simple-page__ico-clock simple-page__ico-clock--flow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\
+                  <circle cx="12" cy="12" r="10" stroke-linecap="round"/>\
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l4 2"/>\
+                </svg>\
+                <span class="simple-page__flow-deadline-text">{{ formatExpiryCountdown(resolvePaymentRequest) }}</span>\
+              </span>\
               <div class="simple-page__flow-status" :class="{ \'simple-page__flow-status--deactivated\': dealPrDeactivated }">{{ dealPrDeactivated ? t(\'main.simple.request_status_deactivated\') : t(\'main.simple.request_status_terms\') }}</div>\
             </div>\
             <div class="simple-page__lockbox" :class="{ \'simple-page__lockbox--deactivated\': dealPrDeactivated }">\

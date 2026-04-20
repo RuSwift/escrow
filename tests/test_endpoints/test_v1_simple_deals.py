@@ -163,6 +163,7 @@ async def test_create_and_list_payment_request(main_app_simple_deals):
         assert created["space_id"] == owner.id
         assert created["space_nickname"] == "simple_api_space"
         assert created["arbiter_did"] == SIMPLE_ARBITER_DID
+        assert created["owner_did"] == owner.did
 
         r = await client.get(_simple_v1_base() + "/payment-requests")
         assert r.status_code == 200

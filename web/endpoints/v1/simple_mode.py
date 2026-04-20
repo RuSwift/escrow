@@ -23,6 +23,8 @@ from web.endpoints.v1.schemas.payment_requests import (
     PaymentRequestDeactivateResponse,
     PaymentRequestListResponse,
     PaymentRequestOut,
+    PaymentRequestResellBody,
+    PaymentRequestResellResponse,
 )
 from web.endpoints.v1.schemas.simple_resolve import SimpleDealOut, SimpleResolveResponse
 
@@ -48,7 +50,7 @@ ResolvedArbiterDid = Annotated[str, Depends(get_resolved_arbiter_did)]
 @router.get("/resolve/{public_uid}", response_model=SimpleResolveResponse)
 async def resolve_simple_context(
     arbiter_did: ResolvedArbiterDid,
-    _user: CurrentWalletUser,
+    user: CurrentWalletUser,
     public_uid: str,
     svc: SimpleResolveService = Depends(get_simple_resolve_service),
 ):
@@ -63,6 +65,7 @@ async def resolve_simple_context(
     if isinstance(result, ResolvedPaymentRequest):
         return SimpleResolveResponse(
             kind="payment_request_only",
+            viewer_did=user.did,
             payment_request=PaymentRequestOut.from_model(
                 result.row, space_nickname=result.space_nickname
             ),
@@ -71,6 +74,7 @@ async def resolve_simple_context(
     assert isinstance(result, ResolvedDeal)
     return SimpleResolveResponse(
         kind="deal_only",
+        viewer_did=user.did,
         payment_request=None,
         deal=SimpleDealOut.from_model(result.row),
     )
@@ -195,6 +199,58 @@ async def deactivate_payment_request(
             detail=msg,
         ) from e
     return PaymentRequestDeactivateResponse(
+        payment_request=PaymentRequestOut.from_model(
+            row, space_nickname=space_nickname
+        )
+    )
+
+
+_RESELL_ERR_DETAIL = {
+    "not_found": "Заявка не найдена",
+    "public_uid_required": "Идентификатор заявки обязателен",
+    "actor_required": "Не удалось определить пользователя",
+    "request_deactivated": "Заявка снята с публикации",
+    "request_already_accepted": "Заявка уже принята, этап «Условия» недоступен",
+    "owner_cannot_resell": "Перепродажа недоступна автору заявки",
+    "resell_slot_taken": "Слот посредника уже занят другим пользователем",
+    "intermediary_percent_invalid": "Некорректный процент комиссии",
+    "intermediary_percent_range": "Процент должен быть от 0.1 до 100",
+    "commissioners_invalid": "Некорректная структура комиссионеров",
+}
+
+
+@router.post(
+    "/payment-requests/{public_uid}/resell",
+    response_model=PaymentRequestResellResponse,
+)
+async def resell_payment_request(
+    arbiter_did: ResolvedArbiterDid,
+    user: CurrentWalletUser,
+    public_uid: str,
+    body: PaymentRequestResellBody,
+    svc: PaymentRequestService = Depends(get_payment_request_service),
+):
+    """Посредник-комиссионер (не владелец): слот resell с % комиссии (по умолчанию 0.5)."""
+    try:
+        row, space_nickname = await svc.apply_resell_intermediary(
+            actor_did=user.did,
+            arbiter_did=arbiter_did,
+            public_uid=public_uid,
+            intermediary_percent=body.intermediary_percent,
+        )
+    except ValueError as e:
+        code = str(e)
+        detail = _RESELL_ERR_DETAIL.get(code, code)
+        if code == "not_found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=detail,
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=detail,
+        ) from e
+    return PaymentRequestResellResponse(
         payment_request=PaymentRequestOut.from_model(
             row, space_nickname=space_nickname
         )

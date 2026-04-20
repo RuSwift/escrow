@@ -61,6 +61,7 @@ class PaymentRequestOut(BaseModel):
     pair_label: str = Field(..., description="Пара активов, напр. CNY — USDT")
     amount: Optional[Decimal] = None
     direction: str
+    owner_did: str = Field(..., description="DID автора заявки (владелец; для UI «перепродать»)")
     arbiter_did: str = Field(..., description="DID арбитра (контекст Simple из URL)")
     heading: Optional[str] = None
     space_id: int
@@ -130,6 +131,7 @@ class PaymentRequestOut(BaseModel):
             pair_label=pair_label,
             amount=amt,
             direction=direction_out,
+            owner_did=str(getattr(row, "owner_did", "") or "").strip(),
             arbiter_did=str(getattr(row, "arbiter_did", "") or "").strip(),
             heading=head_out,
             space_id=int(row.space_id),
@@ -174,4 +176,16 @@ class PaymentRequestCreateResponse(BaseModel):
 
 
 class PaymentRequestDeactivateResponse(BaseModel):
+    payment_request: PaymentRequestOut
+
+
+class PaymentRequestResellBody(BaseModel):
+    intermediary_percent: Optional[str] = Field(
+        default="0.5",
+        max_length=32,
+        description="Процент комиссии посредника-комиссионера (по умолчанию 0.5)",
+    )
+
+
+class PaymentRequestResellResponse(BaseModel):
     payment_request: PaymentRequestOut

@@ -121,8 +121,10 @@ async def test_resolve_payment_request_only(main_app_simple_resolve):
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["kind"] == "payment_request_only"
+        assert body["viewer_did"] == owner.did
         assert body["payment_request"]["uid"] == uid
         assert body["payment_request"]["space_id"] == owner.id
+        assert body["payment_request"]["owner_did"] == owner.did
         assert body["payment_request"]["arbiter_did"] == SIMPLE_RESOLVE_ARBITER
         assert body["deal"] is None
 
@@ -171,6 +173,7 @@ async def test_resolve_payment_request_other_user_200(main_app_simple_resolve):
             r = await client.get(f"{_resolve_v1()}/resolve/{uid}")
             assert r.status_code == 200
             assert r.json()["kind"] == "payment_request_only"
+            assert r.json()["viewer_did"] == other.did
             assert r.json()["payment_request"]["uid"] == uid
         finally:
             app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
@@ -302,5 +305,138 @@ async def test_resolve_deal_only(test_db, test_redis, test_settings):
             assert body["deal"]["uid"] == deal_uid
             assert body["deal"]["label"] == "Resolve test deal"
             assert body["payment_request"] is None
+            assert body["viewer_did"] == owner.did
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_resell_owner_forbidden_400(main_app_simple_resolve):
+    app, owner, _other = main_app_simple_resolve
+    payload = {
+        "direction": "fiat_to_stable",
+        "primary_leg": {
+            "asset_type": "fiat",
+            "code": "USD",
+            "amount": "50",
+            "side": "give",
+        },
+        "counter_leg": {
+            "asset_type": "stable",
+            "code": "USDT",
+            "amount": "5",
+            "side": "receive",
+        },
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        c = await client.post(_resolve_v1() + "/payment-requests", json=payload)
+        uid = c.json()["payment_request"]["uid"]
+        r = await client.post(
+            f"{_resolve_v1()}/payment-requests/{uid}/resell",
+            json={},
+        )
+        assert r.status_code == 400
+        assert "перепродаж" in r.json().get("detail", "").lower()
+
+
+@pytest.mark.asyncio
+async def test_resell_percent_below_min_400(main_app_simple_resolve):
+    app, owner, other = main_app_simple_resolve
+    payload = {
+        "direction": "fiat_to_stable",
+        "primary_leg": {
+            "asset_type": "fiat",
+            "code": "USD",
+            "amount": "40",
+            "side": "give",
+        },
+        "counter_leg": {
+            "asset_type": "stable",
+            "code": "USDT",
+            "amount": "4",
+            "side": "receive",
+        },
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        c = await client.post(_resolve_v1() + "/payment-requests", json=payload)
+        uid = c.json()["payment_request"]["uid"]
+        app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+            standard="tron",
+            wallet_address=_OTHER_TRON,
+            did=other.did,
+        )
+        try:
+            r = await client.post(
+                f"{_resolve_v1()}/payment-requests/{uid}/resell",
+                json={"intermediary_percent": "0.05"},
+            )
+            assert r.status_code == 400
+            assert "0.1" in r.json().get("detail", "") or "процент" in r.json().get("detail", "").lower()
+        finally:
+            app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+                standard="tron",
+                wallet_address=_OWNER_TRON,
+                did=owner.did,
+            )
+
+
+@pytest.mark.asyncio
+async def test_resell_other_user_sets_resell_slot(main_app_simple_resolve):
+    app, owner, other = main_app_simple_resolve
+    payload = {
+        "direction": "fiat_to_stable",
+        "primary_leg": {
+            "asset_type": "fiat",
+            "code": "GBP",
+            "amount": "200",
+            "side": "give",
+        },
+        "counter_leg": {
+            "asset_type": "stable",
+            "code": "USDT",
+            "amount": "10",
+            "side": "receive",
+        },
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        c = await client.post(_resolve_v1() + "/payment-requests", json=payload)
+        uid = c.json()["payment_request"]["uid"]
+
+        app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+            standard="tron",
+            wallet_address=_OTHER_TRON,
+            did=other.did,
+        )
+        try:
+            r = await client.post(
+                f"{_resolve_v1()}/payment-requests/{uid}/resell",
+                json={"intermediary_percent": "0.5"},
+            )
+            assert r.status_code == 200, r.text
+            pr = r.json()["payment_request"]
+            assert "resell" in pr["commissioners"]
+            assert pr["commissioners"]["resell"]["did"] == other.did
+            assert pr["commissioners"]["resell"]["commission"]["kind"] == "percent"
+            assert pr["commissioners"]["resell"]["commission"]["value"] == "0.5"
+
+            r2 = await client.post(
+                f"{_resolve_v1()}/payment-requests/{uid}/resell",
+                json={"intermediary_percent": "1"},
+            )
+            assert r2.status_code == 200
+            assert r2.json()["payment_request"]["commissioners"]["resell"]["commission"]["value"] == "1"
+        finally:
+            app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+                standard="tron",
+                wallet_address=_OWNER_TRON,
+                did=owner.did,
+            )

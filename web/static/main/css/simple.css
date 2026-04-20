@@ -1254,6 +1254,17 @@
   gap: 1rem;
 }
 
+/* Таймер вынесен из body: прижат к бейджу статуса справа */
+.simple-page__flow-row--pr-split {
+  align-items: flex-start;
+}
+
+.simple-page__flow-row--pr-split .simple-page__flow-deadline--pr-split {
+  flex-shrink: 0;
+  align-self: flex-start;
+  margin-top: 0.12rem;
+}
+
 .simple-page__flow-icon {
   width: 3rem;
   height: 3rem;
@@ -1281,12 +1292,140 @@
   font-weight: 700;
 }
 
+.simple-page__flow-title-cluster {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem 0.5rem;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+/* Заголовок + кнопки по центру внутри body; таймер — сосед справа от body (у бейджа) */
+.simple-page__flow-title-row--pr-tools {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.65rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.simple-page__flow-title-row--pr-tools > .simple-page__flow-title {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.simple-page__flow-title-row--pr-tools > .simple-page__pr-terms-actions {
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: center;
+}
+
+.simple-page__pr-terms-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.55rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.simple-page__pr-terms-btn {
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.42rem 0.85rem;
+  border-radius: 0.65rem;
+  border: 1px solid color-mix(in srgb, var(--simple-accent) 42%, var(--simple-border));
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--simple-accent) 16%, var(--simple-card)) 0%,
+    color-mix(in srgb, var(--simple-secondary) 92%, var(--simple-card)) 100%
+  );
+  color: var(--simple-fg);
+  cursor: pointer;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, var(--simple-fg) 8%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--simple-fg) 6%, transparent);
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease,
+    transform 0.12s ease;
+}
+
+.simple-page__pr-terms-btn--link {
+  border-color: color-mix(in srgb, var(--simple-primary) 38%, var(--simple-border));
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, var(--simple-primary) 14%, var(--simple-card)) 0%,
+    color-mix(in srgb, var(--simple-secondary) 92%, var(--simple-card)) 100%
+  );
+}
+
+.simple-page__pr-terms-ico {
+  flex-shrink: 0;
+  opacity: 0.92;
+}
+
+.simple-page__pr-terms-btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--simple-accent) 65%, var(--simple-border));
+  box-shadow:
+    0 2px 10px color-mix(in srgb, var(--simple-accent) 18%, transparent),
+    0 1px 0 color-mix(in srgb, var(--simple-fg) 10%, transparent);
+}
+
+.simple-page__pr-terms-btn--link:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--simple-primary) 55%, var(--simple-border));
+  box-shadow:
+    0 2px 10px color-mix(in srgb, var(--simple-primary) 16%, transparent),
+    0 1px 0 color-mix(in srgb, var(--simple-fg) 10%, transparent);
+}
+
+.simple-page__pr-terms-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.simple-page__pr-terms-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.simple-page__pr-terms-feedback {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+  margin-top: 0.35rem;
+  text-align: center;
+}
+
+.simple-page__pr-inline-msg {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--simple-primary);
+  line-height: 1.35;
+}
+
+.simple-page__pr-inline-msg--err {
+  color: var(--simple-danger, #c44);
+}
+
 .simple-page__flow-title-row {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 0.35rem 0.75rem;
   width: 100%;
+}
+
+.simple-page__flow-title-row:not(.simple-page__flow-title-row--pr-tools) .simple-page__flow-title-cluster {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* Alert-style: жёлтый акцент как у lockbox / срок заявки */
@@ -1316,12 +1455,24 @@
 }
 
 @media (min-width: 480px) {
-  .simple-page__flow-title-row {
+  .simple-page__flow-title-row:not(.simple-page__flow-title-row--pr-tools) {
     flex-wrap: nowrap;
   }
 
-  .simple-page__flow-deadline {
+  .simple-page__flow-title-row:not(.simple-page__flow-title-row--pr-tools) .simple-page__flow-deadline {
     margin-left: auto;
+  }
+}
+
+@media (max-width: 520px) {
+  .simple-page__flow-title-row--pr-tools {
+    flex-wrap: wrap;
+  }
+
+  .simple-page__flow-title-row--pr-tools > .simple-page__pr-terms-actions {
+    flex: 1 0 100%;
+    order: 2;
+    justify-content: center;
   }
 }
 
@@ -1916,6 +2067,55 @@
 .simple-create__select:disabled {
   opacity: 0.55;
   cursor: not-allowed;
+}
+
+/* Модалка перепродажи: ползунок % (simple-root, класс на .simple-page) */
+.simple-page__resell-pct-slider {
+  display: block;
+  width: 100%;
+  margin: 0.65rem 0 0.25rem;
+  height: 0.5rem;
+  border-radius: 999px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: color-mix(in srgb, var(--simple-border) 70%, var(--simple-muted));
+  outline: none;
+  cursor: pointer;
+}
+
+.simple-page__resell-pct-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 1.15rem;
+  height: 1.15rem;
+  margin-top: -0.32rem;
+  border-radius: 50%;
+  background: var(--simple-primary);
+  border: 2px solid var(--simple-card);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+}
+
+.simple-page__resell-pct-slider::-webkit-slider-runnable-track {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: transparent;
+}
+
+.simple-page__resell-pct-slider::-moz-range-thumb {
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  background: var(--simple-primary);
+  border: 2px solid var(--simple-card);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.22);
+  cursor: pointer;
+}
+
+.simple-page__resell-pct-slider::-moz-range-track {
+  height: 0.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--simple-border) 70%, var(--simple-muted));
 }
 
 .simple-create__row {

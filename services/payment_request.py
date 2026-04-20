@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal, InvalidOperation
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from redis.asyncio import Redis
@@ -30,6 +30,10 @@ SimplePaymentLifetime = Literal["24h", "48h", "72h", "forever"]
 
 class PaymentRequestService:
     """Simple-заявки без space в URL (space из auth); Deal создаётся позже при принятии."""
+
+    RESELL_COMMISSIONER_SLOT_KEY = "resell"
+    _RESELL_PCT_MIN = Decimal("0.1")
+    _RESELL_PCT_MAX = Decimal("100")
 
     def __init__(
         self,
@@ -270,6 +274,84 @@ class PaymentRequestService:
                 raise ValueError(
                     "counter_leg.amount or counter_leg.amount_discussed required"
                 )
+
+    @classmethod
+    def _normalize_intermediary_percent(cls, raw: Optional[str]) -> str:
+        s = (raw or "").strip() or "0.5"
+        try:
+            d = Decimal(s)
+        except InvalidOperation as exc:
+            raise ValueError("intermediary_percent_invalid") from exc
+        if d < cls._RESELL_PCT_MIN or d > cls._RESELL_PCT_MAX:
+            raise ValueError("intermediary_percent_range")
+        q = d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        t = format(q, "f")
+        if "." in t:
+            t = t.rstrip("0").rstrip(".")
+        return t or "0"
+
+    async def apply_resell_intermediary(
+        self,
+        *,
+        actor_did: str,
+        arbiter_did: str,
+        public_uid: str,
+        intermediary_percent: Optional[str] = None,
+    ) -> Tuple[PaymentRequest, str]:
+        """
+        Слот ``resell``: посредник-комиссионер (текущий пользователь), % по умолчанию 0.5 (мин. 0.1).
+        Недоступно автору заявки (owner_did).
+        """
+        arb = (arbiter_did or "").strip()
+        uid_key = (public_uid or "").strip()
+        if not uid_key:
+            raise ValueError("public_uid_required")
+        actor = (actor_did or "").strip()
+        if not actor:
+            raise ValueError("actor_required")
+
+        pair = await self._requests.get_by_uid(uid_key, arbiter_did=arb)
+        if pair is None:
+            raise ValueError("not_found")
+
+        row, nick = pair
+        if row.deactivated_at is not None:
+            raise ValueError("request_deactivated")
+        if row.deal_id is not None:
+            raise ValueError("request_already_accepted")
+        owner_row = (row.owner_did or "").strip()
+        if actor == owner_row:
+            raise ValueError("owner_cannot_resell")
+
+        pct_str = self._normalize_intermediary_percent(intermediary_percent)
+
+        raw_comm = row.commissioners
+        base: Dict[str, Any] = dict(raw_comm) if isinstance(raw_comm, dict) else {}
+
+        slot_key = self.RESELL_COMMISSIONER_SLOT_KEY
+        existing = base.get(slot_key)
+        if isinstance(existing, dict):
+            existing_did = (existing.get("did") or "").strip()
+            if existing_did and existing_did != actor:
+                raise ValueError("resell_slot_taken")
+
+        base[slot_key] = {
+            "did": actor,
+            "commission": {"kind": "percent", "value": pct_str},
+            "parent_id": None,
+        }
+        from pydantic import ValidationError
+        from web.endpoints.v1.schemas.payment_request_commissioners import CommissionersPayload
+
+        try:
+            CommissionersPayload.model_validate(base)
+        except ValidationError as exc:
+            raise ValueError("commissioners_invalid") from exc
+
+        row.commissioners = base
+        await self._session.commit()
+        await self._session.refresh(row)
+        return row, nick
 
 
 # Создание Deal при принятии заявки контрагентом — отдельный поток (эндпоинт + fill deal_id).
