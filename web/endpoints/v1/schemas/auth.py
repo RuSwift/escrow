@@ -39,10 +39,14 @@ class AuthResponse(BaseModel):
         default_factory=list,
         description="Список space (nickname), в которых участвует адрес",
     )
+    own_space: Optional[str] = Field(
+        default=None,
+        description="Свой nickname (владелец WalletUser); null если кошелёк только в чужих space как суб",
+    )
 
 
 class InitRequest(BaseModel):
-    """Запрос инициации нового пользователя (при пустых spaces)."""
+    """Запрос инициации нового WalletUser (свой space), если ещё нет записи владельца с этим адресом."""
 
     nickname: str = Field(..., min_length=1, max_length=100, description="Nickname пользователя")
 

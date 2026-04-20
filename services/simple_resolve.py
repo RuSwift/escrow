@@ -49,17 +49,23 @@ class SimpleResolveService:
         )
         self._deal = DealRepository(session=session, redis=redis, settings=settings)
 
-    async def resolve_public_uid(self, public_uid: str) -> Optional[ResolveResult]:
+    async def resolve_public_uid(
+        self, public_uid: str, arbiter_space_did: str
+    ) -> Optional[ResolveResult]:
+        """Сегмент пути: hex uid заявки, public_ref заявки или uid сделки; контекст arbiter_space_did."""
         raw = (public_uid or "").strip()
-        if not raw:
+        arb = (arbiter_space_did or "").strip()
+        if not raw or not arb:
             return None
 
-        pr_pair = await self._pr.get_by_uid(raw)
+        pr_pair = await self._pr.get_by_uid(raw, arbiter_did=arb)
         if pr_pair is not None:
             row, nick = pr_pair
             return ResolvedPaymentRequest(row=row, space_nickname=nick)
 
         deal_row = await self._deal.get_by_uid(raw)
         if deal_row is not None:
+            if (deal_row.arbiter_did or "").strip() != arb:
+                return None
             return ResolvedDeal(row=deal_row)
         return None

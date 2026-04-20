@@ -29,6 +29,9 @@ def _profile_to_response(row) -> GuarantorProfileResponse:
         space=row.space,
         commission_percent=row.commission_percent,
         conditions_text=row.conditions_text,
+        arbiter_public_slug=str(row.arbiter_public_slug).strip()
+        if getattr(row, "arbiter_public_slug", None)
+        else None,
     )
 
 
@@ -76,12 +79,14 @@ async def patch_guarantor_profile(
     raw = body.model_dump(exclude_unset=True)
     comm = ... if "commission_percent" not in raw else raw["commission_percent"]
     cond = ... if "conditions_text" not in raw else raw["conditions_text"]
+    arb_slug = ... if "arbiter_public_slug" not in raw else raw["arbiter_public_slug"]
     try:
         profile = await svc.patch_profile(
             space,
             wallet_address,
             commission_percent=comm,
             conditions_text=cond,
+            arbiter_public_slug=arb_slug,
         )
     except SpacePermissionDenied as e:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(e)) from e

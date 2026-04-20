@@ -1,4 +1,4 @@
-"""Ответ GET /v1/simple/resolve — контекст страницы Simple по публичному uid."""
+"""Ответ GET /v1/arbiter/{arbiter_space_did}/resolve — контекст страницы Simple по публичному uid."""
 
 from __future__ import annotations
 

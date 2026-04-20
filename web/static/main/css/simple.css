@@ -1,5 +1,5 @@
 /**
- * Страница /simple: светлая/тёмная тема, полноэкранный layout.
+ * Страница /arbiter/...: светлая/тёмная тема, полноэкранный layout.
  * Корневой блок: .simple-page, тёмная тема: .simple-page--dark
  */
 .simple-page {
@@ -571,7 +571,7 @@
   }
 }
 
-/* /simple — список заявок (без FAB) */
+/* /arbiter/... — список заявок (без FAB) */
 .simple-page__list-root {
   flex: 1;
   display: flex;
@@ -1409,6 +1409,71 @@
   color: color-mix(in srgb, var(--simple-accent) 88%, var(--simple-muted));
 }
 
+.simple-page__pr-view--deactivated .simple-page__stat-rail,
+.simple-page__pr-view--deactivated .simple-page__stat-grid {
+  opacity: 0.85;
+  filter: grayscale(0.4);
+}
+
+.simple-page__pr-view--deactivated .simple-page__flow-shell {
+  opacity: 0.92;
+  filter: grayscale(0.28);
+}
+
+.simple-page__pr-deactivated-banner {
+  margin-bottom: 1rem;
+  padding: 0.65rem 1rem;
+  border-radius: 0.5rem;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  text-align: center;
+  color: var(--simple-muted);
+  background: color-mix(in srgb, var(--simple-muted) 14%, transparent);
+  border: 1px solid var(--simple-border-soft);
+}
+
+.simple-page__flow-status--deactivated {
+  color: var(--simple-muted) !important;
+}
+
+.simple-page__lockbox--deactivated {
+  border-color: var(--simple-border-soft) !important;
+  background: color-mix(in srgb, var(--simple-muted) 9%, transparent) !important;
+  box-shadow: none !important;
+}
+
+.simple-page__lockbox--deactivated .simple-page__lockbox-tag {
+  color: var(--simple-muted);
+}
+
+.simple-page__lockbox--deactivated .simple-page__lockbox-head {
+  color: var(--simple-muted);
+}
+
+.simple-page__lockbox--deactivated .simple-page__lockbox-inner {
+  color: var(--simple-muted);
+  border-color: var(--simple-border-soft);
+  opacity: 0.9;
+}
+
+.simple-page__lockbox-deactivated-foot {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--simple-border-soft);
+  text-align: center;
+}
+
+.simple-page__lockbox-deactivated-text {
+  margin: 0 auto;
+  max-width: 22rem;
+  font-size: 12px;
+  line-height: 1.45;
+  font-weight: 500;
+  color: var(--simple-muted);
+}
+
 .simple-page__recipient-wrap {
   margin-top: 1.5rem;
   opacity: 0.55;
@@ -1585,7 +1650,7 @@
   border-color: rgba(248, 81, 73, 0.25);
 }
 
-/* /simple: без Tailwind классы tron-login не действуют — оформляем кнопки и блок ошибки */
+/* /arbiter/...: без Tailwind классы tron-login не действуют — оформляем кнопки и блок ошибки */
 .simple-auth__tron {
   margin-top: 1rem;
 }

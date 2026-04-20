@@ -1,7 +1,7 @@
 /**
  * Vue 2 компонент: авторизация пользователя через TronLink (main app).
  * Подключение через tron_requestAccounts (или опрос tronWeb для старых версий).
- * Запрос nonce → подпись в TronLink → verify → emit('success', { token, wallet_address }).
+ * Запрос nonce → подпись в TronLink → verify → emit('success', { token, wallet_address, spaces, own_space }).
  * API: POST /v1/auth/tron/nonce, POST /v1/auth/tron/verify.
  * Подключать после vue.min.js. При @success сохранять payload.token в localStorage под ключом main_auth_token (см. auth.js).
  */
@@ -115,7 +115,10 @@
                             var payload = {
                                 token: data.token,
                                 wallet_address: data.wallet_address,
-                                spaces: Array.isArray(data.spaces) ? data.spaces : []
+                                spaces: Array.isArray(data.spaces) ? data.spaces : [],
+                                own_space: data.own_space != null && data.own_space !== undefined
+                                    ? String(data.own_space).trim()
+                                    : ''
                             };
                             console.log('[tron-login] verify success, emitting payload:', payload);
                             self.$emit('success', payload);

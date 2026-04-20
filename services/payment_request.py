@@ -9,8 +9,10 @@ from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 from redis.asyncio import Redis
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.short_id import generate_public_ref
 from db.models import PaymentRequest
 from repos.payment_request import PaymentRequestRepository
 from services.exchange_wallets import ExchangeWalletService
@@ -19,6 +21,8 @@ from services.wallet_user import WalletUserService
 from settings import Settings
 
 logger = logging.getLogger(__name__)
+
+_SIMPLE_PR_UNIQUE_RETRIES = 24
 
 SimpleDirection = Literal["fiat_to_stable", "stable_to_fiat"]
 SimplePaymentLifetime = Literal["24h", "48h", "72h", "forever"]
@@ -61,6 +65,7 @@ class PaymentRequestService:
         wallet_address: str,
         owner_did: str,
         standard: str,
+        arbiter_did: str,
         page: int,
         page_size: int,
         q: Optional[str],
@@ -74,7 +79,11 @@ class PaymentRequestService:
         space_nick, _ = pair
         await self._space.ensure_owner_or_operator(space_nick, wallet_address)
         return await self._requests.list_for_owner(
-            owner_did, page=page, page_size=page_size, q=q
+            owner_did,
+            (arbiter_did or "").strip(),
+            page=page,
+            page_size=page_size,
+            q=q,
         )
 
     async def deactivate_payment_request(
@@ -83,6 +92,7 @@ class PaymentRequestService:
         wallet_address: str,
         owner_did: str,
         standard: str,
+        arbiter_did: str,
         pk: int,
         confirm_pk: str,
     ) -> Tuple[PaymentRequest, str]:
@@ -97,7 +107,10 @@ class PaymentRequestService:
 
         try:
             out = await self._requests.deactivate_for_owner(
-                owner_did, pk, confirm_pk
+                owner_did,
+                (arbiter_did or "").strip(),
+                pk,
+                confirm_pk,
             )
         except ValueError as e:
             msg = str(e)
@@ -132,6 +145,7 @@ class PaymentRequestService:
         wallet_address: str,
         owner_did: str,
         standard: str,
+        arbiter_did: str,
         direction: SimpleDirection,
         primary_leg: Dict[str, Any],
         counter_leg: Dict[str, Any],
@@ -146,6 +160,10 @@ class PaymentRequestService:
             raise ValueError("No space for this wallet")
         space_nick, space_id = pair
 
+        arb = (arbiter_did or "").strip()
+        if not arb:
+            raise ValueError("arbiter_did is required")
+
         await self._space.ensure_owner_or_operator(space_nick, wallet_address)
 
         self._validate_simple_legs(direction, primary_leg, counter_leg)
@@ -159,27 +177,40 @@ class PaymentRequestService:
         expires_at = self._expires_at_for_lifetime(lifetime)
 
         uid = uuid.uuid4().hex
-        row = await self._requests.insert(
-            uid=uid,
-            space_id=space_id,
-            owner_did=owner_did,
-            direction=direction,
-            primary_leg=primary_leg,
-            counter_leg=counter_leg,
-            primary_ramp_wallet_id=ramp_wallet_id,
-            heading=heading_val,
-            expires_at=expires_at,
-        )
-        await self._session.commit()
-        await self._session.refresh(row)
-        logger.info(
-            "PaymentRequest created uid=%s space_id=%s space_nick=%s owner=%s",
-            uid,
-            space_id,
-            space_nick,
-            owner_did,
-        )
-        return row, space_nick
+        for attempt in range(_SIMPLE_PR_UNIQUE_RETRIES):
+            public_ref = generate_public_ref()
+            try:
+                row = await self._requests.insert(
+                    uid=uid,
+                    public_ref=public_ref,
+                    space_id=space_id,
+                    owner_did=owner_did,
+                    arbiter_did=arb,
+                    direction=direction,
+                    primary_leg=primary_leg,
+                    counter_leg=counter_leg,
+                    primary_ramp_wallet_id=ramp_wallet_id,
+                    heading=heading_val,
+                    expires_at=expires_at,
+                )
+                await self._session.commit()
+                await self._session.refresh(row)
+            except IntegrityError:
+                await self._session.rollback()
+                if attempt + 1 == _SIMPLE_PR_UNIQUE_RETRIES:
+                    raise
+                continue
+            logger.info(
+                "PaymentRequest created uid=%s public_ref=%s space_id=%s space_nick=%s owner=%s arbiter=%s",
+                uid,
+                public_ref,
+                space_id,
+                space_nick,
+                owner_did,
+                arb,
+            )
+            return row, space_nick
+        raise RuntimeError("PaymentRequest insert failed")
 
     @staticmethod
     def build_pair_label(

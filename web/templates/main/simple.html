@@ -18,7 +18,7 @@
     window.__SIMPLE_STABLECOINS__ = {{ simple_stablecoins_json | default('[]') | safe }};
     window.__SIMPLE_FIAT_CODES__ = {{ simple_system_currencies_json | default('[]') | safe }};
   </script>
-  <div id="simple-root" data-app-name="{{ app_name | e }}" data-simple-deal-uid="{{ simple_deal_uid | default('') | e }}" data-simple-order-id="{{ simple_order_id | default('') | e }}"></div>
+  <div id="simple-root" data-app-name="{{ app_name | e }}" data-simple-arbiter-space-did="{{ arbiter_space_did | default('') | e }}" data-simple-deal-uid="{{ simple_deal_uid | default('') | e }}" data-simple-order-id="{{ simple_order_id | default('') | e }}"></div>
   <script src="https://cdn.jsdelivr.net/npm/vue@2.7.16/dist/vue.min.js"></script>
   <script src="/static/main/js/dialog.js"></script>
   <script src="/static/main/js/auth.js"></script>

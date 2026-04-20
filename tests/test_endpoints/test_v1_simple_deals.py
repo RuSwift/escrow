@@ -1,13 +1,16 @@
-"""GET/POST /v1/simple/payment-requests — Simple UI без {space} в path."""
+"""GET/POST /v1/arbiter/{arbiter_space_did}/payment-requests — Simple UI."""
 
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+from urllib.parse import quote
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+from core.utils import get_user_did
 from db import get_db
-from db.models import Wallet, WalletUser
+from db.models import GuarantorProfile, PrimaryWallet, Wallet, WalletUser
 from web.endpoints.dependencies import (
     UserInfo,
     get_current_wallet_user,
@@ -18,6 +21,16 @@ from web.endpoints.dependencies import (
 from web.main import create_app
 
 _OWNER_TRON = "TLrJJkGK4puQGZLFbrPxK2icPgADaNTq5A"
+
+# Совпадает с owner_did кошелька-арбитра в фикстуре (Wallet).
+SIMPLE_ARBITER_DID = "did:peer:simple_deals_arbiter_owner"
+
+SIMPLE_ARBITER_SLUG = "slugforsimple"
+SIMPLE_ARBITER_DID_FROM_PRIMARY = get_user_did(_OWNER_TRON, "tron")
+
+
+def _simple_v1_base() -> str:
+    return f"/v1/arbiter/{quote(SIMPLE_ARBITER_DID, safe='')}"
 
 
 @pytest_asyncio.fixture
@@ -31,6 +44,23 @@ async def main_app_simple_deals(test_db, test_redis, test_settings):
     test_db.add(owner)
     await test_db.commit()
     await test_db.refresh(owner)
+
+    test_db.add(
+        PrimaryWallet(
+            wallet_user_id=owner.id,
+            address=_OWNER_TRON,
+            blockchain="tron",
+        )
+    )
+    test_db.add(
+        GuarantorProfile(
+            wallet_user_id=owner.id,
+            space=owner.nickname,
+            commission_percent=Decimal("0.1"),
+            arbiter_public_slug=SIMPLE_ARBITER_SLUG,
+        )
+    )
+    await test_db.commit()
 
     test_db.add(
         Wallet(
@@ -83,7 +113,11 @@ async def test_list_payment_requests_empty_200(main_app_simple_deals):
         transport=ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        r = await client.get("/v1/simple/payment-requests")
+        r = await client.get(f"/v1/arbiter/{SIMPLE_ARBITER_SLUG}/payment-requests")
+        assert r.status_code == 200
+        assert r.json()["items"] == []
+
+        r = await client.get(_simple_v1_base() + "/payment-requests")
     assert r.status_code == 200
     body = r.json()
     assert body["items"] == []
@@ -113,10 +147,13 @@ async def test_create_and_list_payment_request(main_app_simple_deals):
         transport=ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        c = await client.post("/v1/simple/payment-requests", json=payload)
+        c = await client.post(_simple_v1_base() + "/payment-requests", json=payload)
         assert c.status_code == 201, c.text
         created = c.json()["payment_request"]
         assert created["uid"]
+        assert created["public_ref"]
+        assert len(created["public_ref"]) == 9
+        assert created["commissioners"] == {}
         assert created["pair_label"]
         assert "RUB" in created["pair_label"]
         assert created["heading"] is None
@@ -125,15 +162,17 @@ async def test_create_and_list_payment_request(main_app_simple_deals):
         assert exp > datetime.now(timezone.utc)
         assert created["space_id"] == owner.id
         assert created["space_nickname"] == "simple_api_space"
+        assert created["arbiter_did"] == SIMPLE_ARBITER_DID
 
-        r = await client.get("/v1/simple/payment-requests")
+        r = await client.get(_simple_v1_base() + "/payment-requests")
         assert r.status_code == 200
         body = r.json()
         assert body["total"] >= 1
         uids = {it["uid"] for it in body["items"]}
         assert created["uid"] in uids
+        assert all(it.get("arbiter_did") == SIMPLE_ARBITER_DID for it in body["items"])
 
-        r2 = await client.get("/v1/simple/payment-requests?q=RUB")
+        r2 = await client.get(_simple_v1_base() + "/payment-requests?q=RUB")
         assert r2.status_code == 200
         assert r2.json()["total"] >= 1
 
@@ -163,14 +202,14 @@ async def test_create_payment_request_heading_forever(main_app_simple_deals):
         transport=ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        c = await client.post("/v1/simple/payment-requests", json=payload)
+        c = await client.post(_simple_v1_base() + "/payment-requests", json=payload)
         assert c.status_code == 201, c.text
         created = c.json()["payment_request"]
         assert created["heading"] == "Тестовый заголовок"
         assert created["expires_at"] is None
         assert created["space_id"] == owner.id
 
-        r = await client.get("/v1/simple/payment-requests?q=Тестовый")
+        r = await client.get(_simple_v1_base() + "/payment-requests?q=Тестовый")
         assert r.status_code == 200
         assert r.json()["total"] >= 1
 
@@ -198,7 +237,7 @@ async def test_create_payment_request_lifetime_48h(main_app_simple_deals):
         transport=ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        c = await client.post("/v1/simple/payment-requests", json=payload)
+        c = await client.post(_simple_v1_base() + "/payment-requests", json=payload)
         assert c.status_code == 201, c.text
         created = c.json()["payment_request"]
         assert created["expires_at"] is not None
@@ -230,19 +269,19 @@ async def test_deactivate_payment_request_success(main_app_simple_deals):
         transport=ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        c = await client.post("/v1/simple/payment-requests", json=payload)
+        c = await client.post(_simple_v1_base() + "/payment-requests", json=payload)
         assert c.status_code == 201, c.text
         pk = c.json()["payment_request"]["pk"]
 
         d = await client.post(
-            f"/v1/simple/payment-requests/{pk}/deactivate",
+            f"{_simple_v1_base()}/payment-requests/{pk}/deactivate",
             json={"confirm_pk": str(pk)},
         )
         assert d.status_code == 200, d.text
         body = d.json()["payment_request"]
         assert body["deactivated_at"] is not None
 
-        lst = await client.get("/v1/simple/payment-requests")
+        lst = await client.get(_simple_v1_base() + "/payment-requests")
         assert lst.status_code == 200
         uids = {it["uid"]: it for it in lst.json()["items"]}
         assert body["uid"] in uids
@@ -271,10 +310,10 @@ async def test_deactivate_payment_request_confirm_mismatch_400(main_app_simple_d
         transport=ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        c = await client.post("/v1/simple/payment-requests", json=payload)
+        c = await client.post(_simple_v1_base() + "/payment-requests", json=payload)
         pk = c.json()["payment_request"]["pk"]
         d = await client.post(
-            f"/v1/simple/payment-requests/{pk}/deactivate",
+            f"{_simple_v1_base()}/payment-requests/{pk}/deactivate",
             json={"confirm_pk": "999999"},
         )
         assert d.status_code == 400
@@ -304,15 +343,15 @@ async def test_deactivate_payment_request_already_400(main_app_simple_deals):
         transport=ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        c = await client.post("/v1/simple/payment-requests", json=payload)
+        c = await client.post(_simple_v1_base() + "/payment-requests", json=payload)
         pk = c.json()["payment_request"]["pk"]
         first = await client.post(
-            f"/v1/simple/payment-requests/{pk}/deactivate",
+            f"{_simple_v1_base()}/payment-requests/{pk}/deactivate",
             json={"confirm_pk": str(pk)},
         )
         assert first.status_code == 200
         second = await client.post(
-            f"/v1/simple/payment-requests/{pk}/deactivate",
+            f"{_simple_v1_base()}/payment-requests/{pk}/deactivate",
             json={"confirm_pk": str(pk)},
         )
         assert second.status_code == 400
@@ -327,7 +366,53 @@ async def test_deactivate_payment_request_not_found_404(main_app_simple_deals):
         base_url="http://test",
     ) as client:
         r = await client.post(
-            "/v1/simple/payment-requests/999999999/deactivate",
+            f"{_simple_v1_base()}/payment-requests/999999999/deactivate",
             json={"confirm_pk": "999999999"},
         )
         assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_arbiter_unknown_slug_list_404(main_app_simple_deals):
+    app, _owner = main_app_simple_deals
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        r = await client.get("/v1/arbiter/no-such-slug-xyz99/payment-requests")
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_create_payment_request_via_arbiter_public_slug(main_app_simple_deals):
+    app, owner = main_app_simple_deals
+    payload = {
+        "direction": "fiat_to_stable",
+        "primary_leg": {
+            "asset_type": "fiat",
+            "code": "CHF",
+            "amount": "200",
+            "side": "give",
+        },
+        "counter_leg": {
+            "asset_type": "stable",
+            "code": "USDT",
+            "amount": "5",
+            "side": "receive",
+        },
+    }
+    base_slug = f"/v1/arbiter/{SIMPLE_ARBITER_SLUG}"
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        c = await client.post(base_slug + "/payment-requests", json=payload)
+        assert c.status_code == 201, c.text
+        created = c.json()["payment_request"]
+        assert created["arbiter_did"] == SIMPLE_ARBITER_DID_FROM_PRIMARY
+        assert created["space_id"] == owner.id
+
+        lst = await client.get(base_slug + "/payment-requests")
+        assert lst.status_code == 200
+        uids = {it["uid"] for it in lst.json()["items"]}
+        assert created["uid"] in uids

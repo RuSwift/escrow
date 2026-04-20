@@ -1,4 +1,4 @@
-"""Схемы API /v1/simple/payment-requests (Simple UI)."""
+"""Схемы API /v1/arbiter/{arbiter_space_did}/payment-requests (Simple UI)."""
 
 from __future__ import annotations
 
@@ -6,10 +6,14 @@ from datetime import datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from db.models import PaymentRequest
 from services.payment_request import PaymentRequestService, SimplePaymentLifetime
+from web.endpoints.v1.schemas.payment_request_commissioners import (
+    CommissionerSlot,
+    CommissionersPayload,
+)
 
 
 class PaymentRequestLegIn(BaseModel):
@@ -53,9 +57,11 @@ class PaymentRequestCreateBody(BaseModel):
 class PaymentRequestOut(BaseModel):
     pk: int
     uid: str
+    public_ref: str = Field(..., description="Короткий публичный код заявки")
     pair_label: str = Field(..., description="Пара активов, напр. CNY — USDT")
     amount: Optional[Decimal] = None
     direction: str
+    arbiter_did: str = Field(..., description="DID арбитра (контекст Simple из URL)")
     heading: Optional[str] = None
     space_id: int
     space_nickname: Optional[str] = Field(
@@ -64,6 +70,10 @@ class PaymentRequestOut(BaseModel):
     )
     primary_leg: Dict[str, Any]
     counter_leg: Dict[str, Any]
+    commissioners: Dict[str, CommissionerSlot] = Field(
+        default_factory=dict,
+        description="Слоты комиссионеров; запись через API позже",
+    )
     primary_ramp_wallet_id: Optional[int] = None
     deal_id: Optional[int] = None
     expires_at: Optional[datetime] = Field(
@@ -106,17 +116,27 @@ class PaymentRequestOut(BaseModel):
                     amt = Decimal(s)
                 except InvalidOperation:
                     amt = None
+        raw_comm = getattr(row, "commissioners", None)
+        if not isinstance(raw_comm, dict):
+            raw_comm = {}
+        try:
+            commissioners_out = CommissionersPayload.model_validate(raw_comm).root
+        except ValidationError:
+            commissioners_out = {}
         return cls(
             pk=int(row.pk),
             uid=str(row.uid),
+            public_ref=str(getattr(row, "public_ref", "") or ""),
             pair_label=pair_label,
             amount=amt,
             direction=direction_out,
+            arbiter_did=str(getattr(row, "arbiter_did", "") or "").strip(),
             heading=head_out,
             space_id=int(row.space_id),
             space_nickname=space_nickname,
             primary_leg=pl,
             counter_leg=cl,
+            commissioners=commissioners_out,
             primary_ramp_wallet_id=(
                 int(row.primary_ramp_wallet_id)
                 if row.primary_ramp_wallet_id is not None

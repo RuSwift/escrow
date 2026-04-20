@@ -534,6 +534,19 @@ class PaymentRequest(Base):
         index=True,
         comment="Публичный UUID заявки (hex)",
     )
+    public_ref = Column(
+        String(10),
+        unique=True,
+        nullable=False,
+        index=True,
+        comment="Короткий публичный код заявки (ссылки, resolve)",
+    )
+    commissioners = Column(
+        JSONB,
+        nullable=False,
+        server_default=text("'{}'::jsonb"),
+        comment="Карта слотов комиссионеров (JSON)",
+    )
     space_id = Column(
         Integer,
         ForeignKey("wallet_users.id", ondelete="RESTRICT"),
@@ -546,6 +559,12 @@ class PaymentRequest(Base):
         nullable=False,
         index=True,
         comment="DID автора заявки",
+    )
+    arbiter_did = Column(
+        String(255),
+        nullable=False,
+        index=True,
+        comment="DID арбитра (контекст Simple из path arbiter_space_did)",
     )
     direction = Column(
         String(32),
@@ -599,6 +618,7 @@ class PaymentRequest(Base):
 
     __table_args__ = (
         Index("ix_payment_request_owner_did", "owner_did"),
+        Index("ix_payment_request_arbiter_did", "arbiter_did"),
         Index("ix_payment_request_space_id", "space_id"),
         Index("ix_payment_request_uid", "uid"),
         Index(
@@ -1381,6 +1401,13 @@ class GuarantorProfile(Base):
         Text,
         nullable=True,
         comment="Общие условия работы гаранта в этом space",
+    )
+    arbiter_public_slug = Column(
+        String(64),
+        nullable=True,
+        unique=True,
+        index=True,
+        comment="Уникальный сегмент URL /arbiter/{slug} вместо DID арбитра",
     )
     created_at = Column(
         DateTime(timezone=True),

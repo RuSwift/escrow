@@ -1,4 +1,6 @@
-"""GET /v1/simple/resolve/{uid} — контекст страницы Simple."""
+"""GET /v1/arbiter/{arbiter_space_did}/resolve/{uid} — контекст страницы Simple."""
+
+from urllib.parse import quote
 
 import pytest
 import pytest_asyncio
@@ -17,6 +19,12 @@ from web.main import create_app
 
 _OWNER_TRON = "TLrJJkGK4puQGZLFbrPxK2icPgADaNTq5A"
 _OTHER_TRON = "TQOtherSimpleResolveWallet999999999"
+
+SIMPLE_RESOLVE_ARBITER = "did:peer:resolve_arbiter"
+
+
+def _resolve_v1() -> str:
+    return f"/v1/arbiter/{quote(SIMPLE_RESOLVE_ARBITER, safe='')}"
 
 
 @pytest_asyncio.fixture
@@ -105,17 +113,27 @@ async def test_resolve_payment_request_only(main_app_simple_resolve):
         transport=ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        c = await client.post("/v1/simple/payment-requests", json=payload)
+        c = await client.post(_resolve_v1() + "/payment-requests", json=payload)
         assert c.status_code == 201, c.text
         uid = c.json()["payment_request"]["uid"]
 
-        r = await client.get(f"/v1/simple/resolve/{uid}")
+        r = await client.get(f"{_resolve_v1()}/resolve/{uid}")
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["kind"] == "payment_request_only"
         assert body["payment_request"]["uid"] == uid
         assert body["payment_request"]["space_id"] == owner.id
+        assert body["payment_request"]["arbiter_did"] == SIMPLE_RESOLVE_ARBITER
         assert body["deal"] is None
+
+        pub = body["payment_request"]["public_ref"]
+        assert isinstance(pub, str) and len(pub) >= 8
+        assert body["payment_request"]["commissioners"] == {}
+
+        r2 = await client.get(f"{_resolve_v1()}/resolve/{pub}")
+        assert r2.status_code == 200, r2.text
+        assert r2.json()["payment_request"]["uid"] == uid
+        assert r2.json()["payment_request"]["public_ref"] == pub
 
 
 @pytest.mark.asyncio
@@ -141,7 +159,7 @@ async def test_resolve_payment_request_other_user_200(main_app_simple_resolve):
         transport=ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        c = await client.post("/v1/simple/payment-requests", json=payload)
+        c = await client.post(_resolve_v1() + "/payment-requests", json=payload)
         uid = c.json()["payment_request"]["uid"]
 
         app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
@@ -150,7 +168,7 @@ async def test_resolve_payment_request_other_user_200(main_app_simple_resolve):
             did=other.did,
         )
         try:
-            r = await client.get(f"/v1/simple/resolve/{uid}")
+            r = await client.get(f"{_resolve_v1()}/resolve/{uid}")
             assert r.status_code == 200
             assert r.json()["kind"] == "payment_request_only"
             assert r.json()["payment_request"]["uid"] == uid
@@ -169,7 +187,40 @@ async def test_resolve_not_found_404(main_app_simple_resolve):
         transport=ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        r = await client.get("/v1/simple/resolve/nonexistent_uid_xxxxxxxx")
+        r = await client.get(
+            f"{_resolve_v1()}/resolve/nonexistent_uid_xxxxxxxx"
+        )
+        assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_resolve_payment_request_wrong_arbiter_404(main_app_simple_resolve):
+    """Заявка с другим arbiter_did не отдаётся в чужом arbiter_space_did path."""
+    app, _owner, _other = main_app_simple_resolve
+    wrong_prefix = f"/v1/arbiter/{quote('did:peer:other_arbiter_context', safe='')}"
+    payload = {
+        "direction": "fiat_to_stable",
+        "primary_leg": {
+            "asset_type": "fiat",
+            "code": "USD",
+            "amount": "10",
+            "side": "give",
+        },
+        "counter_leg": {
+            "asset_type": "stable",
+            "code": "USDT",
+            "amount": "1",
+            "side": "receive",
+        },
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        c = await client.post(_resolve_v1() + "/payment-requests", json=payload)
+        assert c.status_code == 201, c.text
+        uid = c.json()["payment_request"]["uid"]
+        r = await client.get(f"{wrong_prefix}/resolve/{uid}")
         assert r.status_code == 404
 
 
@@ -243,7 +294,8 @@ async def test_resolve_deal_only(test_db, test_redis, test_settings):
             transport=ASGITransport(app=app),
             base_url="http://test",
         ) as client:
-            r = await client.get(f"/v1/simple/resolve/{deal_uid}")
+            deal_arb_prefix = f"/v1/arbiter/{quote('did:peer:deal_resolve_arb', safe='')}"
+            r = await client.get(f"{deal_arb_prefix}/resolve/{deal_uid}")
             assert r.status_code == 200, r.text
             body = r.json()
             assert body["kind"] == "deal_only"

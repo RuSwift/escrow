@@ -443,3 +443,110 @@ async def test_guarantor_direction_wildcard_all_methods_conflict(main_app, test_
         )
         assert r_dup.status_code == 400
         assert r_dup.json().get("detail", {}).get("code") == "direction_already_exists"
+
+
+@pytest.mark.asyncio
+async def test_guarantor_patch_arbiter_public_slug_ok(main_app, test_db):
+    priv, tron_address = _tron_key_and_address(b"guar-slug-ok-01")
+    space = "g_space_slug_ok"
+    test_db.add(
+        WalletUser(
+            wallet_address=tron_address,
+            blockchain="tron",
+            did="did:tron:guarslugok",
+            nickname=space,
+            is_verified=True,
+        )
+    )
+    await test_db.commit()
+    async with AsyncClient(
+        transport=ASGITransport(app=main_app),
+        base_url="http://test",
+    ) as client:
+        token = await _verify_tron(client, priv, tron_address)
+        headers = {"Authorization": f"Bearer {token}"}
+        p = await client.patch(
+            f"/v1/spaces/{space}/guarantor/profile",
+            headers=headers,
+            json={"arbiter_public_slug": "cool-arbiter-z9"},
+        )
+        assert p.status_code == 200, p.text
+        assert p.json()["arbiter_public_slug"] == "cool-arbiter-z9"
+        g = await client.get(f"/v1/spaces/{space}/guarantor", headers=headers)
+        assert g.json()["profile"]["arbiter_public_slug"] == "cool-arbiter-z9"
+
+
+@pytest.mark.asyncio
+async def test_guarantor_patch_arbiter_public_slug_conflict(main_app, test_db):
+    priv_a, addr_a = _tron_key_and_address(b"guar-slug-a-01")
+    priv_b, addr_b = _tron_key_and_address(b"guar-slug-b-01")
+    space_a = "g_space_slug_conf_a"
+    space_b = "g_space_slug_conf_b"
+    test_db.add(
+        WalletUser(
+            wallet_address=addr_a,
+            blockchain="tron",
+            did="did:tron:ga",
+            nickname=space_a,
+            is_verified=True,
+        )
+    )
+    test_db.add(
+        WalletUser(
+            wallet_address=addr_b,
+            blockchain="tron",
+            did="did:tron:gb",
+            nickname=space_b,
+            is_verified=True,
+        )
+    )
+    await test_db.commit()
+    async with AsyncClient(
+        transport=ASGITransport(app=main_app),
+        base_url="http://test",
+    ) as client:
+        token_a = await _verify_tron(client, priv_a, addr_a)
+        token_b = await _verify_tron(client, priv_b, addr_b)
+        h_a = {"Authorization": f"Bearer {token_a}"}
+        h_b = {"Authorization": f"Bearer {token_b}"}
+        pa = await client.patch(
+            f"/v1/spaces/{space_a}/guarantor/profile",
+            headers=h_a,
+            json={"arbiter_public_slug": "dup-slug-shared"},
+        )
+        assert pa.status_code == 200
+        pb = await client.patch(
+            f"/v1/spaces/{space_b}/guarantor/profile",
+            headers=h_b,
+            json={"arbiter_public_slug": "dup-slug-shared"},
+        )
+        assert pb.status_code == 400
+        assert "taken" in str(pb.json().get("detail", "")).lower()
+
+
+@pytest.mark.asyncio
+async def test_guarantor_patch_arbiter_public_slug_invalid(main_app, test_db):
+    priv, tron_address = _tron_key_and_address(b"guar-slug-inv-01")
+    space = "g_space_slug_inv"
+    test_db.add(
+        WalletUser(
+            wallet_address=tron_address,
+            blockchain="tron",
+            did="did:tron:guarsluginv",
+            nickname=space,
+            is_verified=True,
+        )
+    )
+    await test_db.commit()
+    async with AsyncClient(
+        transport=ASGITransport(app=main_app),
+        base_url="http://test",
+    ) as client:
+        token = await _verify_tron(client, priv, tron_address)
+        headers = {"Authorization": f"Bearer {token}"}
+        r = await client.patch(
+            f"/v1/spaces/{space}/guarantor/profile",
+            headers=headers,
+            json={"arbiter_public_slug": "!!"},
+        )
+        assert r.status_code == 400

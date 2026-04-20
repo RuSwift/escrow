@@ -138,6 +138,17 @@ class GuarantorDirectionRepository(BaseRepository):
         res = await self._session.execute(stmt)
         return res.scalar_one_or_none()
 
+    async def get_profile_by_arbiter_public_slug(
+        self, slug: str
+    ) -> Optional[GuarantorProfile]:
+        """Профиль по публичному slug (уже lower-case)."""
+        s = _strip(slug).lower()
+        if not s:
+            return None
+        stmt = select(GuarantorProfile).where(GuarantorProfile.arbiter_public_slug == s)
+        res = await self._session.execute(stmt)
+        return res.scalar_one_or_none()
+
     async def upsert_profile(
         self,
         wallet_user_id: int,
@@ -145,6 +156,7 @@ class GuarantorDirectionRepository(BaseRepository):
         *,
         commission_percent: Any = ...,
         conditions_text: Any = ...,
+        arbiter_public_slug: Any = ...,
     ) -> GuarantorProfile:
         """
         Создаёт или обновляет профиль гаранта. Поля с ``...`` не меняют существующее значение;
@@ -157,11 +169,15 @@ class GuarantorDirectionRepository(BaseRepository):
             cond_new: str | None = None
             if conditions_text is not ...:
                 cond_new = _optional_text(conditions_text)
+            slug_new: str | None = None
+            if arbiter_public_slug is not ...:
+                slug_new = arbiter_public_slug
             row = GuarantorProfile(
                 wallet_user_id=wallet_user_id,
                 space=sp,
                 commission_percent=comm_new,
                 conditions_text=cond_new,
+                arbiter_public_slug=slug_new,
             )
             self._session.add(row)
             await self._session.flush()
@@ -173,6 +189,8 @@ class GuarantorDirectionRepository(BaseRepository):
             row.conditions_text = (
                 _optional_text(conditions_text) if conditions_text is not None else None
             )
+        if arbiter_public_slug is not ...:
+            row.arbiter_public_slug = arbiter_public_slug
         await self._session.flush()
         await self._session.refresh(row)
         return row

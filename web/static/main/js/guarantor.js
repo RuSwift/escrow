@@ -67,7 +67,13 @@
                 directionEditSaving: false,
                 directionEditError: null,
                 primaryWallet: (typeof window !== 'undefined' && window.__SPACE_PRIMARY_WALLET__) ? window.__SPACE_PRIMARY_WALLET__ : { address: '', blockchain: 'tron' },
-                showPrimaryWalletTooltip: false
+                showPrimaryWalletTooltip: false,
+                simpleExchangeLinkCopied: false,
+                _simpleExchangeCopyTimer: null,
+                arbiterPublicSlug: '',
+                arbiterSlugSaving: false,
+                arbiterSlugFeedback: null,
+                _arbiterSlugFeedbackTimer: null
             };
         },
         mounted: function() {
@@ -89,6 +95,58 @@
             }
             if (this._modalPaymentBlurTimer) {
                 clearTimeout(this._modalPaymentBlurTimer);
+            }
+            if (this._simpleExchangeCopyTimer) {
+                clearTimeout(this._simpleExchangeCopyTimer);
+                this._simpleExchangeCopyTimer = null;
+            }
+            if (this._arbiterSlugFeedbackTimer) {
+                clearTimeout(this._arbiterSlugFeedbackTimer);
+                this._arbiterSlugFeedbackTimer = null;
+            }
+        },
+        computed: {
+            /**
+             * DID арбитра для Simple UI (совпадает с get_user_did на бэке: did:tron / did:ethr / did:bitcoin).
+             */
+            guarantorArbiterSpaceDid: function() {
+                var w = this.primaryWallet || {};
+                var addr = (w.address || '').trim();
+                if (!addr) return '';
+                var bc = String(w.blockchain || 'tron').toLowerCase();
+                if (bc === 'ethereum') {
+                    var a = addr.indexOf('0x') === 0 ? addr.toLowerCase() : addr;
+                    return 'did:ethr:' + a;
+                }
+                if (bc === 'bitcoin') {
+                    return 'did:bitcoin:' + addr;
+                }
+                return 'did:tron:' + addr;
+            },
+            /** Сегмент пути: nickname или encoded DID */
+            simpleArbiterPathSegment: function() {
+                var slug = (this.arbiterPublicSlug || '').trim();
+                if (slug) {
+                    return encodeURIComponent(slug);
+                }
+                var d = this.guarantorArbiterSpaceDid;
+                if (!d) return '';
+                return encodeURIComponent(d);
+            },
+            simpleExchangeHref: function() {
+                var seg = this.simpleArbiterPathSegment;
+                if (!seg) return '';
+                return '/arbiter/' + seg;
+            },
+            simpleExchangeFullUrl: function() {
+                var path = this.simpleExchangeHref;
+                if (!path) return '';
+                try {
+                    if (typeof window !== 'undefined' && window.location && window.location.origin) {
+                        return window.location.origin + path;
+                    }
+                } catch (e) {}
+                return path;
             }
         },
         methods: {
@@ -148,6 +206,13 @@
                                 ? Number(data.profile.commission_percent)
                                 : 0.1;
                         self.commissionPercent = isNaN(cp) ? 0.1 : cp;
+                        self.arbiterPublicSlug =
+                            data &&
+                            data.profile &&
+                            data.profile.arbiter_public_slug !== null &&
+                            data.profile.arbiter_public_slug !== undefined
+                                ? String(data.profile.arbiter_public_slug).trim()
+                                : '';
                     })
                     .catch(function(e) {
                         self.loadError = (e && e.message) || self.$t('main.guarantor.error_load');
@@ -743,6 +808,109 @@
                 var bc = (this.primaryWallet.blockchain || 'tron').toLowerCase();
                 if (bc === 'ethereum') return ETHERSCAN_BASE + addr;
                 return TRONSCAN_BASE + addr;
+            },
+            copySimpleExchangeLink: function() {
+                var self = this;
+                var text = self.simpleExchangeFullUrl;
+                if (!text) return;
+                var done = function() {
+                    self.simpleExchangeLinkCopied = true;
+                    if (self._simpleExchangeCopyTimer) {
+                        clearTimeout(self._simpleExchangeCopyTimer);
+                    }
+                    self._simpleExchangeCopyTimer = setTimeout(function() {
+                        self.simpleExchangeLinkCopied = false;
+                        self._simpleExchangeCopyTimer = null;
+                    }, 2000);
+                };
+                if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(text).then(done).catch(function() {
+                        self._copySimpleExchangeFallback(text, done);
+                    });
+                } else {
+                    self._copySimpleExchangeFallback(text, done);
+                }
+            },
+            _copySimpleExchangeFallback: function(text, done) {
+                try {
+                    var ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.setAttribute('readonly', '');
+                    ta.style.position = 'fixed';
+                    ta.style.left = '-9999px';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    if (typeof done === 'function') done();
+                } catch (e) {}
+            },
+            _scheduleClearArbiterSlugFeedback: function() {
+                var self = this;
+                if (this._arbiterSlugFeedbackTimer) {
+                    clearTimeout(this._arbiterSlugFeedbackTimer);
+                }
+                this._arbiterSlugFeedbackTimer = setTimeout(function() {
+                    if (self.arbiterSlugFeedback && self.arbiterSlugFeedback.type === 'success') {
+                        self.arbiterSlugFeedback = null;
+                    }
+                    self._arbiterSlugFeedbackTimer = null;
+                }, 4000);
+            },
+            saveArbiterPublicSlug: function(opt) {
+                var self = this;
+                var clearSlug = opt && opt.clear === true;
+                var base = this.apiBase();
+                if (!base) {
+                    return;
+                }
+                var raw = clearSlug ? '' : String(this.arbiterPublicSlug || '').trim();
+                this.arbiterSlugSaving = true;
+                this.arbiterSlugFeedback = null;
+                fetch(base + '/profile', {
+                    method: 'PATCH',
+                    headers: this.authHeaders(),
+                    credentials: 'include',
+                    body: JSON.stringify({ arbiter_public_slug: raw ? raw : '' })
+                })
+                    .then(function(r) {
+                        if (r.status === 403) {
+                            throw new Error(self.$t('main.guarantor.error_403'));
+                        }
+                        if (!r.ok) {
+                            return r.json().then(
+                                function(j) {
+                                    var msg = self._formatPatchErrorBody(j);
+                                    throw new Error(msg || self.$t('main.guarantor.error_load'));
+                                },
+                                function() {
+                                    throw new Error(self.$t('main.guarantor.error_load'));
+                                }
+                            );
+                        }
+                        return r.json();
+                    })
+                    .then(function(data) {
+                        self.arbiterSlugFeedback = {
+                            type: 'success',
+                            text: self.$t('main.guarantor.arbiter_nickname_saved')
+                        };
+                        self._scheduleClearArbiterSlugFeedback();
+                        if (data && data.arbiter_public_slug !== undefined && data.arbiter_public_slug !== null) {
+                            self.arbiterPublicSlug = String(data.arbiter_public_slug).trim();
+                        } else {
+                            self.arbiterPublicSlug = '';
+                        }
+                    })
+                    .catch(function(e) {
+                        self.arbiterSlugFeedback = {
+                            type: 'error',
+                            text: (e && e.message) || self.$t('main.guarantor.error_load')
+                        };
+                    })
+                    .finally(function() {
+                        self.arbiterSlugSaving = false;
+                    });
             }
         },
         template: [
@@ -790,6 +958,29 @@
             '        </div>',
             '        <div class="px-3 py-1.5 rounded-xl bg-gray-50 border border-[#eff2f5] text-[10px] font-bold text-[#58667e] uppercase tracking-wider w-fit">',
             '          [[ primaryWallet.blockchain ]]',
+            '        </div>',
+            '      </div>',
+            '      <div v-if="guarantorArbiterSpaceDid" class="p-6 bg-white rounded-2xl border border-[#eff2f5] shadow-sm">',
+            '        <div class="text-xs font-bold text-[#58667e] uppercase tracking-wider mb-2">[[ $t(\'main.guarantor.simple_exchange_title\') ]]</div>',
+            '        <p class="text-xs text-[#58667e] leading-relaxed mb-3">[[ $t(\'main.guarantor.simple_exchange_hint\') ]]</p>',
+            '        <div class="mb-4 pb-4 border-b border-[#eff2f5]">',
+            '          <div class="text-[10px] font-bold text-[#58667e] uppercase tracking-wider mb-1">[[ $t(\'main.guarantor.arbiter_nickname_label\') ]]</div>',
+            '          <p class="text-xs text-[#58667e] leading-relaxed mb-2">[[ $t(\'main.guarantor.arbiter_nickname_hint\') ]]</p>',
+            '          <div class="flex flex-col sm:flex-row gap-2 sm:items-center">',
+            '            <input v-model.trim="arbiterPublicSlug" type="text" maxlength="32" autocomplete="off" :placeholder="$t(\'main.guarantor.arbiter_nickname_placeholder\')" :disabled="arbiterSlugSaving" class="flex-1 min-w-0 px-3 py-2 rounded-lg border border-[#eff2f5] text-sm font-mono text-[#191d23] focus:outline-none focus:ring-2 focus:ring-main-blue/20 disabled:opacity-60" />',
+            '            <div class="flex flex-wrap gap-2 shrink-0">',
+            '              <button type="button" @click="saveArbiterPublicSlug()" :disabled="arbiterSlugSaving" class="inline-flex items-center justify-center px-3 py-2 rounded-lg bg-main-blue text-white text-xs font-semibold hover:opacity-90 disabled:opacity-50">[[ $t(\'main.guarantor.arbiter_nickname_save\') ]]</button>',
+            '              <button type="button" @click="saveArbiterPublicSlug({ clear: true })" :disabled="arbiterSlugSaving || !(arbiterPublicSlug || \'\').trim().length" class="inline-flex items-center justify-center px-3 py-2 rounded-lg border border-[#eff2f5] text-xs font-semibold text-[#58667e] hover:bg-[#f8fafd] disabled:opacity-50">[[ $t(\'main.guarantor.arbiter_nickname_clear\') ]]</button>',
+            '            </div>',
+            '          </div>',
+            '          <p v-if="arbiterSlugFeedback" class="mt-2 text-xs leading-snug" :class="arbiterSlugFeedback.type === \'success\' ? \'text-emerald-700\' : \'text-red-600\'">[[ arbiterSlugFeedback.text ]]</p>',
+            '        </div>',
+            '        <div class="flex flex-col gap-3">',
+            '          <a :href="simpleExchangeHref" target="_blank" rel="noopener noreferrer" class="font-mono text-xs sm:text-sm text-main-blue break-all min-w-0 hover:underline">[[ simpleExchangeFullUrl ]]</a>',
+            '          <div class="flex flex-wrap items-center gap-2">',
+            '            <a :href="simpleExchangeHref" target="_blank" rel="noopener noreferrer" class="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-main-blue text-white text-xs font-semibold hover:opacity-90">[[ $t(\'main.guarantor.simple_exchange_open\') ]]</a>',
+            '            <button type="button" @click="copySimpleExchangeLink" class="inline-flex items-center justify-center px-3 py-1.5 rounded-lg border border-[#eff2f5] text-xs font-semibold text-[#191d23] hover:bg-[#f8fafd]">[[ simpleExchangeLinkCopied ? $t(\'main.guarantor.simple_exchange_copied\') : $t(\'main.guarantor.simple_exchange_copy\') ]]</button>',
+            '          </div>',
             '        </div>',
             '      </div>',
             '      <div class="flex flex-col sm:flex-row gap-4 sm:items-stretch">',

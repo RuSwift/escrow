@@ -129,6 +129,7 @@ async def test_auth_tron_verify_then_me_success(auth_app):
     assert "spaces" in data
     assert isinstance(data["spaces"], list)
     assert data["spaces"] == []  # новый адрес — записей нет
+    assert data.get("own_space") in (None, "")
 
     token = data["token"]
     async with AsyncClient(
@@ -146,6 +147,7 @@ async def test_auth_tron_verify_then_me_success(auth_app):
     assert "did" in me_data
     assert "spaces" in me_data
     assert me_data["spaces"] == []
+    assert me_data.get("own_space") in (None, "")
 
 
 @pytest.mark.asyncio
@@ -250,8 +252,83 @@ async def test_auth_tron_init_success(auth_app):
 
 
 @pytest.mark.asyncio
+async def test_auth_tron_init_when_sub_only_other_space_200(auth_app, test_db):
+    """Участник только как суб в чужом space: verify даёт spaces и own_space=null; init создаёт свой WalletUser."""
+    priv, tron_address = _tron_key_and_address()
+    parent = WalletUser(
+        wallet_address="T" + "7" * 33,
+        blockchain="tron",
+        did="did:tron:parentsubonly",
+        nickname="parent_space_subonly",
+    )
+    test_db.add(parent)
+    await test_db.flush()
+    test_db.add(
+        WalletUserSub(
+            wallet_user_id=parent.id,
+            wallet_address=tron_address,
+            blockchain="tron",
+            is_verified=True,
+            is_blocked=False,
+        )
+    )
+    await test_db.commit()
+
+    async with AsyncClient(
+        transport=ASGITransport(app=auth_app),
+        base_url="http://test",
+    ) as client:
+        nonce_r = await client.post(
+            "/v1/auth/tron/nonce",
+            json={"wallet_address": tron_address},
+        )
+        assert nonce_r.status_code == 200
+        message = nonce_r.json()["message"]
+        signature = _tron_sign_message(priv, message)
+        verify_r = await client.post(
+            "/v1/auth/tron/verify",
+            json={
+                "wallet_address": tron_address,
+                "signature": signature,
+                "message": message,
+            },
+        )
+    assert verify_r.status_code == 200
+    vj = verify_r.json()
+    assert "parent_space_subonly" in (vj.get("spaces") or [])
+    assert vj.get("own_space") in (None, "")
+    token = vj["token"]
+
+    async with AsyncClient(
+        transport=ASGITransport(app=auth_app),
+        base_url="http://test",
+    ) as client:
+        init_r = await client.post(
+            "/v1/auth/tron/init",
+            json={"nickname": "my_own_after_sub_only"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert init_r.status_code == 200
+    assert init_r.json().get("space") == "my_own_after_sub_only"
+
+    async with AsyncClient(
+        transport=ASGITransport(app=auth_app),
+        base_url="http://test",
+    ) as client:
+        me_r = await client.get(
+            "/v1/auth/tron/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert me_r.status_code == 200
+    mej = me_r.json()
+    assert mej.get("own_space") == "my_own_after_sub_only"
+    assert "my_own_after_sub_only" in (mej.get("spaces") or [])
+    assert "parent_space_subonly" in (mej.get("spaces") or [])
+
+
+@pytest.mark.asyncio
 async def test_auth_tron_init_when_spaces_exist_400(auth_app, test_db):
-    """Если у кошелька уже есть spaces (WalletUser создан), init возвращает 400."""
+    """Если у кошелька уже есть свой WalletUser (владелец), init возвращает 400."""
     from db.models import WalletUser
 
     priv, tron_address = _tron_key_and_address()
@@ -298,7 +375,7 @@ async def test_auth_tron_init_when_spaces_exist_400(auth_app, test_db):
             headers={"Authorization": f"Bearer {token}"},
         )
     assert init_r.status_code == 400
-
+    assert "own" in (init_r.json().get("detail") or "").lower()
 
 # --- POST /v1/auth/tron/ensure-space ---
 
@@ -539,6 +616,7 @@ async def test_auth_tron_me_returns_standard_and_spaces(auth_app):
     assert data["did"].startswith("did:")
     assert "spaces" in data
     assert isinstance(data["spaces"], list)
+    assert "own_space" in data
 
 
 @pytest.mark.asyncio

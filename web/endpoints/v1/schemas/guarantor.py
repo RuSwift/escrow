@@ -14,6 +14,10 @@ class GuarantorProfileResponse(BaseModel):
     space: str
     commission_percent: Optional[Decimal] = None
     conditions_text: Optional[str] = None
+    arbiter_public_slug: Optional[str] = Field(
+        None,
+        description="Уникальный сегмент URL /arbiter/{slug} вместо DID",
+    )
 
 
 class GuarantorDirectionResponse(BaseModel):
@@ -39,6 +43,10 @@ class PatchGuarantorProfileRequest(BaseModel):
         description="Базовая комиссия %; не ниже 0.1 при указании.",
     )
     conditions_text: Optional[str] = Field(None, description="Общие условия гаранта в space")
+    arbiter_public_slug: Optional[str] = Field(
+        None,
+        description="Публичный nickname для /arbiter/{slug}; null или пустая строка сбрасывает",
+    )
 
 
 class PatchGuarantorDirectionRequest(BaseModel):

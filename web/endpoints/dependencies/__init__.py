@@ -29,6 +29,7 @@ from services.invite import InviteService
 from services.exchange_wallets import ExchangeWalletService
 from services.space_exchange_service import SpaceExchangeService
 from services.space_payment_form_admin import SpacePaymentFormAdminService
+from services.arbiter_path import ArbiterPathResolveService
 from services.payment_request import PaymentRequestService
 from services.simple_resolve import SimpleResolveService
 from services.order import OrderService
@@ -87,6 +88,10 @@ class UserInfo(BaseModel):
     spaces: Optional[List[str]] = Field(
         default=None,
         description="Список доступных space (nickname) для этого кошелька",
+    )
+    own_space: Optional[str] = Field(
+        default=None,
+        description="Nickname собственного WalletUser (владелец кошелька); null если адрес только субаккаунт в чужих space",
     )
 
 
@@ -229,8 +234,17 @@ def get_simple_resolve_service(
     redis: RedisClient,
     settings: AppSettings,
 ) -> SimpleResolveService:
-    """Разрешение публичного uid для страницы Simple (/simple/deal/...)."""
+    """Разрешение публичного uid для страницы Simple (/arbiter/{arbiter_space_did}/...)."""
     return SimpleResolveService(session=db, redis=redis, settings=settings.settings)
+
+
+def get_arbiter_path_resolve_service(
+    db: DbSession,
+    redis: RedisClient,
+    settings: AppSettings,
+) -> ArbiterPathResolveService:
+    """Сегмент пути /arbiter/{segment} (DID или nickname) → arbiter_did."""
+    return ArbiterPathResolveService(session=db, redis=redis, settings=settings.settings)
 
 
 def get_balances_service(
@@ -596,6 +610,7 @@ __all__ = [
     "get_space_payment_form_admin_service",
     "get_order_service",
     "get_payment_request_service",
+    "get_arbiter_path_resolve_service",
     "get_balances_service",
     "BalancesServiceDep",
     "get_invite_service",

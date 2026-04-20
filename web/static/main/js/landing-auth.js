@@ -62,11 +62,22 @@
                     if (!str || str.length <= maxLen) return str || '';
                     var half = Math.floor((maxLen - 3) / 2);
                     return str.slice(0, half) + '...' + str.slice(-(maxLen - 3 - half));
+                },
+                openSpacePickerModal: function() {
+                    this.showSpacePicker = false;
+                    var spaces = (this.currentUser && this.currentUser.spaces && Array.isArray(this.currentUser.spaces)) ? this.currentUser.spaces : [];
+                    var ownRaw = this.currentUser && this.currentUser.own_space;
+                    var own = (ownRaw != null && ownRaw !== undefined) ? String(ownRaw).trim() : '';
+                    window.dispatchEvent(new CustomEvent('open-landing-space-picker', { detail: { spaces: spaces, own_space: own || null } }));
                 }
             },
             computed: {
                 spaces: function() {
                     return (this.currentUser && this.currentUser.spaces && Array.isArray(this.currentUser.spaces)) ? this.currentUser.spaces : [];
+                },
+                ownedSpaceNickname: function() {
+                    if (!this.currentUser || this.currentUser.own_space == null || this.currentUser.own_space === '') return '';
+                    return String(this.currentUser.own_space).trim();
                 }
             },
             template:
@@ -77,10 +88,16 @@
                 '        [[ $t(\'main.landing.go_to_app\') ]]' +
                 '        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3"/></svg>' +
                 '      </button>' +
-                '      <div v-if="showSpacePicker && spaces.length" class="absolute top-full left-1/2 -translate-x-1/2 mt-2 z-[100] bg-white rounded-xl shadow-lg border border-gray-200 p-3 min-w-[180px]">' +
+                '      <div v-if="showSpacePicker && spaces.length" class="absolute top-full left-1/2 -translate-x-1/2 mt-2 z-[100] bg-white rounded-xl shadow-lg border border-gray-200 p-3 min-w-[200px] max-w-[280px]">' +
                 '        <p class="text-xs text-gray-500 mb-2">[[ $t(\'main.space.choose_space\') ]]</p>' +
                 '        <div class="space-y-1.5">' +
                 '          <button v-for="s in spaces" :key="s" type="button" @click.stop="goToSpace(s)" class="w-full px-3 py-2 bg-amber-500 text-white rounded-lg text-[13px] font-semibold hover:bg-amber-600 text-left active:scale-95 transition-transform">[[ s ]]</button>' +
+                '        </div>' +
+                '        <div v-if="!ownedSpaceNickname" class="mt-3 pt-3 border-t border-gray-200">' +
+                '          <p class="text-xs text-gray-500 mb-2">[[ $t(\'main.space.member_create_hint\') ]]</p>' +
+                '          <button type="button" @click.stop="openSpacePickerModal" class="w-full px-3 py-2 bg-white border border-amber-500 text-amber-700 rounded-lg text-[12px] font-semibold hover:bg-amber-50 text-left">' +
+                '            [[ $t(\'main.space.create_own_section\') ]]' +
+                '          </button>' +
                 '        </div>' +
                 '      </div>' +
                 '      <span class="text-xs text-white/50 font-mono max-w-[140px] text-center" :title="currentUser.did">[[ truncateMiddle(currentUser.did, 28) ]]</span>' +
@@ -98,7 +115,9 @@
                 if (headerVue.currentUser) {
                     var spaces = (headerVue.currentUser.spaces && Array.isArray(headerVue.currentUser.spaces)) ? headerVue.currentUser.spaces : [];
                     if (spaces.length) {
-                        window.dispatchEvent(new CustomEvent('open-landing-space-picker', { detail: { spaces: spaces } }));
+                        var ownRaw = headerVue.currentUser.own_space;
+                        var own = (ownRaw != null && ownRaw !== undefined) ? String(ownRaw).trim() : '';
+                        window.dispatchEvent(new CustomEvent('open-landing-space-picker', { detail: { spaces: spaces, own_space: own || null } }));
                         console.log('[landing-auth] dispatched open-landing-space-picker');
                     } else {
                         headerVue.showSpacePicker = true;
@@ -134,6 +153,7 @@
             showLogin: false,
             showSpacePickerOnly: false,
             spacePickerSpaces: [],
+            spacePickerOwnSpace: '',
             viewport: { w: 0, h: 0 },
             afterSuccess: null,
             spaces: [],
@@ -147,8 +167,11 @@
             window.addEventListener('open-landing-login', function() { self.openLogin(); });
             window.addEventListener('open-landing-space-picker', function(e) {
                 var list = (e.detail && e.detail.spaces && Array.isArray(e.detail.spaces)) ? e.detail.spaces : [];
+                var ownRaw = e.detail && e.detail.own_space;
+                var own = (ownRaw != null && ownRaw !== undefined) ? String(ownRaw).trim() : '';
                 self._setViewport();
                 self.spacePickerSpaces = list;
+                self.spacePickerOwnSpace = own;
                 self.showSpacePickerOnly = true;
                 document.body.style.overflow = 'hidden';
             });
@@ -174,6 +197,7 @@
             closeSpacePickerOnly: function() {
                 this.showSpacePickerOnly = false;
                 this.spacePickerSpaces = [];
+                this.spacePickerOwnSpace = '';
                 document.body.style.overflow = '';
             },
             _setViewport: function() {
@@ -185,12 +209,15 @@
                 try { localStorage.setItem(key, payload.token); } catch (e) {}
                 this.token = payload.token || '';
                 this.spaces = payload.spaces || [];
-                console.log('[landing-auth] afterSuccess will be:', this.spaces.length > 0 ? 'choose' : 'init', 'spaces:', this.spaces);
-                if (this.spaces.length > 0) {
+                var own = (payload.own_space != null && payload.own_space !== undefined) ? String(payload.own_space).trim() : '';
+                if (own) {
                     this.afterSuccess = 'choose';
+                } else if (this.spaces.length > 0) {
+                    this.afterSuccess = 'choose_and_init';
                 } else {
                     this.afterSuccess = 'init';
                 }
+                console.log('[landing-auth] afterSuccess:', this.afterSuccess, 'spaces:', this.spaces, 'own_space:', own || '(none)');
             },
             goToSpace: function(space) {
                 if (!space) return;
@@ -289,6 +316,15 @@
             '    <div class="space-y-2">' +
             '      <button v-for="s in spacePickerSpaces" :key="s" type="button" @click="goToSpace(s)" class="w-full px-4 py-2.5 bg-amber-500 text-white rounded-lg text-[13px] font-semibold hover:bg-amber-600">[[ s ]]</button>' +
             '    </div>' +
+            '    <template v-if="!spacePickerOwnSpace && spacePickerSpaces.length">' +
+            '      <p class="text-xs text-white/50 mt-5 mb-2">[[ $t(\'main.space.member_create_hint\') ]]</p>' +
+            '      <p class="text-sm text-white/80 mb-2">[[ $t(\'main.space.create_own_section\') ]]</p>' +
+            '      <div class="space-y-3">' +
+            '        <input v-model="initNickname" type="text" :placeholder="$t(\'main.space.nickname_placeholder\')" maxlength="100" class="w-full px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white placeholder-white/50 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />' +
+            '        <p v-if="initError" class="text-red-400 text-xs">[[ initError ]]</p>' +
+            '        <button type="button" :disabled="initLoading" @click="submitInit" class="w-full px-4 py-2.5 bg-amber-500 text-white rounded-lg text-[13px] font-semibold hover:bg-amber-600 disabled:opacity-50">[[ initLoading ? $t(\'main.space.init_creating\') : $t(\'main.space.init_submit\') ]]</button>' +
+            '      </div>' +
+            '    </template>' +
             '  </div>' +
             '</div>' +
             '<div v-if="showLogin" :style="overlayStyle()" @click.self="closeLogin" role="dialog" aria-modal="true">' +
@@ -302,6 +338,19 @@
             '      <p class="text-sm text-white/80 mb-3">[[ $t(\'main.space.choose_space\') ]]</p>' +
             '      <div class="space-y-2">' +
             '        <button v-for="s in spaces" :key="s" type="button" @click="goToSpace(s)" class="w-full px-4 py-2.5 bg-amber-500 text-white rounded-lg text-[13px] font-semibold hover:bg-amber-600">[[ s ]]</button>' +
+            '      </div>' +
+            '    </template>' +
+            '    <template v-else-if="afterSuccess === \'choose_and_init\'">' +
+            '      <p class="text-sm text-white/80 mb-3">[[ $t(\'main.space.choose_space\') ]]</p>' +
+            '      <div class="space-y-2 mb-5">' +
+            '        <button v-for="s in spaces" :key="s" type="button" @click="goToSpace(s)" class="w-full px-4 py-2.5 bg-amber-500 text-white rounded-lg text-[13px] font-semibold hover:bg-amber-600">[[ s ]]</button>' +
+            '      </div>' +
+            '      <p class="text-xs text-white/50 mb-2">[[ $t(\'main.space.member_create_hint\') ]]</p>' +
+            '      <p class="text-sm text-white/80 mb-2">[[ $t(\'main.space.create_own_section\') ]]</p>' +
+            '      <div class="space-y-3">' +
+            '        <input v-model="initNickname" type="text" :placeholder="$t(\'main.space.nickname_placeholder\')" maxlength="100" class="w-full px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white placeholder-white/50 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500" />' +
+            '        <p v-if="initError" class="text-red-400 text-xs">[[ initError ]]</p>' +
+            '        <button type="button" :disabled="initLoading" @click="submitInit" class="w-full px-4 py-2.5 bg-amber-500 text-white rounded-lg text-[13px] font-semibold hover:bg-amber-600 disabled:opacity-50">[[ initLoading ? $t(\'main.space.init_creating\') : $t(\'main.space.init_submit\') ]]</button>' +
             '      </div>' +
             '    </template>' +
             '    <template v-else-if="afterSuccess === \'init\'">' +

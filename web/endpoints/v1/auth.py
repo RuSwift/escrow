@@ -152,10 +152,17 @@ async def verify_tron_signature(
             detail="Invalid signature",
         )
     spaces = await wallet_service.get_spaces_for_address(wallet_address, "tron")
+    main_user = await wallet_service.get_by_wallet_address(wallet_address)
+    own_space = main_user.nickname if main_user else None
     token = tron_auth.generate_jwt_token(wallet_address)
     host = (request.base_url.hostname or "").lower()
     secure = host not in ("localhost", "127.0.0.1")
-    content = {"token": token, "wallet_address": wallet_address, "spaces": spaces}
+    content = {
+        "token": token,
+        "wallet_address": wallet_address,
+        "spaces": spaces,
+        "own_space": own_space,
+    }
     response = JSONResponse(content=content)
     response.set_cookie(
         key=MAIN_AUTH_TOKEN_COOKIE,  # from dependencies
@@ -184,15 +191,14 @@ async def init_tron_user(
     wallet_service: WalletUserServiceDep,
 ):
     """
-    Инициация нового WalletUser при пустых spaces: создаёт запись с DID = did:tron:{nickname}.
-    Требует валидный JWT (после verify). Клиент сохраняет токен и переходит в /{space}.
+    Инициация нового WalletUser (свой space), если для адреса ещё нет строки владельца.
+    Участие в чужих space как субаккаунт не мешает: блокируем только при существующем WalletUser с этим wallet_address.
     """
     wallet_address = current_user.wallet_address
-    spaces = await wallet_service.get_spaces_for_address(wallet_address, "tron")
-    if spaces:
+    if await wallet_service.get_by_wallet_address(wallet_address):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Wallet already has spaces; choose one instead of init",
+            detail="Wallet already has its own space; choose it instead of init",
         )
     nickname = request.nickname.strip()
     try:
@@ -280,14 +286,18 @@ async def get_current_tron_user_info(
     x_space: str | None = Header(default=None, alias="X-Space"),
 ):
     """Информация о текущем TRON-пользователе. Опционально X-Space: возвращает spaces и space_nickname."""
-    spaces = await wallet_service.get_spaces_for_address(current_user.wallet_address, "tron")
+    wallet_address = current_user.wallet_address
+    spaces = await wallet_service.get_spaces_for_address(wallet_address, "tron")
+    main_user = await wallet_service.get_by_wallet_address(wallet_address)
+    own_space = main_user.nickname if main_user else None
     space_nickname = None
     if x_space and (x_space.strip() in spaces):
         space_nickname = x_space.strip()
     return UserInfo(
         standard=current_user.standard,
-        wallet_address=current_user.wallet_address,
+        wallet_address=wallet_address,
         did=current_user.did,
         space_nickname=space_nickname,
         spaces=spaces,
+        own_space=own_space,
     )

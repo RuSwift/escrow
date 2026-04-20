@@ -1,5 +1,5 @@
 /**
- * Публичная страница /simple: Vue 2 (UDM).
+ * Публичная страница /arbiter/{arbiter_space_did}: Vue 2 (UDM).
  */
 (function() {
     var el = document.getElementById('simple-root');
@@ -226,7 +226,7 @@
                 activeSpace: '',
                 navSteps: (function initialNavSteps() {
                     var du = (el.getAttribute('data-simple-deal-uid') || '').trim();
-                    /* /simple/deal/{uid}: до resolve показываем активным этап «Условия», не Lockbox */
+                    /* /arbiter/.../deal/{uid}: до resolve показываем активным этап «Условия», не Lockbox */
                     var s1 = du ? 'active' : 'done';
                     var s2 = du ? 'pending' : 'active';
                     return [
@@ -238,6 +238,7 @@
                 })(),
                 orderId: (el.getAttribute('data-simple-order-id') || '').trim(),
                 dealUid: (el.getAttribute('data-simple-deal-uid') || '').trim(),
+                arbiterSpaceDid: (el.getAttribute('data-simple-arbiter-space-did') || '').trim(),
                 resolveLoading: false,
                 resolveError: false,
                 resolveErrorMsg: '',
@@ -438,9 +439,17 @@
                 }
                 return t('main.simple.chrome_title_list', { app_name: this.appName });
             },
-            /** Страница /simple/deal/{uid}: данные resolve загружены и можно рисовать блоки. */
+            /** Страница /arbiter/.../deal/{uid}: данные resolve загружены и можно рисовать блоки. */
             dealViewShowResolved: function() {
                 return !!(this.dealUid && !this.resolveLoading && !this.resolveError && this.resolveKind);
+            },
+            /** Заявка снята с публикации (деактивирована владельцем). */
+            dealPrDeactivated: function() {
+                return !!(
+                    this.resolveKind === 'payment_request_only' &&
+                    this.resolvePaymentRequest &&
+                    this.resolvePaymentRequest.deactivated_at
+                );
             },
             unifiedAssetOptions: function() {
                 return buildUnifiedAssetOptions();
@@ -493,6 +502,13 @@
                     var short = u.length > 18 ? u.slice(0, 10) + '…' + u.slice(-6) : u;
                     return t('main.simple.deal_uid_footer', { uid: short });
                 }
+                if (
+                    this.resolveKind === 'payment_request_only' &&
+                    this.resolvePaymentRequest &&
+                    this.resolvePaymentRequest.deactivated_at
+                ) {
+                    return t('main.simple.deal_escrow_deactivated_footer');
+                }
                 if (this.resolveKind === 'payment_request_only') {
                     return t('main.simple.deal_escrow_pending_footer');
                 }
@@ -503,7 +519,9 @@
             },
             ordersListHref: function() {
                 if (!this.isDealView) return '';
-                return '/simple';
+                var a = (this.arbiterSpaceDid || '').trim();
+                if (!a) return '/arbiter';
+                return '/arbiter/' + encodeURIComponent(a);
             },
             activeNavStep: function() {
                 var steps = this.navSteps;
@@ -540,6 +558,18 @@
         },
         methods: {
             t: t,
+            /** База HTML-путей: /arbiter/{encodeURIComponent(arbiter_space_did)} */
+            simpleHtmlBase: function() {
+                var a = (this.arbiterSpaceDid || '').trim();
+                if (!a) return '/arbiter';
+                return '/arbiter/' + encodeURIComponent(a);
+            },
+            /** Префикс JSON API: /v1/arbiter/{encodeURIComponent(arbiter_space_did)}/ */
+            simpleV1Prefix: function() {
+                var a = (this.arbiterSpaceDid || '').trim();
+                if (!a) return '/v1/arbiter/';
+                return '/v1/arbiter/' + encodeURIComponent(a) + '/';
+            },
             maybeFetchOrders: function() {
                 if (this.isDealView || !this.authReady || this.showAuthModal) return;
                 this.ordersPage = 1;
@@ -581,7 +611,7 @@
                 var tok = getToken();
                 var headers = { Accept: 'application/json' };
                 if (tok) headers.Authorization = 'Bearer ' + tok;
-                fetch('/v1/simple/resolve/' + encodeURIComponent(self.dealUid), {
+                fetch(self.simpleV1Prefix() + 'resolve/' + encodeURIComponent(self.dealUid), {
                     method: 'GET',
                     headers: headers,
                     credentials: 'same-origin'
@@ -748,7 +778,7 @@
                 params.set('page_size', String(self.ordersPageSize));
                 var q = (self.ordersSearch || '').trim();
                 if (q) params.set('q', q);
-                var url = '/v1/simple/payment-requests?' + params.toString();
+                var url = self.simpleV1Prefix() + 'payment-requests?' + params.toString();
                 var headers = { Accept: 'application/json' };
                 var tok = getToken();
                 if (tok) headers.Authorization = 'Bearer ' + tok;
@@ -963,7 +993,7 @@
                 var headers = { 'Content-Type': 'application/json', Accept: 'application/json' };
                 if (tok) headers.Authorization = 'Bearer ' + tok;
                 fetch(
-                    '/v1/simple/payment-requests/' + encodeURIComponent(String(pk)) + '/deactivate',
+                    self.simpleV1Prefix() + 'payment-requests/' + encodeURIComponent(String(pk)) + '/deactivate',
                     {
                         method: 'POST',
                         headers: headers,
@@ -1187,7 +1217,7 @@
                 var tok = getToken();
                 var headers = { Accept: 'application/json', 'Content-Type': 'application/json' };
                 if (tok) headers.Authorization = 'Bearer ' + tok;
-                fetch('/v1/simple/payment-requests', {
+                fetch(self.simpleV1Prefix() + 'payment-requests', {
                     method: 'POST',
                     headers: headers,
                     credentials: 'same-origin',
@@ -1381,7 +1411,7 @@
           <div v-if="!ordersLoading && !ordersItems.length" class="simple-page__list-msg">{{ t(\'main.simple.deals_empty\') }}</div>\
           <div v-if="!ordersLoading && ordersItems.length" class="simple-page__order-list" role="list">\
             <div v-for="req in ordersItems" :key="req.uid" class="simple-page__order-card" :class="{ \'simple-page__order-card--deactivated\': req.deactivated_at }" role="listitem">\
-              <a class="simple-page__order-card-hit" :href="\'/simple/deal/\' + encodeURIComponent(String(req.uid))">\
+              <a class="simple-page__order-card-hit" :href="simpleHtmlBase() + \'/deal/\' + encodeURIComponent(String(req.public_ref || req.uid))">\
                 <div class="simple-page__order-card-main">\
                   <div class="simple-page__order-titles">\
                     <span class="simple-page__order-list-title">{{ orderListTitle(req) }}</span>\
@@ -1478,6 +1508,8 @@
           </div>\
           <div v-else-if="dealUid && resolveError" class="simple-page__list-msg simple-page__list-msg--err">{{ resolveErrorMsg || t(\'main.simple.resolve_error\') }}</div>\
           <template v-else-if="dealViewShowResolved && resolveKind === \'payment_request_only\'">\
+            <div class="simple-page__pr-view" :class="{ \'simple-page__pr-view--deactivated\': dealPrDeactivated }">\
+            <div v-if="dealPrDeactivated" class="simple-page__pr-deactivated-banner" role="status">{{ t(\'main.simple.pr_deactivated_banner\') }}</div>\
             <div class="simple-page__stat-rail" role="region" :aria-label="t(\'main.simple.stat_carousel_aria\')">\
             <div class="simple-page__stat-card simple-page__stat-card--rail">\
               <div class="simple-page__stat-label">{{ t(\'main.simple.stat_amount_short\') }}</div>\
@@ -1530,7 +1562,7 @@
               <div class="simple-page__flow-body">\
                 <div class="simple-page__flow-title-row">\
                   <span class="simple-page__flow-title">{{ t(\'main.simple.deal_flow_offer_title\') }}</span>\
-                  <span v-if="resolvePaymentRequest && resolvePaymentRequest.expires_at" class="simple-page__flow-deadline" role="status" :aria-label="t(\'main.simple.deal_flow_deadline_aria\')">\
+                  <span v-if="resolvePaymentRequest && resolvePaymentRequest.expires_at && !resolvePaymentRequest.deactivated_at" class="simple-page__flow-deadline" role="status" :aria-label="t(\'main.simple.deal_flow_deadline_aria\')">\
                     <svg class="simple-page__ico-clock simple-page__ico-clock--flow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\
                       <circle cx="12" cy="12" r="10" stroke-linecap="round"/>\
                       <path stroke-linecap="round" stroke-linejoin="round" d="M12 7v5l4 2"/>\
@@ -1540,22 +1572,25 @@
                 </div>\
                 <div class="simple-page__flow-mono">{{ orderAmountsLine(resolvePaymentRequest) }}</div>\
               </div>\
-              <div class="simple-page__flow-status">{{ t(\'main.simple.request_status_terms\') }}</div>\
+              <div class="simple-page__flow-status" :class="{ \'simple-page__flow-status--deactivated\': dealPrDeactivated }">{{ dealPrDeactivated ? t(\'main.simple.request_status_deactivated\') : t(\'main.simple.request_status_terms\') }}</div>\
             </div>\
-            <div class="simple-page__lockbox">\
+            <div class="simple-page__lockbox" :class="{ \'simple-page__lockbox--deactivated\': dealPrDeactivated }">\
               <div class="simple-page__lockbox-tag">{{ t(\'main.simple.lockbox_title\') }}</div>\
               <div class="simple-page__lockbox-head">\
                 <svg class="simple-page__svg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>\
                 <span class="simple-page__lockbox-brand">{{ t(\'main.simple.lockbox_subtitle\') }}</span>\
               </div>\
-              <div class="simple-page__flow-mono" style="margin-bottom:1rem">{{ t(\'main.simple.lockbox_pending_help\') }}</div>\
+              <div class="simple-page__flow-mono" style="margin-bottom:1rem">{{ dealPrDeactivated ? t(\'main.simple.lockbox_pending_help_deactivated\') : t(\'main.simple.lockbox_pending_help\') }}</div>\
               <div class="simple-page__lockbox-inner">\
                 <svg class="simple-page__svg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>\
                 {{ dealLockboxHintFromPr(resolvePaymentRequest) || t(\'main.simple.lockbox_inner_placeholder\') }}\
               </div>\
-              <div class="simple-page__lockbox-pending-foot" role="status">\
+              <div v-if="!dealPrDeactivated" class="simple-page__lockbox-pending-foot" role="status">\
                 <div class="simple-page__lockbox-spinner" aria-hidden="true"></div>\
                 <p class="simple-page__lockbox-pending-text">{{ t(\'main.simple.lockbox_terms_pending_detail\') }}</p>\
+              </div>\
+              <div v-else class="simple-page__lockbox-deactivated-foot" role="status">\
+                <p class="simple-page__lockbox-deactivated-text">{{ t(\'main.simple.pr_deactivated_lockbox_note\') }}</p>\
               </div>\
             </div>\
             <div class="simple-page__recipient-wrap">\
@@ -1570,6 +1605,7 @@
               </div>\
             </div>\
           </div>\
+            </div>\
           </template>\
           <template v-else-if="dealViewShowResolved && resolveKind === \'deal_only\'">\
           <div class="simple-page__stat-rail" role="region" :aria-label="t(\'main.simple.stat_carousel_aria\')">\

@@ -1,16 +1,18 @@
-"""Simple UI: JSON API без {space} в path — space из JWT/cookie."""
+"""Simple UI: JSON API с контекстом арбитра в path: /v1/arbiter/{arbiter_space_did}/..."""
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
 
 from core.exceptions import SpacePermissionDenied
+from services.arbiter_path import ArbiterPathResolveService
 from services.payment_request import PaymentRequestService
 from services.simple_resolve import ResolvedDeal, ResolvedPaymentRequest, SimpleResolveService
 from web.endpoints.dependencies import (
     CurrentWalletUser,
+    get_arbiter_path_resolve_service,
     get_payment_request_service,
     get_simple_resolve_service,
 )
@@ -24,17 +26,35 @@ from web.endpoints.v1.schemas.payment_requests import (
 )
 from web.endpoints.v1.schemas.simple_resolve import SimpleDealOut, SimpleResolveResponse
 
-router = APIRouter(prefix="/simple", tags=["simple"])
+router = APIRouter(prefix="/arbiter/{arbiter_space_did}", tags=["simple"])
+
+
+async def get_resolved_arbiter_did(
+    arbiter_space_did: str,
+    resolver: ArbiterPathResolveService = Depends(get_arbiter_path_resolve_service),
+) -> str:
+    did = await resolver.to_arbiter_did(arbiter_space_did)
+    if not did:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Арбитр не найден",
+        )
+    return did
+
+
+ResolvedArbiterDid = Annotated[str, Depends(get_resolved_arbiter_did)]
 
 
 @router.get("/resolve/{public_uid}", response_model=SimpleResolveResponse)
 async def resolve_simple_context(
+    arbiter_did: ResolvedArbiterDid,
     _user: CurrentWalletUser,
     public_uid: str,
     svc: SimpleResolveService = Depends(get_simple_resolve_service),
 ):
-    """Контекст для /simple/deal/{uid}: сначала PaymentRequest, иначе Deal по uid."""
-    result = await svc.resolve_public_uid(public_uid)
+    """Контекст для /arbiter/{arbiter}/deal/{segment}: PaymentRequest по uid или public_ref, иначе Deal по uid."""
+    arb = arbiter_did
+    result = await svc.resolve_public_uid(public_uid, arbiter_space_did=arb)
     if result is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -58,18 +78,20 @@ async def resolve_simple_context(
 
 @router.get("/payment-requests", response_model=PaymentRequestListResponse)
 async def list_payment_requests(
+    arbiter_did: ResolvedArbiterDid,
     user: CurrentWalletUser,
     svc: PaymentRequestService = Depends(get_payment_request_service),
     page: int = Query(1, ge=1),
     page_size: int = Query(10, ge=1, le=100),
     q: Optional[str] = Query(None, max_length=512),
 ):
-    """Список заявок PaymentRequest для текущего кошелька."""
+    """Список заявок PaymentRequest для текущего кошелька в контексте арбитра."""
     try:
         rows, total = await svc.list_payment_requests(
             wallet_address=user.wallet_address,
             owner_did=user.did,
             standard=user.standard,
+            arbiter_did=arbiter_did,
             page=page,
             page_size=page_size,
             q=q,
@@ -99,16 +121,18 @@ async def list_payment_requests(
     status_code=status.HTTP_201_CREATED,
 )
 async def create_payment_request(
+    arbiter_did: ResolvedArbiterDid,
     user: CurrentWalletUser,
     body: PaymentRequestCreateBody,
     svc: PaymentRequestService = Depends(get_payment_request_service),
 ):
-    """Создать заявку fiat↔stable (без записи в deal)."""
+    """Создать заявку fiat↔stable (без записи в deal); arbiter_did из path."""
     try:
         row, space_nickname = await svc.create_payment_request(
             wallet_address=user.wallet_address,
             owner_did=user.did,
             standard=user.standard,
+            arbiter_did=arbiter_did,
             direction=body.direction,
             primary_leg=body.primary_leg.model_dump(),
             counter_leg=body.counter_leg.model_dump(),
@@ -138,6 +162,7 @@ async def create_payment_request(
     response_model=PaymentRequestDeactivateResponse,
 )
 async def deactivate_payment_request(
+    arbiter_did: ResolvedArbiterDid,
     user: CurrentWalletUser,
     body: PaymentRequestDeactivateBody,
     svc: PaymentRequestService = Depends(get_payment_request_service),
@@ -149,6 +174,7 @@ async def deactivate_payment_request(
             wallet_address=user.wallet_address,
             owner_did=user.did,
             standard=user.standard,
+            arbiter_did=arbiter_did,
             pk=pk,
             confirm_pk=body.confirm_pk,
         )

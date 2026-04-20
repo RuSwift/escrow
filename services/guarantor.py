@@ -9,9 +9,11 @@ from decimal import Decimal
 from typing import Any, List, Optional
 
 from redis.asyncio import Redis
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.exceptions import GuarantorDirectionValidationError
+from core.guarantor_slug import normalize_arbiter_public_slug
 from core.iso4217_fiat import iso4217_active_fiat_only
 from db.models import GuarantorDirection, GuarantorProfile
 from repos.bestchange import BestchangeYamlRepository, CurrencyRow
@@ -248,17 +250,35 @@ class GuarantorService:
         *,
         commission_percent: Any = ...,
         conditions_text: Any = ...,
+        arbiter_public_slug: Any = ...,
     ) -> GuarantorProfile:
         owner_id = await self._space._ensure_owner_and_owner_id(space, actor_wallet_address)
         if commission_percent is not ...:
             _validate_commission(commission_percent)
-        row = await self._repo.upsert_profile(
-            owner_id,
-            space,
-            commission_percent=commission_percent,
-            conditions_text=conditions_text,
-        )
-        await self._session.commit()
+        sp = (space or "").strip()
+        arb_kw: Any = ...
+        if arbiter_public_slug is not ...:
+            if arbiter_public_slug is None or (
+                isinstance(arbiter_public_slug, str) and not arbiter_public_slug.strip()
+            ):
+                arb_kw = None
+            else:
+                arb_kw = normalize_arbiter_public_slug(str(arbiter_public_slug))
+            other = await self._repo.get_profile_by_arbiter_public_slug(arb_kw) if arb_kw else None
+            if other is not None and (other.wallet_user_id != owner_id or other.space != sp):
+                raise ValueError("This nickname is already taken")
+        try:
+            row = await self._repo.upsert_profile(
+                owner_id,
+                space,
+                commission_percent=commission_percent,
+                conditions_text=conditions_text,
+                arbiter_public_slug=arb_kw,
+            )
+            await self._session.commit()
+        except IntegrityError:
+            await self._session.rollback()
+            raise ValueError("This nickname is already taken") from None
         await self._session.refresh(row)
         return row
 
