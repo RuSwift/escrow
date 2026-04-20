@@ -1122,6 +1122,25 @@
   line-height: 1.2;
 }
 
+/* Ось курса (напр. «USDT за 1 CNY»): без ALL CAPS, чуть плотнее переносы */
+.simple-page__stat-card--rate-axis .simple-page__stat-label {
+  text-transform: none;
+  letter-spacing: 0.04em;
+  font-weight: 600;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.simple-page__stat-rail .simple-page__stat-card--rate-axis .simple-page__stat-label {
+  font-size: 6px;
+  line-height: 1.15;
+  max-height: 2.55em;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 .simple-page__stat-rail .simple-page__stat-value {
   font-size: 10px;
   line-height: 1.25;

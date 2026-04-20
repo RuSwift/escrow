@@ -714,6 +714,8 @@
   "main.simple.stat_pledge": "Pledge",
   "main.simple.stat_pledge_short": "Pledge",
   "main.simple.stat_rate_short": "Rate",
+  "main.simple.stat_rate_label_fiat_to_stable": "{stable} per 1 {fiat}",
+  "main.simple.stat_rate_label_stable_to_fiat": "{fiat} per 1 {stable}",
   "main.simple.stat_network_short": "Net",
   "main.simple.stat_carousel_aria": "Deal summary, swipe sideways",
   "main.simple.stages_expand_aria": "Show all deal steps",

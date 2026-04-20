@@ -714,6 +714,8 @@
   "main.simple.stat_pledge": "Залог",
   "main.simple.stat_pledge_short": "Залог",
   "main.simple.stat_rate_short": "Курс",
+  "main.simple.stat_rate_label_fiat_to_stable": "{stable} за 1 {fiat}",
+  "main.simple.stat_rate_label_stable_to_fiat": "{fiat} за 1 {stable}",
   "main.simple.stat_network_short": "Сеть",
   "main.simple.stat_carousel_aria": "Краткие показатели, листайте вбок",
   "main.simple.stages_expand_aria": "Показать все этапы сделки",

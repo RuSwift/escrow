@@ -190,6 +190,29 @@
         return null;
     }
 
+    /**
+     * Курс из заявки: raw = counter_amt / primary_amt.
+     * Если raw < 1 — показываем обратный 1/raw и меняем ось подписи (см. dealViewStatRateLabel).
+     */
+    function paymentRequestDisplayRateMeta(pr) {
+        if (!pr) return null;
+        var pl = pr.primary_leg || {};
+        var cl = pr.counter_leg || {};
+        var pa = pl.amount != null ? parseFloat(sanitizeDecimalAmountInput(String(pl.amount))) : NaN;
+        var ca = cl.amount != null ? parseFloat(sanitizeDecimalAmountInput(String(cl.amount))) : NaN;
+        if (!isFinite(pa) || !isFinite(ca) || pa <= 0) return null;
+        var raw = ca / pa;
+        if (!isFinite(raw) || raw <= 0) return null;
+        var inverted = raw < 1;
+        var display = inverted ? 1 / raw : raw;
+        var fiatLeg = prLegForAsset(pr, true);
+        var stableLeg = prLegForAsset(pr, false);
+        var fiat = fiatLeg && fiatLeg.code ? String(fiatLeg.code).trim().toUpperCase() : '';
+        var st = stableLeg && stableLeg.code ? String(stableLeg.code).trim().toUpperCase() : '';
+        var d = String(pr.direction || '');
+        return { raw: raw, display: display, inverted: inverted, fiat: fiat, st: st, d: d };
+    }
+
     function formatPaymentRequestLegLine(leg, allowDiscussed) {
         if (!leg) return '—';
         var amt = leg.amount != null ? String(leg.amount).trim() : '';
@@ -719,14 +742,35 @@
             },
             dealViewStatRate: function() {
                 if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) return '—';
-                var pr = this.resolvePaymentRequest;
-                var pl = pr.primary_leg || {};
-                var cl = pr.counter_leg || {};
-                var pa = pl.amount != null ? parseFloat(sanitizeDecimalAmountInput(String(pl.amount))) : NaN;
-                var ca = cl.amount != null ? parseFloat(sanitizeDecimalAmountInput(String(cl.amount))) : NaN;
-                if (!isFinite(pa) || !isFinite(ca) || pa <= 0) return '—';
-                var r = ca / pa;
-                return r.toFixed(4);
+                var m = paymentRequestDisplayRateMeta(this.resolvePaymentRequest);
+                if (!m) return '—';
+                return m.display.toFixed(4);
+            },
+            /**
+             * Подпись к числу курса: ось совпадает с отображаемым значением
+             * (при raw < 1 — обратный курс и переставленная ось через те же ключи i18n).
+             */
+            dealViewStatRateLabel: function() {
+                if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) {
+                    return t('main.simple.stat_rate');
+                }
+                var m = paymentRequestDisplayRateMeta(this.resolvePaymentRequest);
+                if (!m) return t('main.simple.stat_rate');
+                var fiat = m.fiat;
+                var st = m.st;
+                var d = m.d;
+                var inv = m.inverted;
+                if (d === 'fiat_to_stable' && fiat && st) {
+                    return inv
+                        ? t('main.simple.stat_rate_label_stable_to_fiat', { stable: st, fiat: fiat })
+                        : t('main.simple.stat_rate_label_fiat_to_stable', { stable: st, fiat: fiat });
+                }
+                if (d === 'stable_to_fiat' && fiat && st) {
+                    return inv
+                        ? t('main.simple.stat_rate_label_fiat_to_stable', { stable: st, fiat: fiat })
+                        : t('main.simple.stat_rate_label_stable_to_fiat', { stable: st, fiat: fiat });
+                }
+                return t('main.simple.stat_rate');
             },
             dealViewDealAmountLine: function() {
                 if (this.resolveKind !== 'deal_only' || !this.resolveDeal) return '—';
@@ -1519,8 +1563,8 @@
               <div class="simple-page__stat-label">{{ t(\'main.simple.stat_pledge_short\') }}</div>\
               <div class="simple-page__stat-value">{{ dealViewStatStableAmount() }}</div>\
             </div>\
-            <div class="simple-page__stat-card simple-page__stat-card--rail">\
-              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_rate_short\') }}</div>\
+            <div class="simple-page__stat-card simple-page__stat-card--rail simple-page__stat-card--rate-axis">\
+              <div class="simple-page__stat-label">{{ dealViewStatRateLabel() }}</div>\
               <div class="simple-page__stat-value">{{ dealViewStatRate() }}</div>\
             </div>\
             <div class="simple-page__stat-card simple-page__stat-card--rail">\
@@ -1541,8 +1585,8 @@
               <div class="simple-page__stat-label">{{ t(\'main.simple.stat_pledge\') }}</div>\
               <div class="simple-page__stat-value">{{ dealViewStatStableAmount() }}</div>\
             </div>\
-            <div class="simple-page__stat-card">\
-              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_rate\') }}</div>\
+            <div class="simple-page__stat-card simple-page__stat-card--rate-axis">\
+              <div class="simple-page__stat-label">{{ dealViewStatRateLabel() }}</div>\
               <div class="simple-page__stat-value">{{ dealViewStatRate() }}</div>\
             </div>\
             <div class="simple-page__stat-card">\
