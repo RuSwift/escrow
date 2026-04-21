@@ -2,10 +2,12 @@
 Настройки приложения с использованием pydantic_settings
 """
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import AliasChoices, BaseModel, Field, SecretStr
-from typing import Optional
+from decimal import Decimal
 from pathlib import Path
+from typing import Optional
+
+from pydantic import AliasChoices, BaseModel, Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 # Корень репозитория (settings/__init__.py → parent = settings, parent.parent = repo)
@@ -384,6 +386,43 @@ class CollateralStablecoinSettings(BaseSettings):
     )
 
 
+class CommissionWalletSettings(BaseSettings):
+    """Адреса кошельков и размер комиссии платформы по блокчейнам (tron, ethereum)."""
+
+    model_config = SettingsConfigDict(
+        env_prefix="COMMISSION_WALLET_",
+        case_sensitive=False,
+        env_file=(_REPO_ROOT / ".env", _REPO_ROOT / ".env.local"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    percent: Decimal = Field(
+        default=Decimal("0.2"),
+        ge=Decimal("0"),
+        le=Decimal("100"),
+        description="Размер комиссии платформы в процентах (0–100)",
+    )
+
+    tron: Optional[str] = Field(
+        default=None,
+        description="TRON-адрес для зачисления комиссий (TRC-20 / нативный TRX)",
+    )
+    ethereum: Optional[str] = Field(
+        default=None,
+        description="Ethereum-адрес для зачисления комиссий (ERC-20 и совместимые EVM-сети)",
+    )
+
+    def address_for_blockchain(self, blockchain: str) -> Optional[str]:
+        """Адрес по идентификатору блокчейна, как в WalletUser (tron | ethereum)."""
+        b = (blockchain or "").strip().lower()
+        if b == "tron":
+            return (self.tron or "").strip() or None
+        if b == "ethereum":
+            return (self.ethereum or "").strip() or None
+        return None
+
+
 class Settings(BaseSettings):
     """Основные настройки приложения"""
     
@@ -448,6 +487,12 @@ class Settings(BaseSettings):
     collateral_stablecoin: CollateralStablecoinSettings = Field(
         default_factory=CollateralStablecoinSettings,
         description="Каталог токенов залогового стейблкоина",
+    )
+
+    # Кошельки комиссий платформы по сетям
+    commission_wallet: CommissionWalletSettings = Field(
+        default_factory=CommissionWalletSettings,
+        description="Адреса получения комиссий: tron, ethereum",
     )
     
     # Настройки PEM ключа
@@ -525,4 +570,5 @@ __all__ = [
     "BestChangeSettings",
     "CollateralStablecoinToken",
     "CollateralStablecoinSettings",
+    "CommissionWalletSettings",
 ]
