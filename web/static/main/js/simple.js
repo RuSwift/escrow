@@ -257,6 +257,14 @@
                 showAuthModal: false,
                 authError: '',
                 activeSpace: '',
+                /** Свой nickname (WalletUser владельца кошелька); из GET /v1/auth/tron/me — для скрытия смены ника в чужом space */
+                authOwnSpace: '',
+                /** Никнейм спейса (WalletUser), как в профиле; GET/PUT /v1/profile/tron/me */
+                spaceProfileNickname: '',
+                spaceNicknameEdit: '',
+                showSpaceNicknameModal: false,
+                spaceNicknameSaving: false,
+                spaceNicknameError: '',
                 navSteps: (function initialNavSteps() {
                     var du = (el.getAttribute('data-simple-deal-uid') || '').trim();
                     /* /arbiter/.../deal/{uid}: до resolve показываем активным этап «Условия», не Lockbox */
@@ -442,11 +450,13 @@
                             .then(function() {
                                 clearAuthAndSpace();
                                 self.activeSpace = '';
+                                self.authOwnSpace = '';
                                 self.showAuthModal = true;
                             });
                     }
                     self.activeSpace = target;
                     setSpace(target);
+                    return self.fetchAuthOwnSpace();
                 });
             }).catch(function() {
                 self.showAuthModal = true;
@@ -454,6 +464,7 @@
                 self.authReady = true;
                 self.maybeFetchOrders();
                 self.maybeFetchResolve();
+                self.fetchSpaceProfileNickname();
             });
         },
         computed: {
@@ -462,6 +473,18 @@
                     'simple-page': true,
                     'simple-page--dark': this.theme === 'dark'
                 };
+            },
+            /** Подпись в шапке до загрузки профиля берётся из activeSpace (ensure-space). */
+            titlebarSpaceLabel: function() {
+                var a = (this.spaceProfileNickname || '').trim();
+                if (a) return a;
+                return (this.activeSpace || '').trim();
+            },
+            /** Текущий space — свой (владелец WalletUser с этим nickname), иначе участие как суб и т.п. */
+            simpleSpaceIsOwner: function() {
+                var s = (this.activeSpace || '').trim();
+                var o = (this.authOwnSpace || '').trim();
+                return !!(s && o && s === o);
             },
             isDealView: function() {
                 return !!(this.dealUid || this.orderId);
@@ -642,6 +665,154 @@
         },
         methods: {
             t: t,
+            /** Текст ошибки из тела ответа FastAPI (detail: str | array). */
+            simpleApiErrorMessage: function(data) {
+                if (!data) return '';
+                var d = data.detail;
+                if (typeof d === 'string') return d;
+                if (Array.isArray(d) && d.length) {
+                    return d
+                        .map(function(x) {
+                            return x && x.msg ? String(x.msg) : JSON.stringify(x);
+                        })
+                        .join('; ');
+                }
+                if (data.message) return String(data.message);
+                return '';
+            },
+            fetchAuthOwnSpace: function() {
+                var self = this;
+                var tok = getToken();
+                if (!tok || self.showAuthModal) {
+                    self.authOwnSpace = '';
+                    return Promise.resolve();
+                }
+                var headers = { Accept: 'application/json', Authorization: 'Bearer ' + tok };
+                var xs = (self.activeSpace || '').trim();
+                if (xs) headers['X-Space'] = xs;
+                return fetch('/v1/auth/tron/me', {
+                    method: 'GET',
+                    headers: headers,
+                    credentials: 'same-origin'
+                })
+                    .then(function(r) {
+                        return r.json().then(function(data) {
+                            return { ok: r.ok, data: data };
+                        });
+                    })
+                    .then(function(res) {
+                        if (!res.ok || !res.data) {
+                            self.authOwnSpace = '';
+                            return;
+                        }
+                        var o = res.data.own_space;
+                        self.authOwnSpace = o != null && o !== undefined ? String(o).trim() : '';
+                    })
+                    .catch(function() {
+                        self.authOwnSpace = '';
+                    });
+            },
+            fetchSpaceProfileNickname: function() {
+                var self = this;
+                if (!getToken() || self.showAuthModal) return Promise.resolve();
+                var tok = getToken();
+                var headers = { Accept: 'application/json', Authorization: 'Bearer ' + tok };
+                var xs = (self.activeSpace || '').trim();
+                if (xs) headers['X-Space'] = xs;
+                return fetch('/v1/profile/tron/me', {
+                    method: 'GET',
+                    headers: headers,
+                    credentials: 'same-origin'
+                })
+                    .then(function(r) {
+                        return r.json().then(function(data) {
+                            return { ok: r.ok, data: data };
+                        });
+                    })
+                    .then(function(res) {
+                        if (!res.ok || !res.data) return;
+                        var nick = String(res.data.nickname || '').trim();
+                        if (!nick) return;
+                        self.spaceProfileNickname = nick;
+                        if ((self.activeSpace || '').trim() !== nick) {
+                            self.activeSpace = nick;
+                            setSpace(nick);
+                        }
+                    })
+                    .catch(function() {});
+            },
+            openSpaceNicknameModal: function() {
+                if (!this.simpleSpaceIsOwner) return;
+                if (!getToken() || this.showAuthModal) return;
+                this.spaceNicknameError = '';
+                this.spaceNicknameEdit = (this.spaceProfileNickname || this.activeSpace || '').trim();
+                this.showSpaceNicknameModal = true;
+            },
+            closeSpaceNicknameModal: function() {
+                if (this.spaceNicknameSaving) return;
+                this.showSpaceNicknameModal = false;
+                this.spaceNicknameError = '';
+            },
+            submitSpaceNickname: function() {
+                var self = this;
+                if (!self.simpleSpaceIsOwner) return;
+                if (self.spaceNicknameSaving) return;
+                var raw = String(self.spaceNicknameEdit || '').trim();
+                if (!raw) {
+                    self.spaceNicknameError = t('main.simple.space_nickname_error_empty');
+                    return;
+                }
+                if (raw.length > 100) {
+                    self.spaceNicknameError = t('main.simple.space_nickname_error_length');
+                    return;
+                }
+                if (raw === (self.spaceProfileNickname || '').trim()) {
+                    self.showSpaceNicknameModal = false;
+                    self.spaceNicknameError = '';
+                    return;
+                }
+                var tok = getToken();
+                if (!tok) {
+                    self.showAuthModal = true;
+                    return;
+                }
+                self.spaceNicknameSaving = true;
+                self.spaceNicknameError = '';
+                fetch('/v1/profile/tron/me', {
+                    method: 'PUT',
+                    headers: {
+                        Accept: 'application/json',
+                        'Content-Type': 'application/json',
+                        Authorization: 'Bearer ' + tok
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify({ nickname: raw })
+                })
+                    .then(function(r) {
+                        return r.json().then(function(data) {
+                            return { ok: r.ok, data: data };
+                        });
+                    })
+                    .then(function(res) {
+                        if (!res.ok) {
+                            var msg = self.simpleApiErrorMessage(res.data);
+                            self.spaceNicknameError =
+                                msg || t('main.simple.space_nickname_error_generic');
+                            return;
+                        }
+                        var nick = res.data && res.data.nickname ? String(res.data.nickname).trim() : raw;
+                        self.spaceProfileNickname = nick;
+                        self.activeSpace = nick;
+                        setSpace(nick);
+                        self.showSpaceNicknameModal = false;
+                    })
+                    .catch(function() {
+                        self.spaceNicknameError = t('main.simple.space_nickname_error_generic');
+                    })
+                    .finally(function() {
+                        self.spaceNicknameSaving = false;
+                    });
+            },
             /** База HTML-путей: /arbiter/{encodeURIComponent(arbiter_space_did)} */
             simpleHtmlBase: function() {
                 var a = (this.arbiterSpaceDid || '').trim();
@@ -1587,20 +1758,29 @@
                     self.authError = t('main.simple.auth_error');
                     return;
                 }
-                ensureSpace(token).then(function(res) {
-                    if (!res || res.status !== 200 || !res.data || !res.data.space) {
-                        self.authError = (res && res.data && res.data.detail) ? String(res.data.detail) : t('main.simple.auth_error');
-                        return;
-                    }
-                    var target = String(res.data.space || '').trim();
-                    self.activeSpace = target;
-                    setSpace(target);
-                    self.showAuthModal = false;
-                    self.maybeFetchOrders();
-                    self.maybeFetchResolve();
-                }).catch(function() {
-                    self.authError = t('main.simple.auth_error');
-                });
+                ensureSpace(token)
+                    .then(function(res) {
+                        if (!res || res.status !== 200 || !res.data || !res.data.space) {
+                            self.authError =
+                                res && res.data && res.data.detail
+                                    ? String(res.data.detail)
+                                    : t('main.simple.auth_error');
+                            return Promise.reject(new Error('ensure-space'));
+                        }
+                        var target = String(res.data.space || '').trim();
+                        self.activeSpace = target;
+                        setSpace(target);
+                        return self.fetchAuthOwnSpace();
+                    })
+                    .then(function() {
+                        self.showAuthModal = false;
+                        self.fetchSpaceProfileNickname();
+                        self.maybeFetchOrders();
+                        self.maybeFetchResolve();
+                    })
+                    .catch(function() {
+                        if (!self.authError) self.authError = t('main.simple.auth_error');
+                    });
             },
             navItemClass: function(step) {
                 return {
@@ -1738,8 +1918,45 @@
       </div>\
     </div>\
   </div>\
+  <div v-if="showSpaceNicknameModal" class="simple-deactivate__overlay" @click.self="closeSpaceNicknameModal">\
+    <div class="simple-create__modal simple-deactivate__modal" role="dialog" aria-modal="true" aria-labelledby="simple-space-nick-title" @click.stop>\
+      <h2 id="simple-space-nick-title" class="simple-create__title">{{ t(\'main.simple.space_nickname_modal_title\') }}</h2>\
+      <p class="simple-deactivate__hint">{{ t(\'main.simple.space_nickname_modal_hint\') }}</p>\
+      <label class="simple-create__label" for="simple-space-nick-input">{{ t(\'main.simple.space_nickname_field_label\') }}</label>\
+      <input id="simple-space-nick-input" type="text" class="simple-create__input" v-model.trim="spaceNicknameEdit" maxlength="100" autocomplete="username" />\
+      <div v-if="spaceNicknameError" class="simple-create__err">{{ spaceNicknameError }}</div>\
+      <div class="simple-create__actions">\
+        <button type="button" class="simple-create__btn simple-create__btn--ghost" @click="closeSpaceNicknameModal" :disabled="spaceNicknameSaving">{{ t(\'main.simple.cancel\') }}</button>\
+        <button type="button" class="simple-create__btn simple-create__btn--primary" @click="submitSpaceNickname" :disabled="spaceNicknameSaving">\
+          <span v-if="spaceNicknameSaving" class="simple-create__btn-spinner" aria-hidden="true"></span>\
+          {{ t(\'main.simple.space_nickname_save\') }}\
+        </button>\
+      </div>\
+    </div>\
+  </div>\
   <div class="simple-page__window">\
     <div class="simple-page__titlebar">\
+      <div class="simple-page__titlebar-left">\
+        <div v-if="authReady && !showAuthModal && titlebarSpaceLabel" class="simple-page__titlebar-left-inner">\
+          <span class="simple-page__space-nick-caption">{{ t(\'main.simple.space_nickname_caption\') }}</span>\
+          <button\
+            v-if="simpleSpaceIsOwner"\
+            type="button"\
+            class="simple-page__space-nick-btn"\
+            @click="openSpaceNicknameModal"\
+            :aria-label="t(\'main.simple.space_nickname_rename_aria\')"\
+            :title="t(\'main.simple.space_nickname_rename_aria\')"\
+          >\
+            <span class="simple-page__space-nick-text">{{ titlebarSpaceLabel }}</span>\
+            <svg class="simple-page__space-nick-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\
+              <path stroke-linecap="round" stroke-linejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L7.5 21H3v-4.5L14.732 3.732z"/>\
+            </svg>\
+          </button>\
+          <span v-else class="simple-page__space-nick-static">\
+            <span class="simple-page__space-nick-text">{{ titlebarSpaceLabel }}</span>\
+          </span>\
+        </div>\
+      </div>\
       <div class="simple-page__titlebar-text">{{ chromeTitle }}</div>\
       <div class="simple-page__titlebar-actions">\
         <button type="button" class="simple-page__link-home simple-page__link-home--btn" @click="onLogout">{{ t(\'main.simple.logout\') }}</button>\
