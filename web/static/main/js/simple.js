@@ -187,6 +187,27 @@
         }
     }
 
+    /**
+     * Слот посредника для viewerDid (не system/counterparty).
+     * Несколько посредников — у каждого свой ключ в commissioners; на один did один слот.
+     */
+    function viewerIntermediarySlot(pr, viewerDid) {
+        if (!pr || !pr.commissioners || typeof pr.commissioners !== 'object') return null;
+        var v = (viewerDid || '').trim();
+        if (!v) return null;
+        var keys = Object.keys(pr.commissioners);
+        for (var i = 0; i < keys.length; i++) {
+            var slot = pr.commissioners[keys[i]];
+            if (!slot || typeof slot !== 'object') continue;
+            var role = String(slot.role || '').trim().toLowerCase();
+            if (role === 'system') continue;
+            if (role === 'counterparty') continue;
+            if ((slot.did || '').trim() !== v) continue;
+            return slot;
+        }
+        return null;
+    }
+
     /** Нога заявки: fiat | stable по direction (fiat_to_stable / stable_to_fiat). */
     function prLegForAsset(pr, wantFiat) {
         if (!pr) return null;
@@ -639,6 +660,12 @@
                 var o = pr && (pr.owner_did || '').trim();
                 return !!(v && o && v === o);
             },
+            /** Текущий зритель — один из слотов-посредников (любой ключ кроме system/counterparty). */
+            isCommissionerIntermediary: function() {
+                var v = (this.viewerDid || '').trim();
+                if (!v || this.isPaymentRequestOwner) return false;
+                return !!viewerIntermediarySlot(this.resolvePaymentRequest, v);
+            },
             resellModalSubmitDisabled: function() {
                 return (
                     this.resellSubmitting ||
@@ -898,6 +925,48 @@
                             data.viewer_did !== undefined && data.viewer_did !== null
                                 ? String(data.viewer_did).trim()
                                 : '';
+                        /* После auto-resell API отдаёт commissioner public_ref; синхронизируем URL без перезагрузки. */
+                        var prAuto = data.payment_request;
+                        var ownerDidAuto =
+                            prAuto &&
+                            prAuto.owner_did !== undefined &&
+                            prAuto.owner_did !== null
+                                ? String(prAuto.owner_did).trim()
+                                : '';
+                        var viewDidAuto = self.viewerDid || '';
+                        if (
+                            prAuto &&
+                            data.kind === 'payment_request_only' &&
+                            ownerDidAuto &&
+                            viewDidAuto &&
+                            ownerDidAuto !== viewDidAuto
+                        ) {
+                            var segAuto = String(self.dealUid || '').trim();
+                            var prefAuto = String(prAuto.public_ref || '').trim();
+                            if (
+                                prefAuto &&
+                                segAuto &&
+                                segAuto.toLowerCase() !== prefAuto.toLowerCase()
+                            ) {
+                                self.dealUid = prefAuto;
+                                try {
+                                    if (
+                                        typeof history !== 'undefined' &&
+                                        history.replaceState &&
+                                        typeof window !== 'undefined' &&
+                                        window.location &&
+                                        window.location.origin
+                                    ) {
+                                        var dealUrl =
+                                            String(window.location.origin).trim() +
+                                            self.simpleHtmlBase() +
+                                            '/deal/' +
+                                            encodeURIComponent(prefAuto);
+                                        history.replaceState(null, '', dealUrl);
+                                    }
+                                } catch (eAuto) {}
+                            }
+                        }
                         self.resellBanner = null;
                         self.copyLinkBanner = '';
                         self.showResellCommissionModal = false;
@@ -944,13 +1013,13 @@
                     return '';
                 }
             },
-            /** Текущий % из заявки (слот resell), иначе значение по умолчанию для поля модалки. */
+            /** Текущий % из своего слота посредника, иначе значение по умолчанию для поля модалки. */
             initialResellCommissionPercentForModal: function() {
                 var pr = this.resolvePaymentRequest;
                 if (!pr || !pr.commissioners || typeof pr.commissioners !== 'object') {
                     return '0.5';
                 }
-                var slot = pr.commissioners.resell;
+                var slot = viewerIntermediarySlot(pr, this.viewerDid);
                 if (!slot || typeof slot !== 'object') return '0.5';
                 var c = slot.commission;
                 if (!c || typeof c !== 'object') return '0.5';
@@ -1006,6 +1075,99 @@
                 if (!s) return '';
                 if (localePrefersCommaDecimal()) return s.replace(/\./g, ',');
                 return s;
+            },
+            /** Строка процента посредника для блока «Ваша комиссия». */
+            commissionerCommissionPercentLine: function() {
+                if (!this.isCommissionerIntermediary) return '—';
+                var slot = viewerIntermediarySlot(this.resolvePaymentRequest, this.viewerDid);
+                var c = slot && slot.commission;
+                if (!c || String(c.kind || '').toLowerCase() !== 'percent') return '—';
+                var raw = c.value != null ? String(c.value).trim() : '';
+                if (!raw) return '—';
+                return this.formatPercentForUi(raw) + ' %';
+            },
+            /** Доля комиссии по фиатной ноге (API payment_amount + код фиата). */
+            commissionerCommissionFiatLine: function() {
+                if (!this.isCommissionerIntermediary) return '—';
+                var pr = this.resolvePaymentRequest;
+                var slot = viewerIntermediarySlot(pr, this.viewerDid);
+                var amt =
+                    slot && slot.payment_amount != null
+                        ? String(slot.payment_amount).trim()
+                        : '';
+                var leg = prLegForAsset(pr, true);
+                var code = leg && leg.code ? String(leg.code).trim().toUpperCase() : '';
+                var fmt = amt ? formatAmountForLocale(amt) : '';
+                if (!fmt && !code) return '—';
+                return fmt ? fmt + (code ? ' ' + code : '') : code;
+            },
+            /** Доля комиссии по залогу / базе B (API borrow_amount + код стейбла). */
+            commissionerCommissionStableLine: function() {
+                if (!this.isCommissionerIntermediary) return '—';
+                var pr = this.resolvePaymentRequest;
+                var slot = viewerIntermediarySlot(pr, this.viewerDid);
+                var amt =
+                    slot && slot.borrow_amount != null
+                        ? String(slot.borrow_amount).trim()
+                        : '';
+                var leg = prLegForAsset(pr, false);
+                var code = leg && leg.code ? String(leg.code).trim().toUpperCase() : '';
+                var fmt = amt ? formatAmountForLocale(amt) : '';
+                if (!fmt && !code) return '—';
+                return fmt ? fmt + (code ? ' ' + code : '') : code;
+            },
+            /**
+             * Суффикс к строке сумм «Условия по заявке»: дублирует комиссию посредника в стейбле (+ X USDT).
+             */
+            dealFlowStableCommissionSuffix: function() {
+                if (!this.isCommissionerIntermediary) return '';
+                var s = this.commissionerCommissionStableLine();
+                if (!s || s === '—') return '';
+                return t('main.simple.pr_sum_line_stable_commission_suffix', { amount: s });
+            },
+            /**
+             * Нога со стейблом для эскроу: база + моя комиссия в стейбле (borrow_amount слота).
+             * Только если стейбл на counter (fiat_to_stable) или на primary (stable_to_fiat) и совпадает с ногой из prLegForAsset(..., false).
+             */
+            viewerStableLegEscrowTotalFormatted: function() {
+                if (!this.isCommissionerIntermediary || !this.resolvePaymentRequest) return '';
+                var pr = this.resolvePaymentRequest;
+                var slot = viewerIntermediarySlot(pr, this.viewerDid);
+                var feeRaw =
+                    slot && slot.borrow_amount != null ? String(slot.borrow_amount).trim() : '';
+                if (!feeRaw) return '';
+                var stableLeg = prLegForAsset(pr, false);
+                if (!stableLeg || String(stableLeg.asset_type || '').toLowerCase() !== 'stable') {
+                    return '';
+                }
+                var baseRaw =
+                    stableLeg.amount != null ? String(stableLeg.amount).trim() : '';
+                if (!baseRaw) return '';
+                var ba = parseFloat(sanitizeDecimalAmountInput(baseRaw));
+                var fa = parseFloat(sanitizeDecimalAmountInput(feeRaw));
+                if (!isFinite(ba) || !isFinite(fa)) return '';
+                var sum = ba + fa;
+                var code = stableLeg.code ? String(stableLeg.code).trim().toUpperCase() : '';
+                var sumStr = formatAmountForLocale(String(sum));
+                return sumStr + (code ? ' ' + code : '');
+            },
+            /** «Вторая нога» / залог для посредника: сумма + комиссия (эскроу). */
+            dealViewStatReceiveEscrowTotal: function() {
+                if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) {
+                    return '—';
+                }
+                if (!this.isCommissionerIntermediary) return this.dealViewStatReceive();
+                var extra = this.viewerStableLegEscrowTotalFormatted();
+                return extra || this.dealViewStatReceive();
+            },
+            /** Текст в блоке lockbox: для посредника — стейбл + моя комиссия (как во «второй ноге»). */
+            dealLockboxHintEscrowFromPr: function(req) {
+                if (!req) return '';
+                if (this.isCommissionerIntermediary) {
+                    var esc = this.viewerStableLegEscrowTotalFormatted();
+                    if (esc) return esc;
+                }
+                return this.dealLockboxHintFromPr(req);
             },
             confirmResellCommissionModal: function() {
                 var self = this;
@@ -1071,8 +1233,10 @@
                         self.resellModalError = '';
                         var pr = res.data && res.data.payment_request;
                         var pctDisp = pctStr;
-                        if (pr && pr.commissioners && pr.commissioners.resell && pr.commissioners.resell.commission) {
-                            var v = pr.commissioners.resell.commission.value;
+                        var vmSlot =
+                            pr && self.viewerDid ? viewerIntermediarySlot(pr, self.viewerDid) : null;
+                        if (vmSlot && vmSlot.commission) {
+                            var v = vmSlot.commission.value;
                             if (v !== undefined && v !== null && String(v).trim()) {
                                 pctDisp = String(v).trim();
                             }
@@ -1335,14 +1499,16 @@
                 var ga = gaRaw ? formatAmountForLocale(gaRaw) : '';
                 var ra = raRaw ? formatAmountForLocale(raRaw) : '';
                 var arrow = ' → ';
+                var lbGive = t('main.simple.pr_give_label');
+                var lbRecv = t('main.simple.pr_receive_label');
                 if (this.orderHasReceiveAmount(req)) {
                     var leftInv = ga ? ga + ' ' + gc : (gc || '—');
                     var rightInv = ra ? ra + ' ' + rc : (rc || '—');
-                    return leftInv + arrow + rightInv;
+                    return lbGive + ' ' + leftInv + arrow + lbRecv + ' ' + rightInv;
                 }
                 var leftTerms = ga ? ga + ' ' + gc : (gc || '—');
                 var rightTerms = rc || '—';
-                return leftTerms + arrow + rightTerms;
+                return lbGive + ' ' + leftTerms + arrow + lbRecv + ' ' + rightTerms;
             },
             /** Оставшееся время до expires_at; тикает раз в секунду через countdownTick. */
             formatExpiryCountdown: function(order) {
@@ -2126,6 +2292,23 @@
               <div class="simple-page__stat-sub">TRON</div>\
             </div>\
           </div>\
+          <div v-if="isCommissionerIntermediary" class="simple-page__commissioner-panel" role="region" :aria-label="t(\'main.simple.commission_detail_section_title\')">\
+            <div class="simple-page__commissioner-panel-head">{{ t(\'main.simple.commission_detail_section_title\') }}</div>\
+            <dl class="simple-page__commissioner-rows">\
+              <div class="simple-page__commissioner-row">\
+                <dt class="simple-page__commissioner-dt">{{ t(\'main.simple.commission_detail_rate\') }}</dt>\
+                <dd class="simple-page__commissioner-dd">{{ commissionerCommissionPercentLine() }}</dd>\
+              </div>\
+              <div class="simple-page__commissioner-row">\
+                <dt class="simple-page__commissioner-dt">{{ t(\'main.simple.commission_detail_on_fiat\') }}</dt>\
+                <dd class="simple-page__commissioner-dd">{{ commissionerCommissionFiatLine() }}</dd>\
+              </div>\
+              <div class="simple-page__commissioner-row">\
+                <dt class="simple-page__commissioner-dt">{{ t(\'main.simple.commission_detail_on_pledge\') }}</dt>\
+                <dd class="simple-page__commissioner-dd">{{ commissionerCommissionStableLine() }}</dd>\
+              </div>\
+            </dl>\
+          </div>\
           <div class="simple-page__flow-shell">\
             <div class="simple-page__flow-row" :class="{ \'simple-page__flow-row--pr-split\': dealPrTermsPhase }">\
               <div class="simple-page__flow-icon">\
@@ -2165,7 +2348,7 @@
                   <div v-if="resellBanner" class="simple-page__pr-inline-msg" :class="resellBanner.type === \'error\' ? \'simple-page__pr-inline-msg--err\' : \'\'">{{ resellBanner.text }}</div>\
                   <div v-if="copyLinkBanner" class="simple-page__pr-inline-msg">{{ copyLinkBanner }}</div>\
                 </div>\
-                <div class="simple-page__flow-mono">{{ orderAmountsLine(resolvePaymentRequest) }}</div>\
+                <div class="simple-page__flow-mono simple-page__flow-mono--pr-sum-line">{{ orderAmountsLine(resolvePaymentRequest) }}<template v-if="isCommissionerIntermediary"><span class="simple-page__flow-mono-comm">{{ dealFlowStableCommissionSuffix() }}</span></template></div>\
               </div>\
               <span v-if="dealPrTermsPhase && resolvePaymentRequest && resolvePaymentRequest.expires_at && !resolvePaymentRequest.deactivated_at" class="simple-page__flow-deadline simple-page__flow-deadline--pr-split" role="status" :aria-label="t(\'main.simple.deal_flow_deadline_aria\')">\
                 <svg class="simple-page__ico-clock simple-page__ico-clock--flow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\
@@ -2185,7 +2368,7 @@
               <div class="simple-page__flow-mono" style="margin-bottom:1rem">{{ dealPrDeactivated ? t(\'main.simple.lockbox_pending_help_deactivated\') : t(\'main.simple.lockbox_pending_help\') }}</div>\
               <div class="simple-page__lockbox-inner">\
                 <svg class="simple-page__svg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>\
-                {{ dealLockboxHintFromPr(resolvePaymentRequest) || t(\'main.simple.lockbox_inner_placeholder\') }}\
+                {{ dealLockboxHintEscrowFromPr(resolvePaymentRequest) || t(\'main.simple.lockbox_inner_placeholder\') }}\
               </div>\
               <div v-if="!dealPrDeactivated" class="simple-page__lockbox-pending-foot" role="status">\
                 <div class="simple-page__lockbox-spinner" aria-hidden="true"></div>\
@@ -2202,7 +2385,7 @@
                 </div>\
                 <div class="simple-page__flow-body">\
                   <div class="simple-page__flow-title">{{ t(\'main.simple.counter_leg\') }}</div>\
-                  <div class="simple-page__flow-mono">{{ dealViewStatReceive() }}</div>\
+                  <div class="simple-page__flow-mono">{{ isCommissionerIntermediary ? dealViewStatReceiveEscrowTotal() : dealViewStatReceive() }}</div>\
                 </div>\
               </div>\
             </div>\

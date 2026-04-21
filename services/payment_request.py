@@ -8,14 +8,21 @@ from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
+from pydantic import ValidationError
 from redis.asyncio import Redis
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.short_id import generate_public_ref
 from db.models import PaymentRequest
-from repos.payment_request import PaymentRequestRepository
+from repos.payment_request import PaymentRequestRepository, PaymentRequestResolveSegment
 from services.exchange_wallets import ExchangeWalletService
+from services.payment_request_commission_graph import (
+    build_slot_snapshots,
+    build_slot_snapshots_for_pr,
+    intermediary_slot_keys_for_did,
+    is_intermediary_commission_slot,
+)
 from services.space import SpaceService
 from services.wallet_user import WalletUserService
 from settings import Settings
@@ -23,15 +30,17 @@ from settings import Settings
 logger = logging.getLogger(__name__)
 
 _SIMPLE_PR_UNIQUE_RETRIES = 24
+_ALIAS_UNIQUE_RETRIES = 24
 
 SimpleDirection = Literal["fiat_to_stable", "stable_to_fiat"]
 SimplePaymentLifetime = Literal["24h", "48h", "72h", "forever"]
+
+SYSTEM_SLOT_KEY = "system"
 
 
 class PaymentRequestService:
     """Simple-заявки без space в URL (space из auth); Deal создаётся позже при принятии."""
 
-    RESELL_COMMISSIONER_SLOT_KEY = "resell"
     _RESELL_PCT_MIN = Decimal("0.1")
     _RESELL_PCT_MAX = Decimal("100")
 
@@ -63,6 +72,130 @@ class PaymentRequestService:
             return "ethereum"
         return "tron"
 
+    @staticmethod
+    def _format_percent_decimal(d: Decimal) -> str:
+        q = d.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        t = format(q, "f")
+        if "." in t:
+            t = t.rstrip("0").rstrip(".")
+        return t or "0"
+
+    async def _generate_unique_alias_public_ref(self) -> str:
+        for attempt in range(_ALIAS_UNIQUE_RETRIES):
+            ref = generate_public_ref()
+            exists = await self._requests.alias_public_ref_exists_anywhere(ref.lower())
+            if not exists:
+                return ref
+            if attempt + 1 == _ALIAS_UNIQUE_RETRIES:
+                raise RuntimeError("Could not allocate unique alias_public_ref")
+        raise RuntimeError("Could not allocate unique alias_public_ref")
+
+    async def ensure_commissioner_view(
+        self,
+        row: PaymentRequest,
+        viewer_did: str,
+    ) -> None:
+        """Для не-system слота комиссионера: создать alias_public_ref и снимки при отсутствии."""
+        vd = (viewer_did or "").strip()
+        owner = (row.owner_did or "").strip()
+        if not vd or vd == owner:
+            return
+
+        raw_comm = row.commissioners
+        comm = dict(raw_comm) if isinstance(raw_comm, dict) else {}
+        keys_for_viewer: List[str] = []
+        for sk, slot in comm.items():
+            if not isinstance(slot, dict):
+                continue
+            if (slot.get("did") or "").strip() != vd:
+                continue
+            if str(slot.get("role") or "").strip().lower() == SYSTEM_SLOT_KEY:
+                continue
+            if not is_intermediary_commission_slot(sk, slot):
+                continue
+            keys_for_viewer.append(sk)
+
+        if not keys_for_viewer:
+            return
+
+        changed = False
+        for target_key in sorted(keys_for_viewer):
+            slot_obj = dict(comm[target_key])
+            if (slot_obj.get("alias_public_ref") or "").strip():
+                continue
+
+            alias = await self._generate_unique_alias_public_ref()
+            slot_obj["alias_public_ref"] = alias
+
+            snaps = build_slot_snapshots_for_pr(row, [target_key])
+            if target_key in snaps:
+                slot_obj["payment_amount"] = snaps[target_key]["payment_amount"]
+                slot_obj["borrow_amount"] = snaps[target_key]["borrow_amount"]
+
+            comm[target_key] = slot_obj
+            changed = True
+
+        if not changed:
+            return
+
+        root_ref = str(getattr(row, "public_ref", "") or "")
+        from web.endpoints.v1.schemas.payment_request_commissioners import (
+            CommissionersPayload,
+            validate_commissioners_parent_refs,
+        )
+
+        validate_commissioners_parent_refs(comm, root_public_ref=root_ref)
+        CommissionersPayload.model_validate(comm)
+
+        row.commissioners = comm
+        await self._session.flush()
+        await self._session.refresh(row)
+
+    async def _build_commissioners_for_create(
+        self,
+        *,
+        root_public_ref: str,
+        direction: SimpleDirection,
+        primary_leg: Dict[str, Any],
+        counter_leg: Dict[str, Any],
+        blockchain: str,
+    ) -> Dict[str, Any]:
+        cw = self._settings.commission_wallet
+        addr = (cw.address_for_blockchain(blockchain) or "").strip()
+        if not addr:
+            return {}
+
+        pct_str = self._format_percent_decimal(cw.percent)
+        sys_alias = await self._generate_unique_alias_public_ref()
+        system_slot: Dict[str, Any] = {
+            "did": "system",
+            "role": SYSTEM_SLOT_KEY,
+            "commission": {"kind": "percent", "value": pct_str},
+            "parent_id": root_public_ref,
+            "alias_public_ref": sys_alias,
+            "payout_address": addr,
+        }
+        comm = {SYSTEM_SLOT_KEY: system_slot}
+        snaps = build_slot_snapshots(
+            str(direction),
+            primary_leg,
+            counter_leg,
+            comm,
+            [SYSTEM_SLOT_KEY],
+        )
+        if SYSTEM_SLOT_KEY in snaps:
+            system_slot["payment_amount"] = snaps[SYSTEM_SLOT_KEY]["payment_amount"]
+            system_slot["borrow_amount"] = snaps[SYSTEM_SLOT_KEY]["borrow_amount"]
+
+        from web.endpoints.v1.schemas.payment_request_commissioners import (
+            CommissionersPayload,
+            validate_commissioners_parent_refs,
+        )
+
+        validate_commissioners_parent_refs(comm, root_public_ref=root_public_ref)
+        CommissionersPayload.model_validate(comm)
+        return comm
+
     async def list_payment_requests(
         self,
         *,
@@ -82,13 +215,19 @@ class PaymentRequestService:
             raise ValueError("No space for this wallet")
         space_nick, _ = pair
         await self._space.ensure_owner_or_operator(space_nick, wallet_address)
-        return await self._requests.list_for_owner(
-            owner_did,
+
+        rows, total = await self._requests.list_for_owner_or_commissioner(
+            (owner_did or "").strip(),
             (arbiter_did or "").strip(),
             page=page,
             page_size=page_size,
             q=q,
         )
+        out_rows: List[Tuple[PaymentRequest, str]] = []
+        for r, nick in rows:
+            await self.ensure_commissioner_view(r, owner_did)
+            out_rows.append((r, nick))
+        return out_rows, total
 
     async def deactivate_payment_request(
         self,
@@ -183,6 +322,13 @@ class PaymentRequestService:
         uid = uuid.uuid4().hex
         for attempt in range(_SIMPLE_PR_UNIQUE_RETRIES):
             public_ref = generate_public_ref()
+            commissioners_payload = await self._build_commissioners_for_create(
+                root_public_ref=public_ref,
+                direction=direction,
+                primary_leg=primary_leg,
+                counter_leg=counter_leg,
+                blockchain=bc,
+            )
             try:
                 row = await self._requests.insert(
                     uid=uid,
@@ -196,6 +342,7 @@ class PaymentRequestService:
                     primary_ramp_wallet_id=ramp_wallet_id,
                     heading=heading_val,
                     expires_at=expires_at,
+                    commissioners=commissioners_payload,
                 )
                 await self._session.commit()
                 await self._session.refresh(row)
@@ -290,6 +437,87 @@ class PaymentRequestService:
             t = t.rstrip("0").rstrip(".")
         return t or "0"
 
+    def _resell_parent_ref(self, comm: Dict[str, Any], row_public_ref: str) -> str:
+        sys_slot = comm.get(SYSTEM_SLOT_KEY)
+        if isinstance(sys_slot, dict):
+            alias = (sys_slot.get("alias_public_ref") or "").strip()
+            if alias:
+                return alias
+        return str(row_public_ref)
+
+    def _allocate_new_intermediary_slot_key(self, base: Dict[str, Any]) -> str:
+        for _ in range(64):
+            k = "i_" + uuid.uuid4().hex[:12]
+            if k not in base:
+                return k
+        raise RuntimeError("Could not allocate intermediary slot key")
+
+    def _canonical_parent_ref_for_resell(
+        self,
+        comm: Dict[str, Any],
+        root_public_ref: str,
+        parent_ref_raw: str,
+    ) -> str:
+        """parent_id для слота resell при явном ref из URL (alias слота или column public_ref)."""
+        o = (parent_ref_raw or "").strip()
+        if not o:
+            raise ValueError("commissioners_invalid")
+        ol = o.lower()
+        root = (root_public_ref or "").strip()
+        if root and ol == root.lower():
+            return root
+        for slot in comm.values():
+            if not isinstance(slot, dict):
+                continue
+            alias = (slot.get("alias_public_ref") or "").strip()
+            if alias and alias.lower() == ol:
+                return alias
+        raise ValueError("commissioners_invalid")
+
+    async def maybe_auto_resell_on_resolve(
+        self,
+        row: PaymentRequest,
+        space_nickname: str,
+        viewer_did: str,
+        arbiter_did: str,
+        segment: PaymentRequestResolveSegment,
+    ) -> Tuple[PaymentRequest, str]:
+        """
+        Не-владелец при GET resolve: новый посредник получает слот i_<…>; уже есть слот — только ensure alias.
+        """
+        vd = (viewer_did or "").strip()
+        owner = (row.owner_did or "").strip()
+        if not vd or vd == owner:
+            return row, space_nickname
+        if row.deactivated_at is not None:
+            return row, space_nickname
+        if row.deal_id is not None:
+            return row, space_nickname
+
+        raw_comm = row.commissioners
+        base: Dict[str, Any] = dict(raw_comm) if isinstance(raw_comm, dict) else {}
+        if intermediary_slot_keys_for_did(base, vd):
+            await self.ensure_commissioner_view(row, vd)
+            await self._session.commit()
+            await self._session.refresh(row)
+            return row, space_nickname
+
+        parent_override: Optional[str] = None
+        if segment.match_kind == "commissioner_alias" and segment.commissioner_parent_ref:
+            parent_override = segment.commissioner_parent_ref.strip()
+
+        try:
+            return await self.apply_resell_intermediary(
+                actor_did=vd,
+                arbiter_did=arbiter_did,
+                public_uid=str(row.uid),
+                intermediary_percent=None,
+                parent_ref_override=parent_override,
+            )
+        except ValueError as exc:
+            logger.info("auto resell on resolve skipped: %s", exc)
+            return row, space_nickname
+
     async def apply_resell_intermediary(
         self,
         *,
@@ -297,11 +525,8 @@ class PaymentRequestService:
         arbiter_did: str,
         public_uid: str,
         intermediary_percent: Optional[str] = None,
+        parent_ref_override: Optional[str] = None,
     ) -> Tuple[PaymentRequest, str]:
-        """
-        Слот ``resell``: посредник-комиссионер (текущий пользователь), % по умолчанию 0.5 (мин. 0.1).
-        Недоступно автору заявки (owner_did).
-        """
         arb = (arbiter_did or "").strip()
         uid_key = (public_uid or "").strip()
         if not uid_key:
@@ -328,27 +553,57 @@ class PaymentRequestService:
         raw_comm = row.commissioners
         base: Dict[str, Any] = dict(raw_comm) if isinstance(raw_comm, dict) else {}
 
-        slot_key = self.RESELL_COMMISSIONER_SLOT_KEY
-        existing = base.get(slot_key)
-        if isinstance(existing, dict):
-            existing_did = (existing.get("did") or "").strip()
-            if existing_did and existing_did != actor:
-                raise ValueError("resell_slot_taken")
+        actor_slot_keys = intermediary_slot_keys_for_did(base, actor)
 
-        base[slot_key] = {
-            "did": actor,
-            "commission": {"kind": "percent", "value": pct_str},
-            "parent_id": None,
-        }
-        from pydantic import ValidationError
-        from web.endpoints.v1.schemas.payment_request_commissioners import CommissionersPayload
+        root_ref = str(getattr(row, "public_ref", "") or "")
+        if parent_ref_override is not None:
+            parent_ref = self._canonical_parent_ref_for_resell(
+                base, root_ref, parent_ref_override
+            )
+        else:
+            parent_ref = self._resell_parent_ref(base, root_ref)
 
+        if actor_slot_keys:
+            slot_key = actor_slot_keys[0]
+            prev = dict(base[slot_key])
+            prev["commission"] = {"kind": "percent", "value": pct_str}
+            if parent_ref_override is not None:
+                prev["parent_id"] = parent_ref
+            base[slot_key] = prev
+        else:
+            slot_key = self._allocate_new_intermediary_slot_key(base)
+            base[slot_key] = {
+                "did": actor,
+                "role": "intermediary",
+                "commission": {"kind": "percent", "value": pct_str},
+                "parent_id": parent_ref,
+            }
+        snaps = build_slot_snapshots(
+            str(row.direction or ""),
+            dict(row.primary_leg) if isinstance(row.primary_leg, dict) else {},
+            dict(row.counter_leg) if isinstance(row.counter_leg, dict) else {},
+            base,
+            [slot_key],
+        )
+        if slot_key in snaps:
+            base[slot_key]["payment_amount"] = snaps[slot_key]["payment_amount"]
+            base[slot_key]["borrow_amount"] = snaps[slot_key]["borrow_amount"]
+
+        from web.endpoints.v1.schemas.payment_request_commissioners import (
+            CommissionersPayload,
+            validate_commissioners_parent_refs,
+        )
+
+        validate_commissioners_parent_refs(base, root_public_ref=root_ref)
         try:
             CommissionersPayload.model_validate(base)
         except ValidationError as exc:
             raise ValueError("commissioners_invalid") from exc
 
         row.commissioners = base
+        await self._session.commit()
+        await self._session.refresh(row)
+        await self.ensure_commissioner_view(row, actor)
         await self._session.commit()
         await self._session.refresh(row)
         return row, nick

@@ -153,7 +153,7 @@ async def test_create_and_list_payment_request(main_app_simple_deals):
         assert created["uid"]
         assert created["public_ref"]
         assert len(created["public_ref"]) == 9
-        assert created["commissioners"] == {}
+        assert set(created["commissioners"].keys()) <= {"system"}
         assert created["pair_label"]
         assert "RUB" in created["pair_label"]
         assert created["heading"] is None

@@ -13,6 +13,7 @@ from services.payment_request import PaymentRequestService, SimplePaymentLifetim
 from web.endpoints.v1.schemas.payment_request_commissioners import (
     CommissionerSlot,
     CommissionersPayload,
+    coerce_commissioners_payload,
 )
 
 
@@ -57,7 +58,14 @@ class PaymentRequestCreateBody(BaseModel):
 class PaymentRequestOut(BaseModel):
     pk: int
     uid: str
-    public_ref: str = Field(..., description="Короткий публичный код заявки")
+    public_ref: str = Field(
+        ...,
+        description="Короткий код для ссылок: для комиссионера — его alias_public_ref",
+    )
+    original_public_ref: Optional[str] = Field(
+        default=None,
+        description="public_ref строки заявки (владелец); для комиссионера при подмене ref",
+    )
     pair_label: str = Field(..., description="Пара активов, напр. CNY — USDT")
     amount: Optional[Decimal] = None
     direction: str
@@ -96,6 +104,7 @@ class PaymentRequestOut(BaseModel):
         row: PaymentRequest,
         *,
         space_nickname: Optional[str] = None,
+        viewer_did: Optional[str] = None,
     ) -> PaymentRequestOut:
         pl = dict(row.primary_leg) if isinstance(row.primary_leg, dict) else {}
         cl = dict(row.counter_leg) if isinstance(row.counter_leg, dict) else {}
@@ -123,15 +132,34 @@ class PaymentRequestOut(BaseModel):
         try:
             commissioners_out = CommissionersPayload.model_validate(raw_comm).root
         except ValidationError:
-            commissioners_out = {}
+            commissioners_out = coerce_commissioners_payload(raw_comm)
+
+        column_ref = str(getattr(row, "public_ref", "") or "")
+        public_ref_out = column_ref
+        original_out: Optional[str] = None
+        vw = (viewer_did or "").strip()
+        owner_did = str(getattr(row, "owner_did", "") or "").strip()
+        if vw and vw != owner_did:
+            for _sk, slot in commissioners_out.items():
+                if (slot.did or "").strip() != vw:
+                    continue
+                if str(slot.role or "").strip().lower() == "system":
+                    continue
+                alias = (slot.alias_public_ref or "").strip()
+                if alias:
+                    public_ref_out = alias
+                    original_out = column_ref
+                break
+
         return cls(
             pk=int(row.pk),
             uid=str(row.uid),
-            public_ref=str(getattr(row, "public_ref", "") or ""),
+            public_ref=public_ref_out,
+            original_public_ref=original_out,
             pair_label=pair_label,
             amount=amt,
             direction=direction_out,
-            owner_did=str(getattr(row, "owner_did", "") or "").strip(),
+            owner_did=owner_did,
             arbiter_did=str(getattr(row, "arbiter_did", "") or "").strip(),
             heading=head_out,
             space_id=int(row.space_id),

@@ -10,7 +10,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import Deal, PaymentRequest
 from repos.deal import DealRepository
-from repos.payment_request import PaymentRequestRepository
+from repos.payment_request import (
+    PaymentRequestRepository,
+    PaymentRequestResolveSegment,
+)
 from settings import Settings
 
 
@@ -20,6 +23,7 @@ class ResolvedPaymentRequest:
 
     row: PaymentRequest
     space_nickname: str
+    segment: PaymentRequestResolveSegment
 
 
 @dataclass(frozen=True)
@@ -58,10 +62,14 @@ class SimpleResolveService:
         if not raw or not arb:
             return None
 
-        pr_pair = await self._pr.get_by_uid(raw, arbiter_did=arb)
-        if pr_pair is not None:
-            row, nick = pr_pair
-            return ResolvedPaymentRequest(row=row, space_nickname=nick)
+        pr_triple = await self._pr.resolve_segment_to_payment_request(
+            raw, arbiter_did=arb
+        )
+        if pr_triple is not None:
+            row, nick, segment = pr_triple
+            return ResolvedPaymentRequest(
+                row=row, space_nickname=nick, segment=segment
+            )
 
         deal_row = await self._deal.get_by_uid(raw)
         if deal_row is not None:

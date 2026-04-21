@@ -53,6 +53,7 @@ async def resolve_simple_context(
     user: CurrentWalletUser,
     public_uid: str,
     svc: SimpleResolveService = Depends(get_simple_resolve_service),
+    payment_svc: PaymentRequestService = Depends(get_payment_request_service),
 ):
     """Контекст для /arbiter/{arbiter}/deal/{segment}: PaymentRequest по uid или public_ref, иначе Deal по uid."""
     arb = arbiter_did
@@ -63,11 +64,21 @@ async def resolve_simple_context(
             detail="Заявка или сделка не найдена",
         )
     if isinstance(result, ResolvedPaymentRequest):
+        row, nick = await payment_svc.maybe_auto_resell_on_resolve(
+            result.row,
+            result.space_nickname,
+            viewer_did=user.did,
+            arbiter_did=arbiter_did,
+            segment=result.segment,
+        )
+        await payment_svc.ensure_commissioner_view(row, user.did)
         return SimpleResolveResponse(
             kind="payment_request_only",
             viewer_did=user.did,
             payment_request=PaymentRequestOut.from_model(
-                result.row, space_nickname=result.space_nickname
+                row,
+                space_nickname=nick,
+                viewer_did=user.did,
             ),
             deal=None,
         )
@@ -112,7 +123,9 @@ async def list_payment_requests(
         ) from e
     return PaymentRequestListResponse(
         items=[
-            PaymentRequestOut.from_model(r, space_nickname=nick)
+            PaymentRequestOut.from_model(
+                r, space_nickname=nick, viewer_did=user.did
+            )
             for r, nick in rows
         ],
         total=total,
@@ -156,7 +169,7 @@ async def create_payment_request(
         ) from e
     return PaymentRequestCreateResponse(
         payment_request=PaymentRequestOut.from_model(
-            row, space_nickname=space_nickname
+            row, space_nickname=space_nickname, viewer_did=user.did
         )
     )
 
@@ -200,7 +213,7 @@ async def deactivate_payment_request(
         ) from e
     return PaymentRequestDeactivateResponse(
         payment_request=PaymentRequestOut.from_model(
-            row, space_nickname=space_nickname
+            row, space_nickname=space_nickname, viewer_did=user.did
         )
     )
 
@@ -212,7 +225,6 @@ _RESELL_ERR_DETAIL = {
     "request_deactivated": "Заявка снята с публикации",
     "request_already_accepted": "Заявка уже принята, этап «Условия» недоступен",
     "owner_cannot_resell": "Перепродажа недоступна автору заявки",
-    "resell_slot_taken": "Слот посредника уже занят другим пользователем",
     "intermediary_percent_invalid": "Некорректный процент комиссии",
     "intermediary_percent_range": "Процент должен быть от 0.1 до 100",
     "commissioners_invalid": "Некорректная структура комиссионеров",
@@ -230,7 +242,7 @@ async def resell_payment_request(
     body: PaymentRequestResellBody,
     svc: PaymentRequestService = Depends(get_payment_request_service),
 ):
-    """Посредник-комиссионер (не владелец): слот resell с % комиссии (по умолчанию 0.5)."""
+    """Посредник (не владелец): слот i_<…> или обновление своего; % по умолчанию 0.5."""
     try:
         row, space_nickname = await svc.apply_resell_intermediary(
             actor_did=user.did,
@@ -252,6 +264,6 @@ async def resell_payment_request(
         ) from e
     return PaymentRequestResellResponse(
         payment_request=PaymentRequestOut.from_model(
-            row, space_nickname=space_nickname
+            row, space_nickname=space_nickname, viewer_did=user.did
         )
     )
