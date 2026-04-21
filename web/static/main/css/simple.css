@@ -829,6 +829,23 @@
   word-break: break-word;
 }
 
+.simple-page__order-card-sub-primary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.simple-page__order-commission-pct {
+  font-size: 11px;
+  font-weight: 600;
+  color: color-mix(in srgb, var(--simple-accent) 92%, transparent);
+  line-height: 1.3;
+  word-break: break-word;
+}
+
 .simple-page__order-amounts {
   flex: 1;
   min-width: 0;
@@ -954,6 +971,10 @@
     flex-direction: column;
     align-items: stretch;
     gap: 0.55rem;
+  }
+
+  .simple-page__order-card-sub-primary {
+    width: 100%;
   }
 
   .simple-page__order-amounts {
@@ -1267,7 +1288,7 @@
 }
 
 .simple-page__commissioner-panel {
-  margin: 0 0 1rem;
+  margin: 1rem 0 1rem;
   padding: 0.875rem 1rem;
   background: color-mix(in srgb, var(--simple-secondary) 55%, transparent);
   border: 1px solid var(--simple-border-soft);
@@ -1276,6 +1297,7 @@
 
 @media (min-width: 768px) {
   .simple-page__commissioner-panel {
+    margin-top: 1.35rem;
     margin-bottom: 1.25rem;
     padding: 1rem 1.25rem;
     border-radius: 1rem;
@@ -1616,15 +1638,94 @@
   }
 }
 
-@media (max-width: 520px) {
+/* Узкие экраны: блок «Условия по заявке» — колонка кнопок, сетка для таймера + статуса */
+@media (max-width: 639px) {
   .simple-page__flow-title-row--pr-tools {
-    flex-wrap: wrap;
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: nowrap;
+    gap: 0.65rem;
+  }
+
+  .simple-page__flow-title-row--pr-tools > .simple-page__flow-title {
+    flex: none;
+    width: 100%;
+    font-size: 13px;
+    line-height: 1.3;
   }
 
   .simple-page__flow-title-row--pr-tools > .simple-page__pr-terms-actions {
-    flex: 1 0 100%;
-    order: 2;
+    flex: none;
+    width: 100%;
+    flex-direction: column;
+    justify-content: stretch;
+    gap: 0.5rem;
+    order: unset;
+  }
+
+  .simple-page__flow-title-row--pr-tools .simple-page__pr-terms-btn {
+    width: 100%;
     justify-content: center;
+    padding: 0.5rem 0.85rem;
+    box-sizing: border-box;
+  }
+
+  /* Иконка | контент на первой строке; таймер и бейдж «Условия» — на второй */
+  .simple-page__flow-row--pr-split {
+    display: grid;
+    grid-template-columns: 3rem minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    align-items: start;
+    gap: 0.65rem 0.65rem;
+  }
+
+  .simple-page__flow-row--pr-split > .simple-page__flow-icon {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: start;
+  }
+
+  .simple-page__flow-row--pr-split > .simple-page__flow-body {
+    grid-column: 2 / -1;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .simple-page__flow-row--pr-split > .simple-page__flow-deadline--pr-split {
+    grid-column: 2;
+    grid-row: 2;
+    margin-top: 0;
+    align-self: center;
+    max-width: 100%;
+  }
+
+  .simple-page__flow-row--pr-split > .simple-page__flow-status {
+    grid-column: 3;
+    grid-row: 2;
+    align-self: center;
+    justify-self: end;
+    text-align: right;
+    line-height: 1.25;
+  }
+
+  .simple-page__flow-mono--pr-sum-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem 0.45rem;
+    align-items: baseline;
+    margin-top: 0.55rem;
+    line-height: 1.55;
+    letter-spacing: 0.01em;
+  }
+
+  .simple-page__commissioner-panel {
+    padding-top: 1rem;
+    padding-bottom: 1rem;
+  }
+
+  .simple-page__flow-shell {
+    padding-left: max(0.85rem, env(safe-area-inset-left, 0px));
+    padding-right: max(0.85rem, env(safe-area-inset-right, 0px));
   }
 }
 

@@ -712,6 +712,7 @@
                 var tok = getToken();
                 if (!tok || self.showAuthModal) {
                     self.authOwnSpace = '';
+                    self.viewerDid = '';
                     return Promise.resolve();
                 }
                 var headers = { Accept: 'application/json', Authorization: 'Bearer ' + tok };
@@ -730,10 +731,14 @@
                     .then(function(res) {
                         if (!res.ok || !res.data) {
                             self.authOwnSpace = '';
+                            self.viewerDid = '';
                             return;
                         }
                         var o = res.data.own_space;
                         self.authOwnSpace = o != null && o !== undefined ? String(o).trim() : '';
+                        var didRaw = res.data.did;
+                        self.viewerDid =
+                            didRaw != null && didRaw !== undefined ? String(didRaw).trim() : '';
                     })
                     .catch(function() {
                         self.authOwnSpace = '';
@@ -912,7 +917,6 @@
                             self.resolveKind = null;
                             self.resolvePaymentRequest = null;
                             self.resolveDeal = null;
-                            self.viewerDid = '';
                             self.showResellCommissionModal = false;
                             self.resellModalError = '';
                             return;
@@ -980,7 +984,6 @@
                         self.resolveKind = null;
                         self.resolvePaymentRequest = null;
                         self.resolveDeal = null;
-                        self.viewerDid = '';
                     })
                     .finally(function() {
                         /* Снимаем спиннер только для актуального запроса (без гонки двух fetchResolve). */
@@ -1075,6 +1078,21 @@
                 if (!s) return '';
                 if (localePrefersCommaDecimal()) return s.replace(/\./g, ',');
                 return s;
+            },
+            /** Строка «Комиссия X %» в списке заявок, если текущий пользователь — посредник по этой заявке. */
+            orderListCommissionerPercentLine: function(req) {
+                if (!req || !this.viewerDid) return '';
+                var owner = (req.owner_did || '').trim();
+                var vd = (this.viewerDid || '').trim();
+                if (!owner || owner === vd) return '';
+                var slot = viewerIntermediarySlot(req, vd);
+                if (!slot || typeof slot !== 'object') return '';
+                var c = slot.commission;
+                if (!c || String(c.kind || '').toLowerCase() !== 'percent') return '';
+                var raw = c.value != null ? String(c.value).trim() : '';
+                if (!raw) return '';
+                var pctUi = this.formatPercentForUi(raw) + ' %';
+                return t('main.simple.orders_list_commission_line', { pct: pctUi });
             },
             /** Строка процента посредника для блока «Ваша комиссия». */
             commissionerCommissionPercentLine: function() {
@@ -2156,7 +2174,10 @@
                   </div>\
                 </div>\
                 <div class="simple-page__order-card-sub">\
-                  <span class="simple-page__order-amounts">{{ orderAmountsLine(req) }}</span>\
+                  <div class="simple-page__order-card-sub-primary">\
+                    <span class="simple-page__order-amounts">{{ orderAmountsLine(req) }}</span>\
+                    <span v-if="orderListCommissionerPercentLine(req)" class="simple-page__order-commission-pct">{{ orderListCommissionerPercentLine(req) }}</span>\
+                  </div>\
                   <div class="simple-page__order-sub-right">\
                     <div class="simple-page__order-countdown-row" :class="{ \'simple-page__order-countdown-row--muted\': !req.expires_at }">\
                       <svg class="simple-page__ico-clock" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\
