@@ -730,6 +730,7 @@
   "main.simple.escrow_line": "Escrow: {addr}",
   "main.simple.network_ok": "TRON Mainnet",
   "main.simple.protected_badge": "Protected by escrow protocol",
+  "main.simple.protected_badge_arbiter": "{nickname} - deal guarantor",
   "main.simple.chrome_title": "{app_name} — deal #TF-2048",
   "main.simple.chrome_title_list": "{app_name} — applications",
   "main.simple.space_nickname_caption": "Nickname",

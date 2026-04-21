@@ -730,6 +730,7 @@
   "main.simple.escrow_line": "Эскроу: {addr}",
   "main.simple.network_ok": "TRON Mainnet",
   "main.simple.protected_badge": "Защищено протоколом эскроу",
+  "main.simple.protected_badge_arbiter": "{nickname} - гарант сделки",
   "main.simple.chrome_title": "{app_name} — сделка #TF-2048",
   "main.simple.chrome_title_list": "{app_name} — заявки",
   "main.simple.space_nickname_caption": "Никнейм",

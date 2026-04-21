@@ -301,6 +301,7 @@
                 orderId: (el.getAttribute('data-simple-order-id') || '').trim(),
                 dealUid: (el.getAttribute('data-simple-deal-uid') || '').trim(),
                 arbiterSpaceDid: (el.getAttribute('data-simple-arbiter-space-did') || '').trim(),
+                arbiterDisplayName: (el.getAttribute('data-simple-arbiter-display-name') || '').trim(),
                 resolveLoading: false,
                 resolveError: false,
                 resolveErrorMsg: '',
@@ -308,7 +309,6 @@
                 resolvePaymentRequest: null,
                 resolveDeal: null,
                 viewerDid: '',
-                showResellOwnerModal: false,
                 showResellCommissionModal: false,
                 resellCommissionPercent: '0.5',
                 resellModalError: '',
@@ -665,6 +665,17 @@
                 var v = (this.viewerDid || '').trim();
                 if (!v || this.isPaymentRequestOwner) return false;
                 return !!viewerIntermediarySlot(this.resolvePaymentRequest, v);
+            },
+            /** Процент комиссии справа от подписи «Перепродать» для посредника (пусто — если не показываем). */
+            commissionerResellButtonPctLabel: function() {
+                var s = this.commissionerCommissionPercentLine();
+                return s === '—' ? '' : s;
+            },
+            /** Текст FAB-бейджа «гарант сделки» с именем арбитра из сервера. */
+            fabProtectedBadgeLabel: function() {
+                var nick = (this.arbiterDisplayName || '').trim();
+                if (!nick) return t('main.simple.protected_badge');
+                return t('main.simple.protected_badge_arbiter', { nickname: nick });
             },
             resellModalSubmitDisabled: function() {
                 return (
@@ -1036,10 +1047,6 @@
                 return s;
             },
             onResellClick: function() {
-                if (this.isPaymentRequestOwner) {
-                    this.showResellOwnerModal = true;
-                    return;
-                }
                 var tok = getToken();
                 if (!tok) {
                     this.showAuthModal = true;
@@ -1048,9 +1055,6 @@
                 this.resellModalError = '';
                 this.resellCommissionPercent = this.initialResellCommissionPercentForModal();
                 this.showResellCommissionModal = true;
-            },
-            closeResellOwnerModal: function() {
-                this.showResellOwnerModal = false;
             },
             closeResellCommissionModal: function() {
                 if (this.resellSubmitting) return;
@@ -2076,15 +2080,6 @@
       </div>\
     </div>\
   </div>\
-  <div v-if="showResellOwnerModal" class="simple-deactivate__overlay" @click.self="closeResellOwnerModal">\
-    <div class="simple-create__modal simple-deactivate__modal" role="alertdialog" aria-modal="true" @click.stop>\
-      <h2 class="simple-create__title">{{ t(\'main.simple.pr_resell_owner_modal_title\') }}</h2>\
-      <p class="simple-deactivate__hint">{{ t(\'main.simple.pr_resell_owner_modal_text\') }}</p>\
-      <div class="simple-create__actions">\
-        <button type="button" class="simple-create__btn simple-create__btn--primary" @click="closeResellOwnerModal">{{ t(\'main.simple.pr_resell_owner_modal_close\') }}</button>\
-      </div>\
-    </div>\
-  </div>\
   <div v-if="showResellCommissionModal" class="simple-deactivate__overlay" @click.self="closeResellCommissionModal">\
     <div class="simple-create__modal simple-deactivate__modal" role="dialog" aria-modal="true" aria-labelledby="simple-resell-modal-title" @click.stop>\
       <h2 id="simple-resell-modal-title" class="simple-create__title">{{ t(\'main.simple.pr_resell_modal_title\') }}</h2>\
@@ -2343,11 +2338,11 @@
                   <template v-else>\
                     <span class="simple-page__flow-title">{{ t(\'main.simple.deal_flow_offer_title\') }}</span>\
                     <div class="simple-page__pr-terms-actions">\
-                      <button type="button" class="simple-page__pr-terms-btn simple-page__pr-terms-btn--resell" @click="onResellClick" :disabled="resellSubmitting" :aria-busy="resellSubmitting ? \'true\' : \'false\'">\
+                      <button v-if="!isPaymentRequestOwner" type="button" class="simple-page__pr-terms-btn simple-page__pr-terms-btn--resell" @click="onResellClick" :disabled="resellSubmitting" :aria-busy="resellSubmitting ? \'true\' : \'false\'">\
                         <svg class="simple-page__pr-terms-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\
                           <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4 4 4m6 0v12m0 0l4-4m-4 4-4-4"/>\
                         </svg>\
-                        <span>{{ t(\'main.simple.pr_btn_resell\') }}</span>\
+                        <span class="simple-page__pr-terms-btn-label">{{ t(\'main.simple.pr_btn_resell\') }}</span><span v-if="commissionerResellButtonPctLabel" class="simple-page__pr-terms-btn-pct">{{ commissionerResellButtonPctLabel }}</span>\
                       </button>\
                       <button type="button" class="simple-page__pr-terms-btn simple-page__pr-terms-btn--link" @click="copyDealPublicLink">\
                         <svg class="simple-page__pr-terms-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\
@@ -2570,7 +2565,7 @@
   </div>\
   <div v-if="isDealView" class="simple-page__fab" role="status">\
     <svg class="simple-page__svg" style="color:var(--simple-primary);flex-shrink:0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z"/></svg>\
-    <span>{{ t(\'main.simple.protected_badge\') }}</span>\
+    <span>{{ fabProtectedBadgeLabel }}</span>\
   </div>\
 </div>'
     });

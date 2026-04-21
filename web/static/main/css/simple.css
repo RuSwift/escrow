@@ -1546,6 +1546,22 @@
   opacity: 0.92;
 }
 
+.simple-page__pr-terms-btn-label {
+  flex-shrink: 0;
+}
+
+/* Процент комиссии посредника справа от «Перепродать» */
+.simple-page__pr-terms-btn-pct {
+  margin-left: 0.4rem;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.9;
+  color: color-mix(in srgb, var(--simple-accent) 75%, var(--simple-fg));
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 .simple-page__pr-terms-btn:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--simple-accent) 65%, var(--simple-border));
   box-shadow:
