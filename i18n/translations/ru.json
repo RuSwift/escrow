@@ -905,7 +905,7 @@
   "main.simple.handshake_list_owner_confirm": "Подтвердите заявку",
   "main.simple.handshake_list_you_accepted": "Вы приняли · ждём автора",
   "main.simple.handshake_list_locked_other": "Заявка принята и ожидает подтверждения создателем заявки",
-  "main.simple.handshake_list_deal_created": "Сделка создана",
+  "main.simple.handshake_list_deal_created": "Идет сделка...",
   "main.simple.handshake_locked_hint": "Условия уже согласуются с другим участником. Принять эту заявку сейчас нельзя.",
   "main.simple.pr_locked_other_title": "Заявка уже принята",
   "main.simple.pr_locked_other_text": "Заявка уже принята акцептором на текущих условиях и ожидает подтверждения создателем заявки. Изменение условий сейчас недоступно.",

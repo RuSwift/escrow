@@ -905,7 +905,7 @@
   "main.simple.handshake_list_owner_confirm": "Confirm application",
   "main.simple.handshake_list_you_accepted": "You accepted · waiting on author",
   "main.simple.handshake_list_locked_other": "Accepted and waiting for owner confirmation",
-  "main.simple.handshake_list_deal_created": "Deal created",
+  "main.simple.handshake_list_deal_created": "Deal in progress...",
   "main.simple.handshake_locked_hint": "Terms are already being finalized with another participant. You cannot accept this application right now.",
   "main.simple.pr_locked_other_title": "Application already accepted",
   "main.simple.pr_locked_other_text": "This request has already been accepted by another counterparty on the current terms and is waiting for the owner to confirm. Changing terms is not available right now.",

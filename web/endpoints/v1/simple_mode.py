@@ -5,8 +5,10 @@ from __future__ import annotations
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from sqlalchemy import select
 
 from core.exceptions import SpacePermissionDenied
+from db.models import Deal, PaymentRequest
 from services.arbiter_path import ArbiterPathResolveService
 from services.payment_request import PaymentRequestService
 from services.simple_resolve import ResolvedDeal, ResolvedPaymentRequest, SimpleResolveService
@@ -77,6 +79,27 @@ async def resolve_simple_context(
             segment=result.segment,
         )
         await payment_svc.ensure_commissioner_view(row, user.did)
+        # If PR already linked to Deal, render Deal context (Lockbox stage),
+        # even when URL uses payment_request uid/public_ref.
+        if row.deal_id is not None:
+            res_deal = await payment_svc._session.execute(
+                select(Deal).where(Deal.pk == row.deal_id).limit(1)
+            )
+            deal_row = res_deal.scalar_one_or_none()
+            if deal_row is not None:
+                return SimpleResolveResponse(
+                    kind="deal_only",
+                    viewer_did=user.did,
+                    payment_request_pk=int(row.pk),
+                    payment_request_public_ref=str(row.public_ref or ""),
+                    payment_request_heading=str(row.heading or "") or None,
+                    payment_request=PaymentRequestOut.from_model(
+                        row,
+                        space_nickname=nick,
+                        viewer_did=user.did,
+                    ),
+                    deal=SimpleDealOut.from_model(deal_row),
+                )
         return SimpleResolveResponse(
             kind="payment_request_only",
             viewer_did=user.did,
@@ -88,10 +111,29 @@ async def resolve_simple_context(
             deal=None,
         )
     assert isinstance(result, ResolvedDeal)
+    # Try to attach PaymentRequest context for deal_only UI.
+    pr_pk: Optional[int] = None
+    pr_ref: Optional[str] = None
+    pr_heading: Optional[str] = None
+    pr_out: Optional[PaymentRequestOut] = None
+    res_pr = await svc._session.execute(
+        select(PaymentRequest)
+        .where(PaymentRequest.deal_id == result.row.pk)
+        .limit(1)
+    )
+    pr_model = res_pr.scalar_one_or_none()
+    if pr_model is not None:
+        pr_pk = int(pr_model.pk)
+        pr_ref = str(pr_model.public_ref or "") or None
+        pr_heading = str(pr_model.heading or "") or None
+        pr_out = PaymentRequestOut.from_model(pr_model, space_nickname=None, viewer_did=user.did)
     return SimpleResolveResponse(
         kind="deal_only",
         viewer_did=user.did,
-        payment_request=None,
+        payment_request_pk=pr_pk,
+        payment_request_public_ref=pr_ref,
+        payment_request_heading=pr_heading,
+        payment_request=pr_out,
         deal=SimpleDealOut.from_model(result.row),
     )
 

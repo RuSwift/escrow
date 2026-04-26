@@ -104,6 +104,15 @@ async def main_app_handshake(test_db, test_redis, test_settings):
 @pytest.mark.asyncio
 async def test_accept_fixed_then_confirm_deal(main_app_handshake, test_db):
     app, owner, other, _third = main_app_handshake
+    # Simulate prod mismatch:
+    # payment_request stores did:tron:<address>, but wallet_users.did in DB is did:web:...
+    owner.did = "did:web:escrow.ruswift.ru:simple_hs_owner"
+    other.did = "did:web:escrow.ruswift.ru:simple_hs_other"
+    test_db.add(owner)
+    test_db.add(other)
+    await test_db.commit()
+    await test_db.refresh(owner)
+    await test_db.refresh(other)
     payload = {
         "direction": "fiat_to_stable",
         "primary_leg": {
@@ -128,6 +137,12 @@ async def test_accept_fixed_then_confirm_deal(main_app_handshake, test_db):
             transport=ASGITransport(app=app),
             base_url="http://test",
         ) as client:
+            # Override auth DID to did:tron:<address> so PaymentRequest keeps did:tron in DB.
+            app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+                standard="tron",
+                wallet_address=_OWNER_TRON,
+                did=f"did:tron:{_OWNER_TRON}",
+            )
             c = await client.post(_v1() + "/payment-requests", json=payload)
             assert c.status_code == 201, c.text
             pk = c.json()["payment_request"]["pk"]
@@ -135,7 +150,7 @@ async def test_accept_fixed_then_confirm_deal(main_app_handshake, test_db):
             app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
                 standard="tron",
                 wallet_address=_OTHER_TRON,
-                did=other.did,
+                did=f"did:tron:{_OTHER_TRON}",
             )
             a = await client.post(
                 _v1() + f"/payment-requests/{pk}/accept",
@@ -144,26 +159,41 @@ async def test_accept_fixed_then_confirm_deal(main_app_handshake, test_db):
             assert a.status_code == 200, a.text
             pr = a.json()["payment_request"]
             assert pr["owner_confirm_pending"] is True
-            assert pr["counterparty_accept_did"] == other.did
+            assert pr["counterparty_accept_did"] == f"did:tron:{_OTHER_TRON}"
             assert pr.get("counter_leg_snapshot_json") is None
 
             app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
                 standard="tron",
                 wallet_address=_OWNER_TRON,
-                did=owner.did,
+                did=f"did:tron:{_OWNER_TRON}",
             )
             cf = await client.post(_v1() + f"/payment-requests/{pk}/confirm", json={})
             assert cf.status_code == 200, cf.text
             body = cf.json()
             assert body.get("deal_uid")
             assert body["payment_request"]["deal_id"] is not None
+            # resolve by PR pk/public_ref should now return deal_only once deal_id exists
+            pref = body["payment_request"]["public_ref"]
+            rr = await client.get(_v1() + f"/resolve/{pref}")
+            assert rr.status_code == 200, rr.text
+            rb = rr.json()
+            assert rb["kind"] == "deal_only"
+            assert rb.get("deal") and rb["deal"].get("uid")
+            assert rb.get("payment_request_pk") == pk
+            assert rb.get("payment_request_public_ref") == pref
+            assert rb.get("payment_request") is not None
+            assert rb["payment_request"]["pk"] == pk
+            assert rb["deal"].get("signers") is not None
             deal_pk = int(body["payment_request"]["deal_id"])
             res_deal = await test_db.execute(select(Deal).where(Deal.pk == deal_pk))
             deal_row = res_deal.scalar_one()
             assert deal_row.signers is not None
             sig = deal_row.signers
-            assert sig["sender"]["address"] == _OWNER_TRON
-            assert sig["receiver"]["address"] == _OTHER_TRON
+            # direction == fiat_to_stable: acceptor (other) deposits stable, owner receives stable
+            assert deal_row.sender_did == f"did:tron:{_OTHER_TRON}"
+            assert deal_row.receiver_did == f"did:tron:{_OWNER_TRON}"
+            assert sig["sender"]["address"] == _OTHER_TRON
+            assert sig["receiver"]["address"] == _OWNER_TRON
             assert sig["arbiter"]["address"] == "TArbiterHandshakeTest11111111111"
             assert sig["sender"]["blockchain"] == "tron"
             assert sig["receiver"]["blockchain"] == "tron"

@@ -16,7 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.short_id import generate_public_ref
-from db.models import PaymentRequest, Wallet
+from db.models import PaymentRequest, Wallet, WalletUser
 from i18n.translations import get_translation
 from repos.deal import DealRepository
 from repos.payment_request import PaymentRequestRepository, PaymentRequestResolveSegment
@@ -965,9 +965,23 @@ class PaymentRequestService:
         if not d:
             raise ValueError("signer_did_empty")
         user = await self._wallet_users.get_by_identifier(d)
-        if user is None:
+        nickname: Optional[str] = user.nickname if user is not None else None
+        # Fallback: в проде WalletUser.did может быть did:web:..., а в заявке хранится did:tron:<address>.
+        # В этом случае ищем участника по wallet_address из DID.
+        if nickname is None:
+            low = d.lower()
+            addr: Optional[str] = None
+            if low.startswith("did:tron:"):
+                addr = d[len("did:tron:") :].strip()
+            elif low.startswith("did:ethr:"):
+                addr = d[len("did:ethr:") :].strip()
+            if addr:
+                stmt = select(WalletUser.nickname).where(WalletUser.wallet_address == addr).limit(1)
+                res = await self._session.execute(stmt)
+                nickname = res.scalar_one_or_none()
+        if not nickname:
             raise ValueError("wallet_user_not_found_for_did")
-        pw = await self._space.get_primary_wallet(user.nickname)
+        pw = await self._space.get_primary_wallet(nickname)
         addr = (pw.get("address") or "").strip()
         bc = (str(pw.get("blockchain") or "tron")).strip().lower()
         if not addr:
@@ -1034,6 +1048,18 @@ class PaymentRequestService:
         if not cp:
             raise ValueError("nothing_to_confirm")
 
+        # Deal participants mapping:
+        # - sender: the party that deposits stable into escrow (gives stable)
+        # - receiver: the other party
+        # For fiat_to_stable the counterparty (acceptor) gives stable; for stable_to_fiat the owner gives stable.
+        direction = str(row.direction or "").strip()
+        if direction == "fiat_to_stable":
+            sender_did = cp
+            receiver_did = od
+        else:
+            sender_did = od
+            receiver_did = cp
+
         deals = DealRepository(self._session, self._redis, self._settings)
         label = self.build_pair_label(
             cast(SimpleDirection, str(row.direction or "").strip()),
@@ -1041,13 +1067,13 @@ class PaymentRequestService:
             dict(row.counter_leg) if isinstance(row.counter_leg, dict) else {},
         )
         signers = await self._build_deal_signers_for_simple_confirm(
-            sender_did=od,
-            receiver_did=cp,
+            sender_did=sender_did,
+            receiver_did=receiver_did,
             arbiter_did=str(row.arbiter_did or "").strip(),
         )
         deal = await deals.create_from_simple_payment_request(
-            sender_did=od,
-            receiver_did=cp,
+            sender_did=sender_did,
+            receiver_did=receiver_did,
             arbiter_did=str(row.arbiter_did or "").strip(),
             label=label,
             signers=signers,

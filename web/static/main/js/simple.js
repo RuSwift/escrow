@@ -359,6 +359,9 @@
                 resolveKind: null,
                 resolvePaymentRequest: null,
                 resolveDeal: null,
+                resolveDealPaymentRequestPk: null,
+                resolveDealPaymentRequestPublicRef: '',
+                resolveDealPaymentRequestHeading: '',
                 viewerDid: '',
                 showResellCommissionModal: false,
                 resellCommissionPercent: '0.5',
@@ -1201,6 +1204,19 @@
                         self.resolveKind = data.kind || null;
                         self.resolvePaymentRequest = data.payment_request || null;
                         self.resolveDeal = data.deal || null;
+                        self.resolveDealPaymentRequestPk =
+                            data.payment_request_pk !== undefined && data.payment_request_pk !== null
+                                ? parseInt(String(data.payment_request_pk), 10)
+                                : null;
+                        self.resolveDealPaymentRequestPublicRef =
+                            data.payment_request_public_ref !== undefined &&
+                            data.payment_request_public_ref !== null
+                                ? String(data.payment_request_public_ref).trim()
+                                : '';
+                        self.resolveDealPaymentRequestHeading =
+                            data.payment_request_heading !== undefined && data.payment_request_heading !== null
+                                ? String(data.payment_request_heading).trim()
+                                : '';
                         self.viewerDid =
                             data.viewer_did !== undefined && data.viewer_did !== null
                                 ? String(data.viewer_did).trim()
@@ -2097,17 +2113,19 @@
             },
             /** Карточка «Сумма»: только фиат-нога. */
             dealViewStatFiatAmount: function() {
-                if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) return '—';
+                // In deal_only we still have resolvePaymentRequest (linked PR); reuse the same display logic.
+                if (!this.resolvePaymentRequest) return '—';
                 return formatPaymentRequestLegLine(prLegForAsset(this.resolvePaymentRequest, true), false);
             },
             /** Карточка «Залог»: только стейбл-нога. */
             dealViewStatStableAmount: function() {
-                if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) return '—';
+                if (!this.resolvePaymentRequest) return '—';
+                // Escrow total (base + fees) when available; fallback to raw stable leg line.
                 var esc = this.viewerStableLegEscrowTotalFormatted();
                 return esc || formatPaymentRequestLegLine(prLegForAsset(this.resolvePaymentRequest, false), true);
             },
             dealViewStatRate: function() {
-                if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) return '—';
+                if (!this.resolvePaymentRequest) return '—';
                 var m = paymentRequestDisplayRateMeta(this.resolvePaymentRequest);
                 if (!m) return '—';
                 return m.display.toFixed(4);
@@ -2117,7 +2135,7 @@
              * (при raw < 1 — обратный курс и переставленная ось через те же ключи i18n).
              */
             dealViewStatRateLabel: function() {
-                if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) {
+                if (!this.resolvePaymentRequest) {
                     return t('main.simple.stat_rate');
                 }
                 var m = paymentRequestDisplayRateMeta(this.resolvePaymentRequest);
@@ -2249,7 +2267,8 @@
                 // Owner всегда видит raw amount из заявки.
                 var stableIsReceive = String(req.direction || '') === 'fiat_to_stable';
                 var vd = (this.viewerDid || '').trim();
-                var amIntermediaryForReq = !!(vd && !this.isPaymentRequestOwner && viewerIntermediarySlot(req, vd));
+                var amOwnerForReq = !!(vd && (req.owner_did || '').trim() === vd);
+                var amIntermediaryForReq = !!(vd && !amOwnerForReq && viewerIntermediarySlot(req, vd));
                 if (amIntermediaryForReq) {
                     var prevStable = this.viewerStableLegPrevChainTotalFormatted(req);
                     if (prevStable) {
@@ -2262,7 +2281,7 @@
                             gc = '';
                         }
                     }
-                } else if (!this.isPaymentRequestOwner) {
+                } else if (!amOwnerForReq) {
                     try {
                         var feeTotal = prStableEscrowFeesTotal(req);
                         if (feeTotal && isFinite(feeTotal)) {
@@ -3298,15 +3317,15 @@
           <div class="simple-page__stat-rail" role="region" :aria-label="t(\'main.simple.stat_carousel_aria\')">\
             <div class="simple-page__stat-card simple-page__stat-card--rail">\
               <div class="simple-page__stat-label">{{ t(\'main.simple.stat_amount_short\') }}</div>\
-              <div class="simple-page__stat-value">{{ dealViewDealAmountLine() }}</div>\
+              <div class="simple-page__stat-value">{{ dealViewStatFiatAmount() }}</div>\
             </div>\
             <div class="simple-page__stat-card simple-page__stat-card--rail">\
-              <div class="simple-page__stat-label">{{ t(\'main.simple.deal_stat_status\') }}</div>\
-              <div class="simple-page__stat-value">{{ resolveDeal.status }}</div>\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_pledge_short\') }}</div>\
+              <div class="simple-page__stat-value">{{ dealViewStatStableAmount() }}</div>\
             </div>\
-            <div class="simple-page__stat-card simple-page__stat-card--rail">\
-              <div class="simple-page__stat-label">{{ t(\'main.simple.heading_label\') }}</div>\
-              <div class="simple-page__stat-value simple-page__stat-value--clamp">{{ dealDealLabelPreview() }}</div>\
+            <div class="simple-page__stat-card simple-page__stat-card--rail simple-page__stat-card--rate-axis">\
+              <div class="simple-page__stat-label">{{ dealViewStatRateLabel() }}</div>\
+              <div class="simple-page__stat-value">{{ dealViewStatRate() }}</div>\
             </div>\
             <div class="simple-page__stat-card simple-page__stat-card--rail">\
               <div class="simple-page__stat-label">{{ t(\'main.simple.stat_network_short\') }}</div>\
@@ -3320,15 +3339,15 @@
           <div class="simple-page__stat-grid simple-page__stat-grid--desktop">\
             <div class="simple-page__stat-card">\
               <div class="simple-page__stat-label">{{ t(\'main.simple.stat_amount\') }}</div>\
-              <div class="simple-page__stat-value">{{ dealViewDealAmountLine() }}</div>\
+              <div class="simple-page__stat-value">{{ dealViewStatFiatAmount() }}</div>\
             </div>\
             <div class="simple-page__stat-card">\
-              <div class="simple-page__stat-label">{{ t(\'main.simple.deal_stat_status\') }}</div>\
-              <div class="simple-page__stat-value">{{ resolveDeal.status }}</div>\
+              <div class="simple-page__stat-label">{{ t(\'main.simple.stat_pledge\') }}</div>\
+              <div class="simple-page__stat-value">{{ dealViewStatStableAmount() }}</div>\
             </div>\
-            <div class="simple-page__stat-card">\
-              <div class="simple-page__stat-label">{{ t(\'main.simple.heading_label\') }}</div>\
-              <div class="simple-page__stat-value">{{ dealDealLabelPreview() }}</div>\
+            <div class="simple-page__stat-card simple-page__stat-card--rate-axis">\
+              <div class="simple-page__stat-label">{{ dealViewStatRateLabel() }}</div>\
+              <div class="simple-page__stat-value">{{ dealViewStatRate() }}</div>\
             </div>\
             <div class="simple-page__stat-card">\
               <div class="simple-page__stat-label">{{ t(\'main.simple.stat_network\') }}</div>\
@@ -3339,6 +3358,19 @@
               <div class="simple-page__stat-sub">TRON</div>\
             </div>\
           </div>\
+          <div v-if="resolvePaymentRequest" class="simple-page__flow-shell" style="margin-bottom:0.75rem">\
+            <div class="simple-page__flow-row" :class="{ \'simple-page__flow-row--pr-split\': true }">\
+              <div class="simple-page__flow-icon">\
+                <svg class="simple-page__svg--lg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 13V7a2 2 0 00-2-2h-2.5M4 13V7a2 2 0 012-2h2.5M8.5 19h7M12 5v14"/></svg>\
+              </div>\
+              <div class="simple-page__flow-body">\
+                <div class="simple-page__flow-title-row" :class="{ \'simple-page__flow-title-row--pr-tools\': true }">\
+                  <span class="simple-page__flow-title">{{ t(\'main.simple.deal_flow_offer_title\') }}</span>\
+                </div>\
+                <div class="simple-page__flow-mono simple-page__flow-mono--pr-sum-line">{{ orderAmountsLine(resolvePaymentRequest) }}</div>\
+              </div>\
+            </div>\
+          </div>\
           <div class="simple-page__flow-shell">\
             <div class="simple-page__flow-row">\
               <div class="simple-page__flow-icon">\
@@ -3346,7 +3378,16 @@
               </div>\
               <div class="simple-page__flow-body">\
                 <div class="simple-page__flow-title">{{ t(\'main.simple.deal_flow_deal_title\') }}</div>\
-                <div class="simple-page__flow-mono">{{ dealDealLabelPreview() }} · {{ resolveDeal.uid }}</div>\
+                <div class="simple-page__flow-mono">\
+                  <span v-if="resolveDealPaymentRequestPk" style="color:var(--simple-muted);font-weight:700">#{{ resolveDealPaymentRequestPk }}</span>\
+                  <span v-if="resolveDealPaymentRequestHeading" style="margin-left:0.45rem">{{ resolveDealPaymentRequestHeading }}</span>\
+                  <span style="margin-left:0.45rem">{{ dealDealLabelPreview() }} · {{ resolveDeal.uid }}</span>\
+                </div>\
+                <div v-if="resolveDeal && resolveDeal.signers" class="simple-page__flow-mono" style="margin-top:0.4rem;color:var(--simple-muted);font-size:12px;line-height:1.45">\
+                  <div><span style="font-weight:700">Sender:</span> {{ (resolveDeal.signers.sender && resolveDeal.signers.sender.address) || \'—\' }}</div>\
+                  <div><span style="font-weight:700">Receiver:</span> {{ (resolveDeal.signers.receiver && resolveDeal.signers.receiver.address) || \'—\' }}</div>\
+                  <div><span style="font-weight:700">Arbiter:</span> {{ (resolveDeal.signers.arbiter && resolveDeal.signers.arbiter.address) || \'—\' }}</div>\
+                </div>\
               </div>\
             </div>\
           </div>\

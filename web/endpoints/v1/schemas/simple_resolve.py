@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import Literal, Optional
+from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -20,6 +20,10 @@ class SimpleDealOut(BaseModel):
     uid: str
     status: str
     label: str
+    sender_did: Optional[str] = None
+    receiver_did: Optional[str] = None
+    arbiter_did: Optional[str] = None
+    signers: Optional[Dict[str, Any]] = None
     description: Optional[str] = None
     amount: Optional[Decimal] = Field(
         default=None,
@@ -37,6 +41,10 @@ class SimpleDealOut(BaseModel):
             uid=str(row.uid),
             status=str(row.status or ""),
             label=str(row.label or ""),
+            sender_did=str(row.sender_did or "") or None,
+            receiver_did=str(row.receiver_did or "") or None,
+            arbiter_did=str(row.arbiter_did or "") or None,
+            signers=dict(row.signers) if isinstance(row.signers, dict) else None,
             description=row.description,
             amount=row.amount,
             escrow_id=int(row.escrow_id) if row.escrow_id is not None else None,
@@ -50,6 +58,18 @@ class SimpleResolveResponse(BaseModel):
     viewer_did: Optional[str] = Field(
         default=None,
         description="DID текущего пользователя (сеанс); для сравнения с owner_did в UI",
+    )
+    payment_request_pk: Optional[int] = Field(
+        default=None,
+        description="PK исходной заявки (для deal_only, чтобы участники не путались)",
+    )
+    payment_request_public_ref: Optional[str] = Field(
+        default=None,
+        description="Public ref исходной заявки (для deal_only)",
+    )
+    payment_request_heading: Optional[str] = Field(
+        default=None,
+        description="Заголовок исходной заявки (для deal_only)",
     )
     payment_request: Optional[PaymentRequestOut] = None
     deal: Optional[SimpleDealOut] = None
@@ -69,9 +89,14 @@ class SimpleResolveResponse(BaseModel):
                 raise ValueError("payment_request required for payment_request_only")
             if self.deal is not None:
                 raise ValueError("deal must be null for payment_request_only")
+            if (
+                self.payment_request_pk is not None
+                or self.payment_request_public_ref is not None
+                or self.payment_request_heading is not None
+            ):
+                raise ValueError("payment_request_* must be null for payment_request_only")
         else:
             if self.deal is None:
                 raise ValueError("deal required for deal_only")
-            if self.payment_request is not None:
-                raise ValueError("payment_request must be null for deal_only")
+            # For deal_only we may attach payment_request for UI (legs/commissions display).
         return self
