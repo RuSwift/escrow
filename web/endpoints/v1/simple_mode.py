@@ -364,6 +364,13 @@ _WITHDRAW_ERR_DETAIL = {
     "no_pending_acceptance": "Нет ожидающего подтверждения принятия",
 }
 
+_REJECT_ERR_DETAIL = {
+    "not_found": "Заявка не найдена",
+    "not_owner": "Отклонить может только автор заявки",
+    "already_confirmed": "Заявка уже подтверждена",
+    "nothing_to_reject": "Нет ожидающего принятия для отклонения",
+}
+
 _VIEWER_ROLE_ERR_DETAIL = {
     "not_found": "Заявка не найдена",
     "request_deactivated": "Заявка деактивирована",
@@ -560,6 +567,48 @@ async def withdraw_payment_request_acceptance(
                 detail=detail,
             ) from e
         if code == "not_accepting_party":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=detail,
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=detail,
+        ) from e
+    return PaymentRequestHandshakeResponse(
+        payment_request=PaymentRequestOut.from_model(
+            row, space_nickname=space_nickname, viewer_did=user.did
+        ),
+        deal_uid=None,
+    )
+
+
+@router.post(
+    "/payment-requests/{pk}/reject-acceptance",
+    response_model=PaymentRequestHandshakeResponse,
+)
+async def reject_payment_request_acceptance(
+    arbiter_did: ResolvedArbiterDid,
+    user: CurrentWalletUser,
+    pk: int = Path(..., ge=1),
+    svc: PaymentRequestService = Depends(get_payment_request_service),
+):
+    """Владелец отклоняет принятие контрагента: сбрасывает acceptance, откатывает counter_leg при наличии snapshot."""
+    try:
+        row, space_nickname = await svc.reject_payment_request_owner(
+            owner_did=user.did,
+            arbiter_did=arbiter_did,
+            pk=pk,
+        )
+    except ValueError as e:
+        code = str(e)
+        detail = _REJECT_ERR_DETAIL.get(code, code)
+        if code == "not_found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=detail,
+            ) from e
+        if code == "not_owner":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=detail,

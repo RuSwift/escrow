@@ -40,7 +40,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 def _encode_admin_jwt(secret: str, payload: dict) -> str:
     """Кодирует JWT для админа (HS256, 24h)."""
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     payload.setdefault("exp", now + timedelta(hours=24))
     payload.setdefault("iat", now)
     return jwt.encode(payload, secret, algorithm=ADMIN_JWT_ALGORITHM)

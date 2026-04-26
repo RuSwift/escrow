@@ -1706,6 +1706,23 @@
   cursor: not-allowed;
 }
 
+.simple-page__pr-handshake-banner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+  justify-content: center;
+}
+
+.simple-page__pr-handshake-banner-btn--reject {
+  border-color: color-mix(in srgb, #ef4444 55%, var(--simple-border));
+  background: linear-gradient(
+    165deg,
+    color-mix(in srgb, #ef4444 18%, var(--simple-card)) 0%,
+    color-mix(in srgb, var(--simple-secondary) 90%, var(--simple-card)) 100%
+  );
+}
+
 .simple-page__pr-handshake-spinner {
   display: inline-block;
   vertical-align: middle;

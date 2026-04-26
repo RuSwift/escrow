@@ -19,7 +19,7 @@ from settings import DatabaseSettings, RedisSettings, Settings
 TEST_DB_NAME = "escrow_test"
 
 
-@pytest.fixture(scope="function")
+@pytest_asyncio.fixture(scope="function")
 def event_loop():
     """
     Создает новый event loop для каждого теста.
@@ -27,8 +27,10 @@ def event_loop():
     """
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    yield loop
-    loop.close()
+    try:
+        yield loop
+    finally:
+        loop.close()
 
 
 @pytest.fixture(scope="session")

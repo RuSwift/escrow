@@ -13,12 +13,14 @@ from db import get_db
 from db.models import GuarantorProfile, PrimaryWallet, Wallet, WalletUser
 from web.endpoints.dependencies import (
     UserInfo,
+    get_arbiter_path_resolve_service,
     get_current_wallet_user,
     get_redis,
     get_settings,
     ResolvedSettings,
 )
 from web.main import create_app
+from services.arbiter_path import ArbiterPathResolveService
 
 _OWNER_TRON = "TLrJJkGK4puQGZLFbrPxK2icPgADaNTq5A"
 _OTHER_TRON = "TP8PmmcgrTv1ASwJ7UPe8fDCmbUtTYLxnd"
@@ -98,10 +100,14 @@ async def main_app_simple_deals(test_db, test_redis, test_settings):
             did=owner.did,
         )
 
+    async def override_get_arbiter_path_resolve_service():
+        return ArbiterPathResolveService(test_db, test_redis, test_settings)
+
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_redis] = override_get_redis
     app.dependency_overrides[get_settings] = override_get_settings
     app.dependency_overrides[get_current_wallet_user] = override_current_user
+    app.dependency_overrides[get_arbiter_path_resolve_service] = override_get_arbiter_path_resolve_service
 
     yield app, owner
     app.dependency_overrides.clear()
@@ -502,7 +508,12 @@ async def test_create_payment_request_via_arbiter_public_slug(main_app_simple_de
         c = await client.post(base_slug + "/payment-requests", json=payload)
         assert c.status_code == 201, c.text
         created = c.json()["payment_request"]
-        assert created["arbiter_did"] == SIMPLE_ARBITER_DID_FROM_PRIMARY
+        # В v1_simple_deals.py:30 SIMPLE_ARBITER_DID_FROM_PRIMARY = get_user_did(_OWNER_TRON, "tron")
+        # Но в main_app_simple_deals фикстуре DID владельца задан как "did:tron:simple_api_space_owner"
+        # Сервис PaymentRequestService._get_arbiter_commission_info использует DID арбитра для поиска профиля.
+        # В тесте мы передаем SIMPLE_ARBITER_SLUG, который привязан к owner.
+        # В ответе arbiter_did должен соответствовать DID того, кто является арбитром для этого слага.
+        assert created["arbiter_did"] == owner.did
         assert created["space_id"] == owner.id
 
         lst = await client.get(base_slug + "/payment-requests")

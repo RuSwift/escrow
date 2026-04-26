@@ -344,6 +344,337 @@ async def test_withdraw_wrong_did_403(main_app_handshake):
 
 
 @pytest.mark.asyncio
+async def test_tc3_owner_reject_restores_counter_leg(main_app_handshake):
+    """TC-3: fiat_to_stable, counter_leg.amount обсуждается; owner reject откатывает amount."""
+    app, owner, other, third = main_app_handshake
+    payload = {
+        "direction": "fiat_to_stable",
+        "primary_leg": {
+            "asset_type": "fiat",
+            "code": "CNY",
+            "amount": "10000",
+            "side": "give",
+        },
+        "counter_leg": {
+            "asset_type": "stable",
+            "code": "USDT",
+            "amount": None,
+            "side": "receive",
+            "amount_discussed": True,
+        },
+    }
+    with patch("services.payment_request.NotifyService") as NS:
+        ns = NS.return_value
+        ns._language_for_scope = AsyncMock(return_value="ru")
+        ns.notify_roles = AsyncMock()
+        ns.send_message = AsyncMock()
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            c = await client.post(_v1() + "/payment-requests", json=payload)
+            assert c.status_code == 201, c.text
+            pk = c.json()["payment_request"]["pk"]
+
+            app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+                standard="tron",
+                wallet_address=_OTHER_TRON,
+                did=other.did,
+            )
+            a = await client.post(
+                _v1() + f"/payment-requests/{pk}/accept",
+                json={"counter_stable_amount": "1000"},
+            )
+            assert a.status_code == 200, a.text
+            pr = a.json()["payment_request"]
+            assert pr["counter_leg"]["amount"] == "1000"
+            assert pr["counter_leg"]["amount_discussed"] is False
+            assert pr["owner_confirm_pending"] is True
+            assert pr["counterparty_accept_did"] == other.did
+
+            app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+                standard="tron",
+                wallet_address=_OWNER_TRON,
+                did=owner.did,
+            )
+            r = await client.post(
+                _v1() + f"/payment-requests/{pk}/reject-acceptance",
+                json={},
+            )
+            assert r.status_code == 200, r.text
+            rb = r.json()["payment_request"]
+            assert rb["owner_confirm_pending"] is False
+            assert rb["counterparty_accept_did"] is None
+            assert rb["counterparty_accept_at"] is None
+            assert rb["deal_id"] is None
+            assert rb.get("counter_leg_snapshot_json") is None
+            cl = rb["counter_leg"]
+            assert cl.get("amount_discussed") is True
+            assert cl.get("amount") in (None, "")
+
+        assert ns.notify_roles.await_count >= 2
+
+
+@pytest.mark.asyncio
+async def test_tc4_owner_reject_restores_fiat_counter_leg(main_app_handshake):
+    """TC-4: stable_to_fiat, counter_leg.amount (фиат) обсуждается; reject откатывает fiat."""
+    app, owner, other, third = main_app_handshake
+    payload = {
+        "direction": "stable_to_fiat",
+        "primary_leg": {
+            "asset_type": "stable",
+            "code": "USDT",
+            "amount": "100",
+            "side": "give",
+        },
+        "counter_leg": {
+            "asset_type": "fiat",
+            "code": "CNY",
+            "amount": None,
+            "side": "receive",
+            "amount_discussed": True,
+        },
+    }
+    with patch("services.payment_request.NotifyService") as NS:
+        ns = NS.return_value
+        ns._language_for_scope = AsyncMock(return_value="ru")
+        ns.notify_roles = AsyncMock()
+        ns.send_message = AsyncMock()
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            c = await client.post(_v1() + "/payment-requests", json=payload)
+            assert c.status_code == 201, c.text
+            pk = c.json()["payment_request"]["pk"]
+            pr0 = c.json()["payment_request"]
+            base_stable = pr0["primary_leg"]["amount"]
+
+            app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+                standard="tron",
+                wallet_address=_OTHER_TRON,
+                did=other.did,
+            )
+            a = await client.post(
+                _v1() + f"/payment-requests/{pk}/accept",
+                json={"counter_stable_amount": "10000"},
+            )
+            assert a.status_code == 200, a.text
+            pr = a.json()["payment_request"]
+            assert pr["counter_leg"]["amount"] == "10000"
+            assert pr["counter_leg"]["amount_discussed"] is False
+            assert pr["primary_leg"]["amount"] == base_stable
+            assert pr["owner_confirm_pending"] is True
+
+            app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+                standard="tron",
+                wallet_address=_OWNER_TRON,
+                did=owner.did,
+            )
+            r = await client.post(
+                _v1() + f"/payment-requests/{pk}/reject-acceptance",
+                json={},
+            )
+            assert r.status_code == 200, r.text
+            rb = r.json()["payment_request"]
+            assert rb["owner_confirm_pending"] is False
+            assert rb["counterparty_accept_did"] is None
+            assert rb["primary_leg"]["amount"] == base_stable
+            assert rb.get("counter_leg_snapshot_json") is None
+            cl = rb["counter_leg"]
+            assert cl.get("amount_discussed") is True
+            assert cl.get("amount") in (None, "")
+
+        assert ns.notify_roles.await_count >= 2
+
+
+@pytest.mark.asyncio
+async def test_reject_acceptance_non_owner_403(main_app_handshake):
+    app, owner, other, third = main_app_handshake
+    payload = {
+        "direction": "fiat_to_stable",
+        "primary_leg": {
+            "asset_type": "fiat",
+            "code": "EUR",
+            "amount": "50",
+            "side": "give",
+        },
+        "counter_leg": {
+            "asset_type": "stable",
+            "code": "USDT",
+            "amount": "55",
+            "side": "receive",
+        },
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        c = await client.post(_v1() + "/payment-requests", json=payload)
+        pk = c.json()["payment_request"]["pk"]
+
+        app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+            standard="tron",
+            wallet_address=_OTHER_TRON,
+            did=other.did,
+        )
+        await client.post(_v1() + f"/payment-requests/{pk}/accept", json={})
+
+        app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+            standard="tron",
+            wallet_address=_THIRD_TRON,
+            did=third.did,
+        )
+        r = await client.post(
+            _v1() + f"/payment-requests/{pk}/reject-acceptance",
+            json={},
+        )
+        assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_reject_acceptance_no_pending_400(main_app_handshake):
+    """Reject без принятого acceptance возвращает 400 (nothing_to_reject)."""
+    app, owner, other, third = main_app_handshake
+    payload = {
+        "direction": "fiat_to_stable",
+        "primary_leg": {
+            "asset_type": "fiat",
+            "code": "USD",
+            "amount": "100",
+            "side": "give",
+        },
+        "counter_leg": {
+            "asset_type": "stable",
+            "code": "USDT",
+            "amount": "12",
+            "side": "receive",
+        },
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        c = await client.post(_v1() + "/payment-requests", json=payload)
+        pk = c.json()["payment_request"]["pk"]
+        r = await client.post(
+            _v1() + f"/payment-requests/{pk}/reject-acceptance",
+            json={},
+        )
+        assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_reject_after_confirm_400(main_app_handshake):
+    """Reject после confirm (deal создан) запрещён."""
+    app, owner, other, _ = main_app_handshake
+    payload = {
+        "direction": "fiat_to_stable",
+        "primary_leg": {
+            "asset_type": "fiat",
+            "code": "CNY",
+            "amount": "100",
+            "side": "give",
+        },
+        "counter_leg": {
+            "asset_type": "stable",
+            "code": "USDT",
+            "amount": "12",
+            "side": "receive",
+        },
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        c = await client.post(_v1() + "/payment-requests", json=payload)
+        pk = c.json()["payment_request"]["pk"]
+        app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+            standard="tron",
+            wallet_address=_OTHER_TRON,
+            did=other.did,
+        )
+        await client.post(_v1() + f"/payment-requests/{pk}/accept", json={})
+        app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+            standard="tron",
+            wallet_address=_OWNER_TRON,
+            did=owner.did,
+        )
+        await client.post(_v1() + f"/payment-requests/{pk}/confirm", json={})
+        r = await client.post(
+            _v1() + f"/payment-requests/{pk}/reject-acceptance",
+            json={},
+        )
+        assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_reject_unlocks_for_other_acceptor(main_app_handshake):
+    """После reject заявка снова доступна для accept другим контрагентом."""
+    app, owner, other, third = main_app_handshake
+    payload = {
+        "direction": "fiat_to_stable",
+        "primary_leg": {
+            "asset_type": "fiat",
+            "code": "USD",
+            "amount": "200",
+            "side": "give",
+        },
+        "counter_leg": {
+            "asset_type": "stable",
+            "code": "USDT",
+            "amount": None,
+            "side": "receive",
+            "amount_discussed": True,
+        },
+    }
+    with patch("services.payment_request.NotifyService") as NS:
+        ns = NS.return_value
+        ns._language_for_scope = AsyncMock(return_value="ru")
+        ns.notify_roles = AsyncMock()
+        ns.send_message = AsyncMock()
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            c = await client.post(_v1() + "/payment-requests", json=payload)
+            pk = c.json()["payment_request"]["pk"]
+            app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+                standard="tron",
+                wallet_address=_OTHER_TRON,
+                did=other.did,
+            )
+            await client.post(
+                _v1() + f"/payment-requests/{pk}/accept",
+                json={"counter_stable_amount": "30"},
+            )
+            app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+                standard="tron",
+                wallet_address=_OWNER_TRON,
+                did=owner.did,
+            )
+            r = await client.post(
+                _v1() + f"/payment-requests/{pk}/reject-acceptance",
+                json={},
+            )
+            assert r.status_code == 200, r.text
+
+            app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+                standard="tron",
+                wallet_address=_THIRD_TRON,
+                did=third.did,
+            )
+            a2 = await client.post(
+                _v1() + f"/payment-requests/{pk}/accept",
+                json={"counter_stable_amount": "40"},
+            )
+            assert a2.status_code == 200, a2.text
+            pr2 = a2.json()["payment_request"]
+            assert pr2["counterparty_accept_did"] == third.did
+            assert pr2["counter_leg"]["amount"] == "40"
+
+
+@pytest.mark.asyncio
 async def test_withdraw_after_confirm_400(main_app_handshake):
     app, owner, other, _ = main_app_handshake
     payload = {

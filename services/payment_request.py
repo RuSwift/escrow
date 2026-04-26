@@ -940,6 +940,7 @@ class PaymentRequestService:
             "accepted": "notify.payment_request_handshake_accepted",
             "confirmed": "notify.payment_request_handshake_confirmed",
             "withdrawn": "notify.payment_request_handshake_withdrawn",
+            "rejected": "notify.payment_request_handshake_rejected",
         }
         msg_key = keys.get(event)
         if not msg_key:
@@ -1191,6 +1192,52 @@ class PaymentRequestService:
         await self._session.refresh(row)
         await self._notify_handshake_event(
             row=row, space_nickname=space_nickname, event="withdrawn"
+        )
+        return row, space_nickname
+
+    async def reject_payment_request_owner(
+        self,
+        *,
+        owner_did: str,
+        arbiter_did: str,
+        pk: int,
+    ) -> Tuple[PaymentRequest, str]:
+        """
+        Owner отклоняет принятие контрагента (TC-3/TC-4): полный сброс согласования.
+
+        Очищает counterparty_accept_*, owner_confirm_pending=False; при наличии
+        counter_leg_snapshot_json — откатывает counter_leg к исходному состоянию.
+        """
+        pair = await self._requests.get_by_pk(pk, arbiter_did=arbiter_did)
+        if pair is None:
+            raise ValueError("not_found")
+        row, space_nickname = pair
+        if row.deal_id is not None:
+            raise ValueError("already_confirmed")
+        od = (owner_did or "").strip()
+        if not od or od != (row.owner_did or "").strip():
+            raise ValueError("not_owner")
+        if not row.owner_confirm_pending or row.counterparty_accept_at is None:
+            raise ValueError("nothing_to_reject")
+        if not (row.counterparty_accept_did or "").strip():
+            raise ValueError("nothing_to_reject")
+
+        snap_raw = row.counter_leg_snapshot_json
+        if isinstance(snap_raw, dict):
+            row.counter_leg = copy.deepcopy(snap_raw)
+            row.counter_leg_snapshot_json = None
+            self._rebuild_all_commission_snapshots(row)
+        else:
+            row.counter_leg_snapshot_json = None
+
+        row.counterparty_accept_did = None
+        row.counterparty_accept_at = None
+        row.owner_confirm_pending = False
+
+        await self._session.commit()
+        await self._session.refresh(row)
+        await self._notify_handshake_event(
+            row=row, space_nickname=space_nickname, event="rejected"
         )
         return row, space_nickname
 

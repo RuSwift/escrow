@@ -373,6 +373,7 @@
                 acceptSubmitting: false,
                 withdrawAcceptSubmitting: false,
                 ownerConfirmSubmitting: false,
+                ownerRejectSubmitting: false,
                 showAcceptAmountModal: false,
                 acceptAmountInput: '',
                 acceptModalError: '',
@@ -850,6 +851,31 @@
                     this.acceptSubmitting ||
                     !(String(this.acceptAmountInput || '').trim())
                 );
+            },
+            /**
+             * Метаданные counter_leg для модалки приёма обсуждаемой суммы:
+             * для fiat_to_stable counter — стейбл (USDT), для stable_to_fiat — фиат (CNY).
+             */
+            acceptModalCounterMeta: function() {
+                var pr = this.resolvePaymentRequest;
+                if (!pr || !pr.counter_leg) return { code: '', isStable: true };
+                var cl = pr.counter_leg;
+                var code = cl.code ? String(cl.code).trim().toUpperCase() : '';
+                var at = String(cl.asset_type || '').trim().toLowerCase();
+                return { code: code, isStable: at === 'stable' };
+            },
+            acceptModalTitle: function() {
+                var meta = this.acceptModalCounterMeta;
+                if (meta && meta.code) {
+                    return t('main.simple.pr_accept_modal_title_with_code', { code: meta.code });
+                }
+                return t('main.simple.pr_accept_modal_title');
+            },
+            acceptModalHint: function() {
+                var meta = this.acceptModalCounterMeta;
+                if (!meta) return t('main.simple.pr_accept_modal_hint');
+                if (meta.isStable) return t('main.simple.pr_accept_modal_hint_stable');
+                return t('main.simple.pr_accept_modal_hint_fiat');
             }
         },
         methods: {
@@ -1615,6 +1641,72 @@
                         self.ownerConfirmSubmitting = false;
                     });
             },
+            submitRejectAcceptance: function() {
+                var self = this;
+                if (!self.guardTermsNotExpired()) return;
+                if (!self.resolvePaymentRequest || self.ownerRejectSubmitting) return;
+                var tok = getToken();
+                if (!tok) {
+                    self.showAuthModal = true;
+                    return;
+                }
+                var pk = self.resolvePaymentRequest.pk;
+                if (pk === undefined || pk === null) return;
+                self.ownerRejectSubmitting = true;
+                self.handshakeBanner = null;
+                fetch(
+                    self.simpleV1Prefix() +
+                        'payment-requests/' +
+                        encodeURIComponent(String(pk)) +
+                        '/reject-acceptance',
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: 'Bearer ' + tok
+                        },
+                        credentials: 'same-origin',
+                        body: '{}'
+                    }
+                )
+                    .then(function(r) {
+                        return r.json().then(function(data) {
+                            return { ok: r.ok, data: data };
+                        });
+                    })
+                    .then(function(res) {
+                        if (!res.ok) {
+                            var msg = self.simpleApiErrorMessage(res.data || {});
+                            self.handshakeBanner = {
+                                type: 'error',
+                                text: msg || t('main.simple.pr_reject_error')
+                            };
+                            self._clearTermsFeedbackLater();
+                            return;
+                        }
+                        var pr = res.data && res.data.payment_request;
+                        if (pr) {
+                            self.resolvePaymentRequest = pr;
+                        }
+                        self.handshakeBanner = {
+                            type: 'success',
+                            text: t('main.simple.pr_reject_done')
+                        };
+                        self._clearTermsFeedbackLater();
+                        self.fetchResolve();
+                        self.fetchOrders();
+                    })
+                    .catch(function() {
+                        self.handshakeBanner = {
+                            type: 'error',
+                            text: t('main.simple.pr_reject_error')
+                        };
+                        self._clearTermsFeedbackLater();
+                    })
+                    .finally(function() {
+                        self.ownerRejectSubmitting = false;
+                    });
+            },
             submitExtendPaymentRequest: function(pk, applyToResolve, lifetime) {
                 var self = this;
                 var tok = getToken();
@@ -1883,7 +1975,9 @@
                 return sumStr + (code ? ' ' + code : '');
             },
             /**
-             * Для посредника: «получают» = база B + комиссии предыдущей цепочки (без моей комиссии).
+             * Для посредника: «контрагентский» итог по стейблу с учётом fees-цепочки до viewer.
+             * fiat_to_stable: B + комиссии предыдущей цепочки (без моей комиссии).
+             * stable_to_fiat (TC-2): B − комиссии предыдущей цепочки (комиссии вычитаются из B).
              */
             viewerStableLegPrevChainTotalFormatted: function(req) {
                 var pr = req || this.resolvePaymentRequest;
@@ -1899,7 +1993,11 @@
                 if (!baseRaw) return '';
                 var ba = parseFloat(sanitizeDecimalAmountInput(baseRaw));
                 if (!isFinite(ba)) return '';
-                var sum = ba + feeBefore;
+                var direction = String(pr.direction || '');
+                var sum = direction === 'stable_to_fiat'
+                    ? ba - feeBefore
+                    : ba + feeBefore;
+                if (sum < 0) sum = 0;
                 var code = stableLeg.code ? String(stableLeg.code).trim().toUpperCase() : '';
                 var sumStr = formatAmountForLocale(String(sum));
                 return sumStr + (code ? ' ' + code : '');
@@ -2269,6 +2367,12 @@
              * Выставлен счет: суммы обеих ног + коды.
              * Запрос условий: сумма отдачи + направление (получение без суммы).
              * Контрагент/acceptor: только итоговые суммы ног; разбивка комиссий — только у посредника (isCommissionerIntermediary).
+             *
+             * TC-2 (stable_to_fiat): для non-owner стейбл-нога показывается как net B − Σfees
+             *   (комиссии вычитаются из «отдают» по стейблу — owner деопонирует B + fees,
+             *   но контрагент в итоге получает B − fees; в листинге показываем именно это).
+             * TC-1 (fiat_to_stable): для non-owner стейбл-нога показывается как B + Σfees
+             *   (контрагент кладёт в эскроу B + fees при direction fiat_to_stable).
              */
             orderAmountsLine: function(req) {
                 if (!req) return '';
@@ -2280,16 +2384,15 @@
                 var raRaw = cl && cl.amount != null ? String(cl.amount).trim() : '';
                 var ga = gaRaw ? formatAmountForLocale(gaRaw) : '';
                 var ra = raRaw ? formatAmountForLocale(raRaw) : '';
-                // Для non-owner "истинная" сумма в stable-ноге (escrow lock): base + fees.
-                // Owner всегда видит raw amount из заявки.
-                var stableIsReceive = String(req.direction || '') === 'fiat_to_stable';
+                var direction = String(req.direction || '');
+                var stableIsReceive = direction === 'fiat_to_stable';
+                var feesAddOnStable = stableIsReceive;
                 var vd = (this.viewerDid || '').trim();
                 var amOwnerForReq = !!(vd && (req.owner_did || '').trim() === vd);
                 var amIntermediaryForReq = !!(vd && !amOwnerForReq && viewerIntermediarySlot(req, vd));
                 if (amIntermediaryForReq) {
                     var prevStable = this.viewerStableLegPrevChainTotalFormatted(req);
                     if (prevStable) {
-                        // prevStable already contains code; override stable leg display without раскрытия структуры
                         if (stableIsReceive) {
                             ra = prevStable;
                             rc = '';
@@ -2309,7 +2412,10 @@
                                 if (baseRaw) {
                                     var ba = parseFloat(sanitizeDecimalAmountInput(baseRaw));
                                     if (isFinite(ba)) {
-                                        var sum = ba + feeTotal;
+                                        var sum = feesAddOnStable
+                                            ? ba + feeTotal
+                                            : ba - feeTotal;
+                                        if (sum < 0) sum = 0;
                                         var code = stableLeg.code ? String(stableLeg.code).trim().toUpperCase() : '';
                                         var sumStr = formatAmountForLocale(String(sum));
                                         var escStable = sumStr + (code ? ' ' + code : '');
@@ -2924,8 +3030,8 @@
   </div>\
   <div v-if="showAcceptAmountModal" class="simple-deactivate__overlay" @click.self="closeAcceptAmountModal">\
     <div class="simple-create__modal simple-deactivate__modal" role="dialog" aria-modal="true" aria-labelledby="simple-accept-amt-title" @click.stop>\
-      <h2 id="simple-accept-amt-title" class="simple-create__title">{{ t(\'main.simple.pr_accept_modal_title\') }}</h2>\
-      <p class="simple-deactivate__hint">{{ t(\'main.simple.pr_accept_modal_hint\') }}</p>\
+      <h2 id="simple-accept-amt-title" class="simple-create__title">{{ acceptModalTitle }}</h2>\
+      <p class="simple-deactivate__hint">{{ acceptModalHint }}</p>\
       <label class="simple-create__label" for="simple-accept-amt-input">{{ t(\'main.simple.pr_accept_modal_label\') }}</label>\
       <input id="simple-accept-amt-input" type="text" class="simple-create__input" v-model.trim="acceptAmountInput" inputmode="decimal" autocomplete="off" />\
       <div v-if="acceptModalError" class="simple-create__err">{{ acceptModalError }}</div>\
@@ -3219,10 +3325,16 @@
           <div v-if="dealPrTermsPhase && handshakeLockedByOther && !isPaymentRequestOwner" class="simple-page__pr-handshake-locked-hint" role="status">{{ t(\'main.simple.handshake_locked_hint\') }}</div>\
           <div v-if="showOwnerConfirmBanner" class="simple-page__pr-handshake-banner simple-page__pr-handshake-banner--pulse" role="status">\
             <p class="simple-page__pr-handshake-banner-text">{{ t(\'main.simple.pr_owner_confirm_banner\') }}</p>\
-            <button type="button" class="simple-page__pr-handshake-banner-btn" @click="submitOwnerConfirm" :disabled="ownerConfirmSubmitting" :aria-busy="ownerConfirmSubmitting ? \'true\' : \'false\'">\
-              <span v-if="ownerConfirmSubmitting" class="simple-create__btn-spinner simple-page__pr-handshake-spinner" aria-hidden="true"></span>\
-              {{ t(\'main.simple.pr_btn_owner_confirm\') }}\
-            </button>\
+            <div class="simple-page__pr-handshake-banner-actions">\
+              <button type="button" class="simple-page__pr-handshake-banner-btn" @click="submitOwnerConfirm" :disabled="ownerConfirmSubmitting || ownerRejectSubmitting" :aria-busy="ownerConfirmSubmitting ? \'true\' : \'false\'">\
+                <span v-if="ownerConfirmSubmitting" class="simple-create__btn-spinner simple-page__pr-handshake-spinner" aria-hidden="true"></span>\
+                {{ t(\'main.simple.pr_btn_owner_confirm\') }}\
+              </button>\
+              <button type="button" class="simple-page__pr-handshake-banner-btn simple-page__pr-handshake-banner-btn--reject" @click="submitRejectAcceptance" :disabled="ownerRejectSubmitting || ownerConfirmSubmitting" :aria-busy="ownerRejectSubmitting ? \'true\' : \'false\'">\
+                <span v-if="ownerRejectSubmitting" class="simple-create__btn-spinner simple-page__pr-handshake-spinner" aria-hidden="true"></span>\
+                {{ t(\'main.simple.pr_btn_owner_reject\') }}\
+              </button>\
+            </div>\
           </div>\
           <div class="simple-page__flow-shell">\
             <div class="simple-page__flow-row" :class="{ \'simple-page__flow-row--pr-split\': dealPrTermsPhase }">\

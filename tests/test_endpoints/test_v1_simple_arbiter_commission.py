@@ -160,6 +160,59 @@ async def test_create_pr_includes_arbiter_commission(arbiter_app, test_db, test_
         assert sys_slot["payment_amount"] == "170"
 
 @pytest.mark.asyncio
+async def test_tc2_stable_to_fiat_borrow_includes_arbiter_commission(arbiter_app, test_db, test_redis, test_settings):
+    """TC-2: для stable_to_fiat системный слот содержит arbiter_commission и borrow_amount = (system + arbiter)% * B."""
+    app, owner, arbiter = arbiter_app
+
+    arbiter_path = quote(SIMPLE_ARBITER_DID, safe='')
+    url = f"/v1/arbiter/{arbiter_path}/payment-requests"
+
+    payload = {
+        "direction": "stable_to_fiat",
+        "primary_leg": {
+            "asset_type": "stable",
+            "code": "USDT",
+            "amount": "100",
+            "side": "give",
+        },
+        "counter_leg": {
+            "asset_type": "fiat",
+            "code": "CNY",
+            "amount": "10000",
+            "side": "receive",
+        },
+    }
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(url, json=payload)
+        assert response.status_code == 201, response.text
+
+        pr = response.json()["payment_request"]
+        comm = pr["commissioners"]
+        assert "system" in comm
+
+        sys_slot = comm["system"]
+        assert sys_slot["commission"]["value"] == "0.2"
+        assert sys_slot["arbiter_commission"]["value"] == "1.5"
+        assert sys_slot["arbiter_payout_address"] == _ARBITER_TRON
+
+        # B = 100 USDT (primary leg для stable_to_fiat)
+        # fee_system = 100 * 0.002 = 0.2
+        # fee_arbiter = 100 * 0.015 = 1.5
+        # total borrow_amount = 1.7
+        assert sys_slot["borrow_amount"] == "1.7"
+
+        # payment_amount по фиатной ноге (10000 CNY):
+        # fee_system = 10000 * 0.002 = 20
+        # fee_arbiter = 10000 * 0.015 = 150
+        # total payment_amount = 170
+        assert sys_slot["payment_amount"] == "170"
+
+
+@pytest.mark.asyncio
 async def test_create_pr_with_slug_includes_arbiter_commission(arbiter_app, test_db, test_redis, test_settings):
     app, owner, arbiter = arbiter_app
     
