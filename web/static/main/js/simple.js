@@ -3371,23 +3371,24 @@
               </div>\
             </div>\
           </div>\
-          <div class="simple-page__flow-shell">\
-            <div class="simple-page__flow-row">\
-              <div class="simple-page__flow-icon">\
-                <svg class="simple-page__svg--lg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>\
-              </div>\
-              <div class="simple-page__flow-body">\
-                <div class="simple-page__flow-title">{{ t(\'main.simple.deal_flow_deal_title\') }}</div>\
-                <div class="simple-page__flow-mono">\
-                  <span v-if="resolveDealPaymentRequestPk" style="color:var(--simple-muted);font-weight:700">#{{ resolveDealPaymentRequestPk }}</span>\
-                  <span v-if="resolveDealPaymentRequestHeading" style="margin-left:0.45rem">{{ resolveDealPaymentRequestHeading }}</span>\
-                  <span style="margin-left:0.45rem">{{ dealDealLabelPreview() }} · {{ resolveDeal.uid }}</span>\
-                </div>\
-                <div v-if="resolveDeal && resolveDeal.signers" class="simple-page__flow-mono" style="margin-top:0.4rem;color:var(--simple-muted);font-size:12px;line-height:1.45">\
-                  <div><span style="font-weight:700">Sender:</span> {{ (resolveDeal.signers.sender && resolveDeal.signers.sender.address) || \'—\' }}</div>\
-                  <div><span style="font-weight:700">Receiver:</span> {{ (resolveDeal.signers.receiver && resolveDeal.signers.receiver.address) || \'—\' }}</div>\
-                  <div><span style="font-weight:700">Arbiter:</span> {{ (resolveDeal.signers.arbiter && resolveDeal.signers.arbiter.address) || \'—\' }}</div>\
-                </div>\
+          <div class="simple-page__lockbox">\
+            <div class="simple-page__lockbox-tag">{{ t(\'main.simple.deal_flow_deal_title\') }}</div>\
+            <div class="simple-page__lockbox-head">\
+              <svg class="simple-page__svg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>\
+              <span class="simple-page__lockbox-brand">{{ t(\'main.simple.deal_flow_deal_title\') }}</span>\
+            </div>\
+            <div class="simple-page__flow-mono" style="margin-bottom:1rem">\
+              <span v-if="resolveDealPaymentRequestPk" style="color:var(--simple-muted);font-weight:800">#{{ resolveDealPaymentRequestPk }}</span>\
+              <span v-if="resolveDealPaymentRequestHeading" style="margin-left:0.45rem">{{ resolveDealPaymentRequestHeading }}</span>\
+              <span style="margin-left:0.45rem">{{ dealDealLabelPreview() }} · {{ resolveDeal.uid }}</span>\
+              <span v-if="resolveDeal && resolveDeal.status" style="margin-left:0.45rem;color:var(--simple-muted)">({{ resolveDeal.status }})</span>\
+            </div>\
+            <div class="simple-page__lockbox-inner">\
+              <svg class="simple-page__svg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 .552-.448 1-1 1s-1-.448-1-1 .448-1 1-1 1 .448 1 1zm8 10H4a2 2 0 01-2-2V5a2 2 0 012-2h16a2 2 0 012 2v14a2 2 0 01-2 2z"/></svg>\
+              <div style="display:flex;flex-direction:column;gap:0.25rem;min-width:0">\
+                <div><span style="font-weight:800">Sender:</span> {{ (resolveDeal && resolveDeal.signers && resolveDeal.signers.sender && resolveDeal.signers.sender.address) || \'—\' }}</div>\
+                <div><span style="font-weight:800">Receiver:</span> {{ (resolveDeal && resolveDeal.signers && resolveDeal.signers.receiver && resolveDeal.signers.receiver.address) || \'—\' }}</div>\
+                <div><span style="font-weight:800">Arbiter:</span> {{ (resolveDeal && resolveDeal.signers && resolveDeal.signers.arbiter && resolveDeal.signers.arbiter.address) || \'—\' }}</div>\
               </div>\
             </div>\
           </div>\
