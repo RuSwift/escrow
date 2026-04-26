@@ -243,6 +243,41 @@
     }
 
     /**
+     * База B стейбл-ноги заявки (числом) или NaN, если ноги нет/значение некорректно.
+     * Источник истины — нога со стейбл-активом для текущего direction.
+     */
+    function prStableBaseAmount(pr) {
+        var stableLeg = prLegForAsset(pr, false);
+        if (!stableLeg || String(stableLeg.asset_type || '').toLowerCase() !== 'stable') {
+            return NaN;
+        }
+        var raw = stableLeg.amount != null ? String(stableLeg.amount).trim() : '';
+        if (!raw) return NaN;
+        var v = parseFloat(sanitizeDecimalAmountInput(raw));
+        return isFinite(v) ? v : NaN;
+    }
+
+    /**
+     * Net-сумма стейбла, отображаемая контрагенту (не-владельцу) поверх базы B.
+     * fiat_to_stable: net = B (комиссии прибавляются сверху на стороне эскроу).
+     * stable_to_fiat (TC-2): net = B − sum(fees) (контрагент получает базу за вычетом комиссий).
+     * Возвращает NaN, если стейбл-ноги нет или amount нечитаем; never < 0 для отображения.
+     */
+    function prStableNetForDisplay(pr) {
+        if (!pr) return NaN;
+        var base = prStableBaseAmount(pr);
+        if (!isFinite(base)) return NaN;
+        var direction = String(pr.direction || '');
+        if (direction !== 'stable_to_fiat') {
+            return base;
+        }
+        var fees = prStableEscrowFeesTotal(pr);
+        if (!isFinite(fees) || fees <= 0) return base;
+        var net = base - fees;
+        return net > 0 ? net : 0;
+    }
+
+    /**
      * Комиссии предыдущей цепочки по залогу (stable) для посредника viewerDid:
      * сумма borrow_amount всех слотов, кроме borrow_amount слота данного посредника.
      */
@@ -1960,17 +1995,13 @@
                 var pr = this.resolvePaymentRequest;
                 var feeTotal = prStableEscrowFeesTotal(pr);
                 if (!feeTotal || !isFinite(feeTotal)) return '';
+                var ba = prStableBaseAmount(pr);
+                if (!isFinite(ba)) return '';
                 var stableLeg = prLegForAsset(pr, false);
-                if (!stableLeg || String(stableLeg.asset_type || '').toLowerCase() !== 'stable') {
-                    return '';
-                }
-                var baseRaw =
-                    stableLeg.amount != null ? String(stableLeg.amount).trim() : '';
-                if (!baseRaw) return '';
-                var ba = parseFloat(sanitizeDecimalAmountInput(baseRaw));
-                if (!isFinite(ba) || !isFinite(feeTotal)) return '';
                 var sum = ba + feeTotal;
-                var code = stableLeg.code ? String(stableLeg.code).trim().toUpperCase() : '';
+                var code = stableLeg && stableLeg.code
+                    ? String(stableLeg.code).trim().toUpperCase()
+                    : '';
                 var sumStr = formatAmountForLocale(String(sum));
                 return sumStr + (code ? ' ' + code : '');
             },
@@ -1984,21 +2015,17 @@
                 if (!pr) return '';
                 var feeBefore = prStableEscrowFeesBeforeViewer(pr, this.viewerDid);
                 if (!isFinite(feeBefore) || feeBefore <= 0) return '';
-                var stableLeg = prLegForAsset(pr, false);
-                if (!stableLeg || String(stableLeg.asset_type || '').toLowerCase() !== 'stable') {
-                    return '';
-                }
-                var baseRaw =
-                    stableLeg.amount != null ? String(stableLeg.amount).trim() : '';
-                if (!baseRaw) return '';
-                var ba = parseFloat(sanitizeDecimalAmountInput(baseRaw));
+                var ba = prStableBaseAmount(pr);
                 if (!isFinite(ba)) return '';
                 var direction = String(pr.direction || '');
                 var sum = direction === 'stable_to_fiat'
                     ? ba - feeBefore
                     : ba + feeBefore;
                 if (sum < 0) sum = 0;
-                var code = stableLeg.code ? String(stableLeg.code).trim().toUpperCase() : '';
+                var stableLeg = prLegForAsset(pr, false);
+                var code = stableLeg && stableLeg.code
+                    ? String(stableLeg.code).trim().toUpperCase()
+                    : '';
                 var sumStr = formatAmountForLocale(String(sum));
                 return sumStr + (code ? ' ' + code : '');
             },
@@ -2386,7 +2413,6 @@
                 var ra = raRaw ? formatAmountForLocale(raRaw) : '';
                 var direction = String(req.direction || '');
                 var stableIsReceive = direction === 'fiat_to_stable';
-                var feesAddOnStable = stableIsReceive;
                 var vd = (this.viewerDid || '').trim();
                 var amOwnerForReq = !!(vd && (req.owner_did || '').trim() === vd);
                 var amIntermediaryForReq = !!(vd && !amOwnerForReq && viewerIntermediarySlot(req, vd));
@@ -2403,31 +2429,21 @@
                     }
                 } else if (!amOwnerForReq) {
                     try {
-                        var feeTotal = prStableEscrowFeesTotal(req);
-                        if (feeTotal && isFinite(feeTotal)) {
-                            var stableLeg = prLegForAsset(req, false);
-                            if (stableLeg && String(stableLeg.asset_type || '').toLowerCase() === 'stable') {
-                                var baseRaw =
-                                    stableLeg.amount != null ? String(stableLeg.amount).trim() : '';
-                                if (baseRaw) {
-                                    var ba = parseFloat(sanitizeDecimalAmountInput(baseRaw));
-                                    if (isFinite(ba)) {
-                                        var sum = feesAddOnStable
-                                            ? ba + feeTotal
-                                            : ba - feeTotal;
-                                        if (sum < 0) sum = 0;
-                                        var code = stableLeg.code ? String(stableLeg.code).trim().toUpperCase() : '';
-                                        var sumStr = formatAmountForLocale(String(sum));
-                                        var escStable = sumStr + (code ? ' ' + code : '');
-                                        if (stableIsReceive) {
-                                            ra = escStable;
-                                            rc = '';
-                                        } else {
-                                            ga = escStable;
-                                            gc = '';
-                                        }
-                                    }
-                                }
+                        var net = prStableNetForDisplay(req);
+                        var base = prStableBaseAmount(req);
+                        if (isFinite(net) && isFinite(base) && net !== base) {
+                            var stableLegC = prLegForAsset(req, false);
+                            var codeC = stableLegC && stableLegC.code
+                                ? String(stableLegC.code).trim().toUpperCase()
+                                : '';
+                            var netStr = formatAmountForLocale(String(net));
+                            var netStable = netStr + (codeC ? ' ' + codeC : '');
+                            if (stableIsReceive) {
+                                ra = netStable;
+                                rc = '';
+                            } else {
+                                ga = netStable;
+                                gc = '';
                             }
                         }
                     } catch (eEsc) {}
