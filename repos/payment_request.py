@@ -255,6 +255,28 @@ class PaymentRequestRepository(BaseRepository):
         )
         return pr, nick, seg
 
+    async def get_by_pk(
+        self,
+        pk: int,
+        *,
+        arbiter_did: str,
+    ) -> Optional[Tuple[PaymentRequest, str]]:
+        """Заявка по pk в контексте арбитра (path)."""
+        arb = (arbiter_did or "").strip()
+        if not arb:
+            return None
+        stmt = (
+            select(PaymentRequest, WalletUser.nickname)
+            .join(WalletUser, PaymentRequest.space_id == WalletUser.id)
+            .where(PaymentRequest.pk == pk)
+            .where(PaymentRequest.arbiter_did == arb)
+        )
+        res = await self._session.execute(stmt)
+        row = res.first()
+        if row is None:
+            return None
+        return row[0], str(row[1])
+
     async def get_by_uid(
         self,
         uid: str,

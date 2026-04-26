@@ -366,9 +366,10 @@ class WalletUserService:
         *,
         nickname: Optional[str] = None,
         avatar: Optional[str] = None,
+        company_name: Optional[str] = None,
     ) -> WalletUserResource.Get:
         """
-        Обновляет профиль (никнейм и/или аватар) по адресу кошелька.
+        Обновляет профиль (никнейм и/или аватар и/или фирменное название) по адресу кошелька.
         Пустая строка avatar очищает аватар.
 
         Raises:
@@ -402,9 +403,15 @@ class WalletUserService:
                     raise ValueError("Avatar size is too large (max 1MB)")
                 patch_data["avatar"] = avatar
 
+        if company_name is not None:
+            from repos.wallet_user import WalletUserProfileSchema
+            profile_data = user.profile.model_dump() if user.profile else {}
+            profile_data["company_name"] = company_name.strip() if company_name else None
+            patch_data["profile"] = WalletUserProfileSchema(**profile_data)
+
         if not patch_data:
             raise ValueError(
-                "At least one field (nickname or avatar) must be provided"
+                "At least one field (nickname, avatar or company_name) must be provided"
             )
 
         updated = await self._repo.patch(

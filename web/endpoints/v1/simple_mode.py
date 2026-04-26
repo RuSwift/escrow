@@ -17,14 +17,19 @@ from web.endpoints.dependencies import (
     get_simple_resolve_service,
 )
 from web.endpoints.v1.schemas.payment_requests import (
+    PaymentRequestAcceptBody,
     PaymentRequestCreateBody,
     PaymentRequestCreateResponse,
     PaymentRequestDeactivateBody,
     PaymentRequestDeactivateResponse,
+    PaymentRequestExtendBody,
+    PaymentRequestHandshakeResponse,
     PaymentRequestListResponse,
     PaymentRequestOut,
     PaymentRequestResellBody,
     PaymentRequestResellResponse,
+    PaymentRequestViewerRoleBody,
+    PaymentRequestViewerRoleResponse,
 )
 from web.endpoints.v1.schemas.simple_resolve import SimpleDealOut, SimpleResolveResponse
 
@@ -218,6 +223,61 @@ async def deactivate_payment_request(
     )
 
 
+@router.post(
+    "/payment-requests/{pk}/extend",
+    response_model=PaymentRequestHandshakeResponse,
+)
+async def extend_payment_request(
+    arbiter_did: ResolvedArbiterDid,
+    user: CurrentWalletUser,
+    svc: PaymentRequestService = Depends(get_payment_request_service),
+    pk: int = Path(..., ge=1),
+    body: PaymentRequestExtendBody | None = None,
+):
+    """Владелец заявки: продлить срок действия (expires_at) на 72 часа."""
+    try:
+        row, space_nickname = await svc.extend_payment_request_owner(
+            wallet_address=user.wallet_address,
+            owner_did=user.did,
+            standard=user.standard,
+            arbiter_did=arbiter_did,
+            pk=pk,
+            lifetime=(body.lifetime if body is not None else "72h"),
+        )
+    except SpacePermissionDenied as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=str(e),
+        ) from e
+    except ValueError as e:
+        code = str(e)
+        if code == "not_found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Заявка не найдена",
+            ) from e
+        if code == "not_owner":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Продлить заявку может только её владелец",
+            ) from e
+        if code == "invalid_lifetime":
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Некорректный срок продления",
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=code,
+        ) from e
+    return PaymentRequestHandshakeResponse(
+        payment_request=PaymentRequestOut.from_model(
+            row, space_nickname=space_nickname, viewer_did=user.did
+        ),
+        deal_uid=None,
+    )
+
+
 _RESELL_ERR_DETAIL = {
     "not_found": "Заявка не найдена",
     "public_uid_required": "Идентификатор заявки обязателен",
@@ -228,6 +288,47 @@ _RESELL_ERR_DETAIL = {
     "intermediary_percent_invalid": "Некорректный процент комиссии",
     "intermediary_percent_range": "Процент должен быть от 0.1 до 100",
     "commissioners_invalid": "Некорректная структура комиссионеров",
+}
+
+
+_ACCEPT_ERR_DETAIL = {
+    "not_found": "Заявка не найдена",
+    "actor_required": "Не удалось определить пользователя",
+    "request_deactivated": "Заявка снята с публикации",
+    "request_already_accepted": "Заявка уже связана со сделкой",
+    "owner_cannot_accept": "Принять может только контрагент, не автор заявки",
+    "counter_stable_amount_required": "Укажите согласованную сумму стейбла для приёма",
+    "counter_leg_invalid": "Некорректная нога получения",
+    "invalid_direction": "Некорректное направление заявки",
+    "counterparty_already_locked": "Условия уже согласуются с другим контрагентом",
+}
+
+_CONFIRM_ERR_DETAIL = {
+    "not_found": "Заявка не найдена",
+    "not_owner": "Подтвердить может только автор заявки",
+    "already_confirmed": "Заявка уже подтверждена",
+    "nothing_to_confirm": "Нет шага контрагента для подтверждения",
+    "signer_did_empty": "Некорректный DID подписанта",
+    "wallet_user_not_found_for_did": "Участник сделки не найден в системе",
+    "primary_wallet_empty": "Не задан primary wallet участника",
+    "arbiter_did_empty": "Не указан арбитр",
+    "arbiter_wallet_not_found": "Не найден кошелёк арбитра для подписи",
+}
+
+_WITHDRAW_ERR_DETAIL = {
+    "not_found": "Заявка не найдена",
+    "cannot_withdraw": "Отозвать принятие нельзя после создания сделки",
+    "not_accepting_party": "Отозвать может только контрагент, который принял заявку",
+    "no_pending_acceptance": "Нет ожидающего подтверждения принятия",
+}
+
+_VIEWER_ROLE_ERR_DETAIL = {
+    "not_found": "Заявка не найдена",
+    "request_deactivated": "Заявка деактивирована",
+    "request_already_accepted": "Заявка уже подтверждена",
+    "actor_required": "Не определён пользователь",
+    "owner_cannot_resell": "Автор заявки не может менять роль на этой странице",
+    "no_viewer_slot": "Слот участника не найден (обновите страницу)",
 }
 
 
@@ -266,4 +367,168 @@ async def resell_payment_request(
         payment_request=PaymentRequestOut.from_model(
             row, space_nickname=space_nickname, viewer_did=user.did
         )
+    )
+
+
+@router.post(
+    "/payment-requests/{pk}/viewer-role",
+    response_model=PaymentRequestViewerRoleResponse,
+)
+async def set_payment_request_viewer_role(
+    arbiter_did: ResolvedArbiterDid,
+    user: CurrentWalletUser,
+    pk: int = Path(..., ge=1),
+    body: PaymentRequestViewerRoleBody | None = None,
+    svc: PaymentRequestService = Depends(get_payment_request_service),
+):
+    """Явно зафиксировать роль зрителя на стадии согласования условий (контрагент или посредник)."""
+    if not body:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="role_required")
+    try:
+        row, space_nickname = await svc.set_payment_request_viewer_role(
+            actor_did=user.did,
+            arbiter_did=arbiter_did,
+            pk=pk,
+            role=body.role,
+            parent_ref=body.parent_ref,
+        )
+    except ValueError as e:
+        code = str(e)
+        detail = _VIEWER_ROLE_ERR_DETAIL.get(code, code)
+        if code == "not_found":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=detail) from e
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=detail) from e
+    return PaymentRequestViewerRoleResponse(
+        payment_request=PaymentRequestOut.from_model(
+            row, space_nickname=space_nickname, viewer_did=user.did
+        )
+    )
+
+
+@router.post(
+    "/payment-requests/{pk}/accept",
+    response_model=PaymentRequestHandshakeResponse,
+)
+async def accept_payment_request(
+    arbiter_did: ResolvedArbiterDid,
+    user: CurrentWalletUser,
+    pk: int = Path(..., ge=1),
+    body: PaymentRequestAcceptBody | None = None,
+    svc: PaymentRequestService = Depends(get_payment_request_service),
+):
+    """Контрагент фиксирует согласие с условиями (first lock); при обсуждаемой сумме — передать сумму."""
+    try:
+        amt = body.counter_stable_amount if body else None
+        row, space_nickname = await svc.accept_payment_request_counterparty(
+            actor_did=user.did,
+            arbiter_did=arbiter_did,
+            pk=pk,
+            counter_stable_amount=amt,
+        )
+    except ValueError as e:
+        code = str(e)
+        detail = _ACCEPT_ERR_DETAIL.get(code, code)
+        if code == "counterparty_already_locked":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=detail,
+            ) from e
+        if code == "not_found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=detail,
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=detail,
+        ) from e
+    return PaymentRequestHandshakeResponse(
+        payment_request=PaymentRequestOut.from_model(
+            row, space_nickname=space_nickname, viewer_did=user.did
+        ),
+        deal_uid=None,
+    )
+
+
+@router.post(
+    "/payment-requests/{pk}/confirm",
+    response_model=PaymentRequestHandshakeResponse,
+)
+async def confirm_payment_request(
+    arbiter_did: ResolvedArbiterDid,
+    user: CurrentWalletUser,
+    pk: int = Path(..., ge=1),
+    svc: PaymentRequestService = Depends(get_payment_request_service),
+):
+    """Владелец подтверждает заявку после accept контрагента; создаётся Deal."""
+    try:
+        row, space_nickname, deal_uid = await svc.confirm_payment_request_owner(
+            owner_did=user.did,
+            arbiter_did=arbiter_did,
+            pk=pk,
+        )
+    except ValueError as e:
+        code = str(e)
+        detail = _CONFIRM_ERR_DETAIL.get(code, code)
+        if code == "not_found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=detail,
+            ) from e
+        if code == "not_owner":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=detail,
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=detail,
+        ) from e
+    return PaymentRequestHandshakeResponse(
+        payment_request=PaymentRequestOut.from_model(
+            row, space_nickname=space_nickname, viewer_did=user.did
+        ),
+        deal_uid=deal_uid,
+    )
+
+
+@router.post(
+    "/payment-requests/{pk}/withdraw-acceptance",
+    response_model=PaymentRequestHandshakeResponse,
+)
+async def withdraw_payment_request_acceptance(
+    arbiter_did: ResolvedArbiterDid,
+    user: CurrentWalletUser,
+    pk: int = Path(..., ge=1),
+    svc: PaymentRequestService = Depends(get_payment_request_service),
+):
+    """Контрагент отзывает своё принятие до подтверждения владельцем."""
+    try:
+        row, space_nickname = await svc.withdraw_payment_request_acceptance(
+            actor_did=user.did,
+            arbiter_did=arbiter_did,
+            pk=pk,
+        )
+    except ValueError as e:
+        code = str(e)
+        detail = _WITHDRAW_ERR_DETAIL.get(code, code)
+        if code == "not_found":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=detail,
+            ) from e
+        if code == "not_accepting_party":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=detail,
+            ) from e
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=detail,
+        ) from e
+    return PaymentRequestHandshakeResponse(
+        payment_request=PaymentRequestOut.from_model(
+            row, space_nickname=space_nickname, viewer_did=user.did
+        ),
+        deal_uid=None,
     )

@@ -442,10 +442,17 @@ class Deal(Base):
     # Base58 UUID identifier (unique, indexed)
     uid = Column(String(255), unique=True, nullable=False, index=True, comment="Base58 UUID identifier (primary identifier)")
     
-    # DID identifiers for participants
-    sender_did = Column(String(255), nullable=False, index=True, comment="Sender DID (owner of the deal)")
-    receiver_did = Column(String(255), nullable=False, index=True, comment="Receiver DID")
-    arbiter_did = Column(String(255), nullable=False, index=True, comment="Arbiter DID")
+    # DID identifiers for participants (spaces/profiles)
+    sender_did = Column(String(255), nullable=False, index=True, comment="Sender DID (space identifier, primary address may change)")
+    receiver_did = Column(String(255), nullable=False, index=True, comment="Receiver DID (space identifier, primary address may change)")
+    arbiter_did = Column(String(255), nullable=False, index=True, comment="Arbiter DID (space identifier, primary address may change)")
+    
+    # Fixed signer addresses at the moment of deal creation
+    signers = Column(
+        JSONB,
+        nullable=True,
+        comment="Фиксированные адреса подписантов {sender, receiver, arbiter} на момент создания эскроу (не меняются при смене primary address в DID)"
+    )
     
     # Reference to escrow operation (nullable)
     escrow_id = Column(BigInteger, ForeignKey('escrow_operations.id', ondelete='SET NULL'), nullable=True, index=True, comment="Reference to escrow operation")
@@ -506,6 +513,8 @@ class Deal(Base):
         Index('ix_deal_arbiter_did', 'arbiter_did'),
         Index('ix_deal_escrow_id', 'escrow_id'),
         Index('ix_deal_status', 'status'),
+        # GIN index for signers to allow efficient searching by fixed addresses
+        Index('ix_deal_signers', 'signers', postgresql_using='gin'),
         # GIN indexes on requisites and attachments for efficient JSONB queries
         Index('ix_deal_requisites', 'requisites', postgresql_using='gin'),
         Index('ix_deal_attachments', 'attachments', postgresql_using='gin'),
@@ -601,6 +610,33 @@ class PaymentRequest(Base):
         nullable=True,
         index=True,
         comment="Связанная сделка после принятия контрагентом",
+    )
+    counterparty_accept_did = Column(
+        String(255),
+        nullable=True,
+        index=True,
+        comment="DID контрагента, принявшего заявку (до Deal)",
+    )
+    counterparty_accept_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Время принятия контрагентом",
+    )
+    owner_confirm_pending = Column(
+        Boolean,
+        nullable=False,
+        server_default=text("false"),
+        comment="Ожидается подтверждение владельца после accept контрагента",
+    )
+    owner_confirmed_at = Column(
+        DateTime(timezone=True),
+        nullable=True,
+        comment="Время подтверждения владельцем / создания Deal",
+    )
+    counter_leg_snapshot_json = Column(
+        JSONB,
+        nullable=True,
+        comment="Снимок counter_leg до accept (откат при withdraw при обсуждаемой сумме)",
     )
     created_at = Column(
         DateTime(timezone=True),

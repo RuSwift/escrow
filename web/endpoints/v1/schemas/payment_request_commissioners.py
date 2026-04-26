@@ -20,14 +20,17 @@ class CommissionerPercent(BaseModel):
 
 CommissionerCommission = Union[CommissionerAbsolute, CommissionerPercent]
 
-CommissionerRole = Literal["intermediary", "counterparty", "system"]
+CommissionerRole = Literal["intermediary", "counterparty", "system", "participant"]
 
 
 class CommissionerSlot(BaseModel):
     """Слот комиссионера; parent_id — ref-строка (public_ref заявки или alias_public_ref родителя)."""
 
     did: str = Field(..., min_length=1, max_length=512)
-    commission: CommissionerCommission
+    commission: Optional[CommissionerCommission] = Field(
+        default=None,
+        description="Комиссия слота; обязательна для system/intermediary/counterparty, отсутствует для participant",
+    )
     role: Optional[CommissionerRole] = Field(
         default=None,
         description="intermediary по умолчанию при отсутствии ключа (кроме явного system)",
@@ -63,6 +66,8 @@ class CommissionerSlot(BaseModel):
         r = self.role
         if r == "system" and (self.did or "").strip() != "system":
             raise ValueError("role=system requires did='system'")
+        if r in ("system", "intermediary") and self.commission is None:
+            raise ValueError("commission required for role")
         return self
 
 

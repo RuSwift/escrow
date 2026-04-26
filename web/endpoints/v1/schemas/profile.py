@@ -18,6 +18,15 @@ class ProfileResponse(BaseModel):
     access_to_admin_panel: bool = Field(..., description="Доступ в админ-панель")
     is_verified: bool = Field(..., description="Верификация")
     balance_usdt: float = Field(..., description="Баланс USDT")
+    primary_wallet_address: str = Field(
+        ...,
+        description="Адрес primary wallet спейса (подпись в escrow; может отличаться от wallet_address)",
+    )
+    primary_wallet_blockchain: str = Field(
+        ...,
+        description="Блокчейн primary wallet",
+    )
+    company_name: Optional[str] = Field(None, description="Фирменное название (Label)")
     created_at: str = Field(..., description="Дата создания (ISO)")
     updated_at: str = Field(..., description="Дата обновления (ISO)")
 
@@ -27,6 +36,7 @@ class UpdateProfileRequest(BaseModel):
 
     nickname: Optional[str] = Field(None, max_length=100, description="Никнейм")
     avatar: Optional[str] = Field(None, description="Аватар (base64 data URI или пустая строка для сброса)")
+    company_name: Optional[str] = Field(None, max_length=255, description="Фирменное название (Label)")
 
 
 class BillingItem(BaseModel):

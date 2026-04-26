@@ -25,7 +25,9 @@ def is_counterparty_commission_slot(slot_key: str, slot: Any) -> bool:
     if not isinstance(slot, dict):
         return False
     role = str(slot.get("role") or "").strip().lower()
-    return role == "counterparty" or slot_key == "counterparty"
+    # Контрагент не является узлом комиссии: не должен участвовать в расчёте fee_i и escrow totals.
+    # Роль counterparty используется для UX/handshake, но проценты цепочки строятся только по system + intermediary.
+    return False
 
 
 def is_intermediary_commission_slot(slot_key: str, slot: Any) -> bool:

@@ -200,8 +200,7 @@
             var slot = pr.commissioners[keys[i]];
             if (!slot || typeof slot !== 'object') continue;
             var role = String(slot.role || '').trim().toLowerCase();
-            if (role === 'system') continue;
-            if (role === 'counterparty') continue;
+            if (role !== 'intermediary') continue;
             if ((slot.did || '').trim() !== v) continue;
             return slot;
         }
@@ -219,6 +218,46 @@
             return wantFiat ? pr.counter_leg : pr.primary_leg;
         }
         return null;
+    }
+
+    /**
+     * Сумма комиссий по залогу (stable), которые должны входить в escrow lock.
+     * Возвращает total borrow_amount по слотам commissioners без раскрытия структуры.
+     */
+    function prStableEscrowFeesTotal(pr) {
+        if (!pr || !pr.commissioners || typeof pr.commissioners !== 'object') return 0;
+        var total = 0;
+        var keys = Object.keys(pr.commissioners || {});
+        for (var i = 0; i < keys.length; i++) {
+            var slot = pr.commissioners[keys[i]];
+            if (!slot || typeof slot !== 'object') continue;
+            var role = String(slot.role || '').trim().toLowerCase();
+            if (role !== 'system' && role !== 'intermediary') continue;
+            var feeRaw = slot.borrow_amount != null ? String(slot.borrow_amount).trim() : '';
+            if (!feeRaw) continue;
+            var fa = parseFloat(sanitizeDecimalAmountInput(feeRaw));
+            if (!isFinite(fa)) continue;
+            total += fa;
+        }
+        return total;
+    }
+
+    /**
+     * Комиссии предыдущей цепочки по залогу (stable) для посредника viewerDid:
+     * сумма borrow_amount всех слотов, кроме borrow_amount слота данного посредника.
+     */
+    function prStableEscrowFeesBeforeViewer(pr, viewerDid) {
+        if (!pr) return 0;
+        var total = prStableEscrowFeesTotal(pr);
+        if (!total || !isFinite(total)) return 0;
+        var slot = viewerIntermediarySlot(pr, viewerDid);
+        if (!slot) return total;
+        var feeRaw = slot.borrow_amount != null ? String(slot.borrow_amount).trim() : '';
+        if (!feeRaw) return total;
+        var fa = parseFloat(sanitizeDecimalAmountInput(feeRaw));
+        if (!isFinite(fa)) return total;
+        var before = total - fa;
+        return before > 0 ? before : 0;
     }
 
     /**
@@ -280,12 +319,24 @@
                 activeSpace: '',
                 /** Свой nickname (WalletUser владельца кошелька); из GET /v1/auth/tron/me — для скрытия смены ника в чужом space */
                 authOwnSpace: '',
+                /** Фирменное название (Label) из профиля; GET /v1/profile/tron/me */
+                spaceProfileLabel: '',
+                spaceLabelEdit: '',
                 /** Никнейм спейса (WalletUser), как в профиле; GET/PUT /v1/profile/tron/me */
                 spaceProfileNickname: '',
                 spaceNicknameEdit: '',
                 showSpaceNicknameModal: false,
-                spaceNicknameSaving: false,
-                spaceNicknameError: '',
+                spaceLabelSaving: false,
+                spaceLabelError: '',
+                /** Адрес сессии (auth) и primary спейса — из GET /v1/profile/tron/me для предупреждения перед accept/confirm */
+                profileWalletAddress: '',
+                profilePrimaryWalletAddress: '',
+                profilePrimaryWalletBlockchain: '',
+                showWalletMismatchModal: false,
+                _walletMismatchPending: null,
+                /** Роль viewer на стадии согласования условий: '' (не выбрано) | counterparty | intermediary */
+                viewerRoleChoice: '',
+                roleSubmitting: false,
                 navSteps: (function initialNavSteps() {
                     var du = (el.getAttribute('data-simple-deal-uid') || '').trim();
                     /* /arbiter/.../deal/{uid}: до resolve показываем активным этап «Условия», не Lockbox */
@@ -314,7 +365,21 @@
                 resellModalError: '',
                 resellSubmitting: false,
                 resellBanner: null,
+                handshakeBanner: null,
                 copyLinkBanner: '',
+                acceptSubmitting: false,
+                withdrawAcceptSubmitting: false,
+                ownerConfirmSubmitting: false,
+                showAcceptAmountModal: false,
+                acceptAmountInput: '',
+                acceptModalError: '',
+                showExpiredTermsModal: false,
+                extendSubmitting: false,
+                showExtendLifetimeModal: false,
+                showPrLockedByOtherModal: false,
+                extendTargetPk: null,
+                extendApplyToResolve: false,
+                extendLifetime: '72h',
                 _termsFeedbackTimer: null,
                 /* Без префикса _: Vue 2 не проксирует data._* на this — иначе ++ даёт NaN. */
                 resolveFetchSeq: 0,
@@ -497,6 +562,8 @@
             },
             /** Подпись в шапке до загрузки профиля берётся из activeSpace (ensure-space). */
             titlebarSpaceLabel: function() {
+                var label = (this.spaceProfileLabel || '').trim();
+                if (label) return label;
                 var a = (this.spaceProfileNickname || '').trim();
                 if (a) return a;
                 return (this.activeSpace || '').trim();
@@ -699,10 +766,193 @@
                 if (n2 < 0.1) return 0.1;
                 if (n2 > 10) return 10;
                 return clampS(n2);
+            },
+            counterLegDiscussed: function() {
+                var pr = this.resolvePaymentRequest;
+                if (!pr || !pr.counter_leg) return false;
+                return !!pr.counter_leg.amount_discussed;
+            },
+            handshakeLockedByOther: function() {
+                var pr = this.resolvePaymentRequest;
+                return !!(pr && pr.handshake_locked_by_other);
+            },
+            showWithdrawAcceptButton: function() {
+                var pr = this.resolvePaymentRequest;
+                if (!this.dealPrTermsPhase || this.isPaymentRequestOwner || !pr) return false;
+                var v = (this.viewerDid || '').trim();
+                var acc = (pr.counterparty_accept_did || '').trim();
+                return !!(pr.owner_confirm_pending && acc && v === acc);
+            },
+            /** True если viewer уже принял как контрагент и ждёт владельца (пока нельзя менять роль). */
+            viewerAcceptancePending: function() {
+                var pr = this.resolvePaymentRequest;
+                if (!this.dealPrTermsPhase || !pr || this.isPaymentRequestOwner) return false;
+                var v = (this.viewerDid || '').trim();
+                var acc = (pr.counterparty_accept_did || '').trim();
+                return !!(pr.owner_confirm_pending && acc && v && v === acc);
+            },
+            showAcceptTermsButton: function() {
+                if (!this.dealPrTermsPhase || this.isPaymentRequestOwner || this.handshakeLockedByOther) return false;
+                var pr = this.resolvePaymentRequest;
+                if (!pr) return false;
+                var v = (this.viewerDid || '').trim();
+                var acc = (pr.counterparty_accept_did || '').trim();
+                if (pr.owner_confirm_pending && acc && v === acc) return false;
+                return true;
+            },
+            showOwnerConfirmBanner: function() {
+                var pr = this.resolvePaymentRequest;
+                return !!(
+                    this.dealPrTermsPhase &&
+                    this.isPaymentRequestOwner &&
+                    pr &&
+                    pr.owner_confirm_pending &&
+                    !pr.deal_id
+                );
+            },
+            /** Строка статуса справа в блоке «Условия по заявке» (рукопожатие / сделка). */
+            dealPrFlowStatusLabel: function() {
+                if (this.dealPrDeactivated) return t('main.simple.request_status_deactivated');
+                if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) {
+                    return t('main.simple.request_status_terms');
+                }
+                var pr = this.resolvePaymentRequest;
+                if (pr.deal_id) return t('main.simple.request_status_deal_linked');
+                if (pr.owner_confirm_pending) {
+                    var v = (this.viewerDid || '').trim();
+                    var owner = (pr.owner_did || '').trim();
+                    var acc = (pr.counterparty_accept_did || '').trim();
+                    if (v === owner) return t('main.simple.request_status_owner_confirm');
+                    if (acc && v === acc) return t('main.simple.request_status_you_waiting_owner');
+                    if (this.handshakeLockedByOther) return t('main.simple.request_status_locked_other');
+                    return t('main.simple.request_status_negotiating');
+                }
+                return t('main.simple.request_status_terms');
+            },
+            /** True если заявка истекла по expires_at. */
+            dealPrExpired: function() {
+                if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) return false;
+                var pr = this.resolvePaymentRequest;
+                if (!pr || !pr.expires_at) return false;
+                var ts = Date.parse(String(pr.expires_at));
+                if (!isFinite(ts)) return false;
+                return Date.now() > ts;
+            },
+            /** Только на стадии согласования условий: истекла и сделка ещё не создана. */
+            dealPrExpiredDuringTerms: function() {
+                return !!(this.dealPrTermsPhase && !this.dealPrDeactivated && this.dealPrExpired);
+            },
+            acceptModalSubmitDisabled: function() {
+                return (
+                    this.acceptSubmitting ||
+                    !(String(this.acceptAmountInput || '').trim())
+                );
             }
         },
         methods: {
             t: t,
+            warnExpiredTerms: function() {
+                this.showExpiredTermsModal = true;
+            },
+            /** Блокирует действия по истекшей заявке на стадии согласования условий. */
+            guardTermsNotExpired: function() {
+                if (this.dealPrExpiredDuringTerms) {
+                    this.warnExpiredTerms();
+                    return false;
+                }
+                return true;
+            },
+            closeExpiredTermsModal: function() {
+                this.showExpiredTermsModal = false;
+            },
+            setViewerRoleChoice: function(role) {
+                var self = this;
+                if (!self.resolvePaymentRequest || self.roleSubmitting) return;
+                if (self.viewerAcceptancePending) return;
+                var tok = getToken();
+                if (!tok) {
+                    self.showAuthModal = true;
+                    return;
+                }
+                var pk = self.resolvePaymentRequest.pk;
+                if (pk === undefined || pk === null) return;
+                var r = String(role || '').trim();
+                if (r !== 'counterparty' && r !== 'intermediary') {
+                    self.viewerRoleChoice = '';
+                    return;
+                }
+                self.roleSubmitting = true;
+                fetch(
+                    self.simpleV1Prefix() +
+                        'payment-requests/' +
+                        encodeURIComponent(String(pk)) +
+                        '/viewer-role',
+                    {
+                        method: 'POST',
+                        headers: {
+                            Accept: 'application/json',
+                            'Content-Type': 'application/json',
+                            Authorization: 'Bearer ' + tok
+                        },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({
+                            role: r,
+                            parent_ref: self.dealUid ? String(self.dealUid).trim() : null
+                        })
+                    }
+                )
+                    .then(function(resp) {
+                        return resp.json().then(function(data) {
+                            return { ok: resp.ok, data: data };
+                        });
+                    })
+                    .then(function(res) {
+                        if (!res.ok) return;
+                        var pr = res.data && res.data.payment_request;
+                        if (pr) self.resolvePaymentRequest = pr;
+                        self.viewerRoleChoice = r;
+                    })
+                    .catch(function() {})
+                    .finally(function() {
+                        self.roleSubmitting = false;
+                    });
+            },
+            needsWalletPrimaryMismatch: function() {
+                var auth = (this.profileWalletAddress || '').trim();
+                var primary = (this.profilePrimaryWalletAddress || '').trim();
+                if (!auth || !primary) return false;
+                return auth !== primary;
+            },
+            closeWalletMismatchModal: function() {
+                this.showWalletMismatchModal = false;
+                this._walletMismatchPending = null;
+            },
+            closePrLockedByOtherModal: function() {
+                this.showPrLockedByOtherModal = false;
+            },
+            confirmWalletMismatchProceed: function() {
+                var p = this._walletMismatchPending;
+                this.closeWalletMismatchModal();
+                if (!p) return;
+                if (p.mode === 'accept') {
+                    this._performHandshakeAccept(p.counterStableAmount);
+                } else if (p.mode === 'confirm') {
+                    this._performOwnerConfirm();
+                }
+            },
+            openExtendLifetimeModal: function(pk, applyToResolve) {
+                if (pk === undefined || pk === null) return;
+                this.extendTargetPk = pk;
+                this.extendApplyToResolve = !!applyToResolve;
+                this.extendLifetime = '72h';
+                this.showExtendLifetimeModal = true;
+            },
+            closeExtendLifetimeModal: function() {
+                if (this.extendSubmitting) return;
+                this.showExtendLifetimeModal = false;
+                this.extendTargetPk = null;
+                this.extendApplyToResolve = false;
+            },
             /** Текст ошибки из тела ответа FastAPI (detail: str | array). */
             simpleApiErrorMessage: function(data) {
                 if (!data) return '';
@@ -774,6 +1024,23 @@
                     })
                     .then(function(res) {
                         if (!res.ok || !res.data) return;
+                        var d = res.data;
+                        self.profileWalletAddress =
+                            d.wallet_address != null && d.wallet_address !== undefined
+                                ? String(d.wallet_address).trim()
+                                : '';
+                        self.profilePrimaryWalletAddress =
+                            d.primary_wallet_address != null &&
+                            d.primary_wallet_address !== undefined
+                                ? String(d.primary_wallet_address).trim()
+                                : '';
+                        self.profilePrimaryWalletBlockchain =
+                            d.primary_wallet_blockchain != null &&
+                            d.primary_wallet_blockchain !== undefined
+                                ? String(d.primary_wallet_blockchain).trim().toLowerCase()
+                                : '';
+                        var label = String(res.data.company_name || '').trim();
+                        self.spaceProfileLabel = label;
                         var nick = String(res.data.nickname || '').trim();
                         if (!nick) return;
                         self.spaceProfileNickname = nick;
@@ -787,31 +1054,31 @@
             openSpaceNicknameModal: function() {
                 if (!this.simpleSpaceIsOwner) return;
                 if (!getToken() || this.showAuthModal) return;
-                this.spaceNicknameError = '';
-                this.spaceNicknameEdit = (this.spaceProfileNickname || this.activeSpace || '').trim();
+                this.spaceLabelError = '';
+                this.spaceLabelEdit = (this.spaceProfileLabel || '').trim();
                 this.showSpaceNicknameModal = true;
             },
             closeSpaceNicknameModal: function() {
-                if (this.spaceNicknameSaving) return;
+                if (this.spaceLabelSaving) return;
                 this.showSpaceNicknameModal = false;
-                this.spaceNicknameError = '';
+                this.spaceLabelError = '';
             },
             submitSpaceNickname: function() {
                 var self = this;
                 if (!self.simpleSpaceIsOwner) return;
-                if (self.spaceNicknameSaving) return;
-                var raw = String(self.spaceNicknameEdit || '').trim();
+                if (self.spaceLabelSaving) return;
+                var raw = String(self.spaceLabelEdit || '').trim();
                 if (!raw) {
-                    self.spaceNicknameError = t('main.simple.space_nickname_error_empty');
+                    self.spaceLabelError = t('main.simple.space_nickname_error_empty');
                     return;
                 }
                 if (raw.length > 100) {
-                    self.spaceNicknameError = t('main.simple.space_nickname_error_length');
+                    self.spaceLabelError = t('main.simple.space_nickname_error_length');
                     return;
                 }
-                if (raw === (self.spaceProfileNickname || '').trim()) {
+                if (raw === (self.spaceProfileLabel || '').trim()) {
                     self.showSpaceNicknameModal = false;
-                    self.spaceNicknameError = '';
+                    self.spaceLabelError = '';
                     return;
                 }
                 var tok = getToken();
@@ -819,8 +1086,8 @@
                     self.showAuthModal = true;
                     return;
                 }
-                self.spaceNicknameSaving = true;
-                self.spaceNicknameError = '';
+                self.spaceLabelSaving = true;
+                self.spaceLabelError = '';
                 fetch('/v1/profile/tron/me', {
                     method: 'PUT',
                     headers: {
@@ -829,7 +1096,7 @@
                         Authorization: 'Bearer ' + tok
                     },
                     credentials: 'same-origin',
-                    body: JSON.stringify({ nickname: raw })
+                    body: JSON.stringify({ company_name: raw })
                 })
                     .then(function(r) {
                         return r.json().then(function(data) {
@@ -839,21 +1106,19 @@
                     .then(function(res) {
                         if (!res.ok) {
                             var msg = self.simpleApiErrorMessage(res.data);
-                            self.spaceNicknameError =
+                            self.spaceLabelError =
                                 msg || t('main.simple.space_nickname_error_generic');
                             return;
                         }
-                        var nick = res.data && res.data.nickname ? String(res.data.nickname).trim() : raw;
-                        self.spaceProfileNickname = nick;
-                        self.activeSpace = nick;
-                        setSpace(nick);
+                        var label = res.data && res.data.company_name ? String(res.data.company_name).trim() : raw;
+                        self.spaceProfileLabel = label;
                         self.showSpaceNicknameModal = false;
                     })
                     .catch(function() {
-                        self.spaceNicknameError = t('main.simple.space_nickname_error_generic');
+                        self.spaceLabelError = t('main.simple.space_nickname_error_generic');
                     })
                     .finally(function() {
-                        self.spaceNicknameSaving = false;
+                        self.spaceLabelSaving = false;
                     });
             },
             /** База HTML-путей: /arbiter/{encodeURIComponent(arbiter_space_did)} */
@@ -940,7 +1205,8 @@
                             data.viewer_did !== undefined && data.viewer_did !== null
                                 ? String(data.viewer_did).trim()
                                 : '';
-                        /* После auto-resell API отдаёт commissioner public_ref; синхронизируем URL без перезагрузки. */
+                        /* После auto-resell API отдаёт commissioner public_ref; синхронизируем URL без перезагрузки.
+                           Важно: для acceptor по commissioner_alias сервер сохраняет segment как public_ref, чтобы не переписывать URL на owner ref. */
                         var prAuto = data.payment_request;
                         var ownerDidAuto =
                             prAuto &&
@@ -983,9 +1249,21 @@
                             }
                         }
                         self.resellBanner = null;
+                        self.handshakeBanner = null;
                         self.copyLinkBanner = '';
                         self.showResellCommissionModal = false;
                         self.resellModalError = '';
+                        // Default role choice for terms stage: set if already intermediary; otherwise keep empty (choose role).
+                        try {
+                            self.viewerRoleChoice = self.isCommissionerIntermediary
+                                ? 'intermediary'
+                                : '';
+                        } catch (eRole) {
+                            self.viewerRoleChoice = '';
+                        }
+                        if (tok) {
+                            self.fetchSpaceProfileNickname();
+                        }
                         self.applyNavStepsForResolveKind(self.resolveKind);
                     })
                     .catch(function() {
@@ -1009,9 +1287,401 @@
                 }
                 this._termsFeedbackTimer = setTimeout(function() {
                     self.resellBanner = null;
+                    self.handshakeBanner = null;
                     self.copyLinkBanner = '';
                     self._termsFeedbackTimer = null;
                 }, 3500);
+            },
+            closeAcceptAmountModal: function() {
+                if (this.acceptSubmitting) return;
+                this.showAcceptAmountModal = false;
+                this.acceptModalError = '';
+            },
+            onAcceptTermsClick: function() {
+                var self = this;
+                if (!self.guardTermsNotExpired()) return;
+                if (!self.resolvePaymentRequest || self.acceptSubmitting) return;
+                if (self.viewerRoleChoice === 'intermediary') return;
+                var tok = getToken();
+                if (!tok) {
+                    self.showAuthModal = true;
+                    return;
+                }
+                if (self.counterLegDiscussed) {
+                    self.acceptModalError = '';
+                    self.acceptAmountInput = '';
+                    self.showAcceptAmountModal = true;
+                    return;
+                }
+                self.submitHandshakeAccept(null);
+            },
+            confirmAcceptAmountModal: function() {
+                var self = this;
+                var cleaned = sanitizeDecimalAmountInput(self.acceptAmountInput);
+                if (!cleaned || !String(cleaned).trim()) {
+                    self.acceptModalError = t('main.simple.pr_resell_modal_percent_invalid');
+                    return;
+                }
+                self.acceptModalError = '';
+                self.submitHandshakeAccept(String(cleaned).trim());
+            },
+            submitHandshakeAccept: function(counterStableAmount) {
+                var self = this;
+                if (!self.guardTermsNotExpired()) return;
+                if (!self.resolvePaymentRequest || self.acceptSubmitting) return;
+                var tok = getToken();
+                if (!tok) {
+                    self.showAuthModal = true;
+                    return;
+                }
+                var pk = self.resolvePaymentRequest.pk;
+                if (pk === undefined || pk === null) return;
+                if (self.needsWalletPrimaryMismatch()) {
+                    self._walletMismatchPending = {
+                        mode: 'accept',
+                        counterStableAmount: counterStableAmount
+                    };
+                    self.showWalletMismatchModal = true;
+                    return;
+                }
+                self._performHandshakeAccept(counterStableAmount);
+            },
+            _performHandshakeAccept: function(counterStableAmount) {
+                var self = this;
+                if (!self.guardTermsNotExpired()) return;
+                if (!self.resolvePaymentRequest || self.acceptSubmitting) return;
+                var tok = getToken();
+                if (!tok) {
+                    self.showAuthModal = true;
+                    return;
+                }
+                var pk = self.resolvePaymentRequest.pk;
+                if (pk === undefined || pk === null) return;
+                self.acceptSubmitting = true;
+                self.handshakeBanner = null;
+                var bodyObj = {};
+                if (
+                    counterStableAmount !== undefined &&
+                    counterStableAmount !== null &&
+                    String(counterStableAmount).trim()
+                ) {
+                    bodyObj.counter_stable_amount = String(counterStableAmount).trim();
+                }
+                fetch(
+                    self.simpleV1Prefix() +
+                        'payment-requests/' +
+                        encodeURIComponent(String(pk)) +
+                        '/accept',
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: 'Bearer ' + tok
+                        },
+                        credentials: 'same-origin',
+                        body: JSON.stringify(bodyObj)
+                    }
+                )
+                    .then(function(r) {
+                        return r.json().then(function(data) {
+                            return { ok: r.ok, status: r.status, data: data };
+                        });
+                    })
+                    .then(function(res) {
+                        if (!res.ok) {
+                            var msg = self.simpleApiErrorMessage(res.data || {});
+                            if (self.showAcceptAmountModal) {
+                                self.acceptModalError = msg || t('main.simple.pr_accept_error');
+                            } else {
+                                self.handshakeBanner = { type: 'error', text: msg || t('main.simple.pr_accept_error') };
+                                self._clearTermsFeedbackLater();
+                            }
+                            return;
+                        }
+                        self.showAcceptAmountModal = false;
+                        self.acceptModalError = '';
+                        var pr = res.data && res.data.payment_request;
+                        if (pr) {
+                            self.resolvePaymentRequest = pr;
+                        }
+                        self.handshakeBanner = {
+                            type: 'success',
+                            text: t('main.simple.pr_accept_done')
+                        };
+                        self._clearTermsFeedbackLater();
+                        self.fetchResolve();
+                        self.fetchOrders();
+                    })
+                    .catch(function() {
+                        var msg = t('main.simple.pr_accept_error');
+                        if (self.showAcceptAmountModal) {
+                            self.acceptModalError = msg;
+                        } else {
+                            self.handshakeBanner = { type: 'error', text: msg };
+                            self._clearTermsFeedbackLater();
+                        }
+                    })
+                    .finally(function() {
+                        self.acceptSubmitting = false;
+                    });
+            },
+            submitWithdrawAcceptance: function() {
+                var self = this;
+                if (!self.guardTermsNotExpired()) return;
+                if (!self.resolvePaymentRequest || self.withdrawAcceptSubmitting) return;
+                var tok = getToken();
+                if (!tok) {
+                    self.showAuthModal = true;
+                    return;
+                }
+                var pk = self.resolvePaymentRequest.pk;
+                if (pk === undefined || pk === null) return;
+                self.withdrawAcceptSubmitting = true;
+                self.handshakeBanner = null;
+                fetch(
+                    self.simpleV1Prefix() +
+                        'payment-requests/' +
+                        encodeURIComponent(String(pk)) +
+                        '/withdraw-acceptance',
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: 'Bearer ' + tok
+                        },
+                        credentials: 'same-origin',
+                        body: '{}'
+                    }
+                )
+                    .then(function(r) {
+                        return r.json().then(function(data) {
+                            return { ok: r.ok, data: data };
+                        });
+                    })
+                    .then(function(res) {
+                        if (!res.ok) {
+                            var msg = self.simpleApiErrorMessage(res.data || {});
+                            self.handshakeBanner = {
+                                type: 'error',
+                                text: msg || t('main.simple.pr_withdraw_error')
+                            };
+                            self._clearTermsFeedbackLater();
+                            return;
+                        }
+                        var pr = res.data && res.data.payment_request;
+                        if (pr) {
+                            self.resolvePaymentRequest = pr;
+                        }
+                        self.handshakeBanner = {
+                            type: 'success',
+                            text: t('main.simple.pr_withdraw_done')
+                        };
+                        self._clearTermsFeedbackLater();
+                        self.fetchResolve();
+                        self.fetchOrders();
+                    })
+                    .catch(function() {
+                        self.handshakeBanner = {
+                            type: 'error',
+                            text: t('main.simple.pr_withdraw_error')
+                        };
+                        self._clearTermsFeedbackLater();
+                    })
+                    .finally(function() {
+                        self.withdrawAcceptSubmitting = false;
+                    });
+            },
+            submitOwnerConfirm: function() {
+                var self = this;
+                if (!self.guardTermsNotExpired()) return;
+                if (!self.resolvePaymentRequest || self.ownerConfirmSubmitting) return;
+                var tok = getToken();
+                if (!tok) {
+                    self.showAuthModal = true;
+                    return;
+                }
+                var pk = self.resolvePaymentRequest.pk;
+                if (pk === undefined || pk === null) return;
+                if (self.needsWalletPrimaryMismatch()) {
+                    self._walletMismatchPending = { mode: 'confirm' };
+                    self.showWalletMismatchModal = true;
+                    return;
+                }
+                self._performOwnerConfirm();
+            },
+            _performOwnerConfirm: function() {
+                var self = this;
+                if (!self.guardTermsNotExpired()) return;
+                if (!self.resolvePaymentRequest || self.ownerConfirmSubmitting) return;
+                var tok = getToken();
+                if (!tok) {
+                    self.showAuthModal = true;
+                    return;
+                }
+                var pk = self.resolvePaymentRequest.pk;
+                if (pk === undefined || pk === null) return;
+                self.ownerConfirmSubmitting = true;
+                self.handshakeBanner = null;
+                fetch(
+                    self.simpleV1Prefix() +
+                        'payment-requests/' +
+                        encodeURIComponent(String(pk)) +
+                        '/confirm',
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: 'Bearer ' + tok
+                        },
+                        credentials: 'same-origin',
+                        body: '{}'
+                    }
+                )
+                    .then(function(r) {
+                        return r.json().then(function(data) {
+                            return { ok: r.ok, data: data };
+                        });
+                    })
+                    .then(function(res) {
+                        if (!res.ok) {
+                            var msg = self.simpleApiErrorMessage(res.data || {});
+                            self.handshakeBanner = {
+                                type: 'error',
+                                text: msg || t('main.simple.pr_confirm_error')
+                            };
+                            self._clearTermsFeedbackLater();
+                            return;
+                        }
+                        var data = res.data || {};
+                        var pr = data.payment_request;
+                        if (pr) {
+                            self.resolvePaymentRequest = pr;
+                        }
+                        var dealUid =
+                            data.deal_uid !== undefined && data.deal_uid !== null
+                                ? String(data.deal_uid).trim()
+                                : '';
+                        self.handshakeBanner = {
+                            type: 'success',
+                            text: t('main.simple.pr_confirm_done')
+                        };
+                        self._clearTermsFeedbackLater();
+                        if (dealUid) {
+                            try {
+                                self.dealUid = dealUid;
+                                if (
+                                    typeof history !== 'undefined' &&
+                                    history.replaceState &&
+                                    typeof window !== 'undefined' &&
+                                    window.location &&
+                                    window.location.origin
+                                ) {
+                                    var dealUrl =
+                                        String(window.location.origin).trim() +
+                                        self.simpleHtmlBase() +
+                                        '/deal/' +
+                                        encodeURIComponent(dealUid);
+                                    history.replaceState(null, '', dealUrl);
+                                }
+                            } catch (eNav) {}
+                        }
+                        self.fetchResolve();
+                        self.fetchOrders();
+                    })
+                    .catch(function() {
+                        self.handshakeBanner = {
+                            type: 'error',
+                            text: t('main.simple.pr_confirm_error')
+                        };
+                        self._clearTermsFeedbackLater();
+                    })
+                    .finally(function() {
+                        self.ownerConfirmSubmitting = false;
+                    });
+            },
+            submitExtendPaymentRequest: function(pk, applyToResolve, lifetime) {
+                var self = this;
+                var tok = getToken();
+                if (!tok) {
+                    self.showAuthModal = true;
+                    return;
+                }
+                if (self.extendSubmitting) return;
+                if (pk === undefined || pk === null) return;
+                var lt = (lifetime || '72h').trim ? String(lifetime).trim() : '72h';
+                self.extendSubmitting = true;
+                fetch(
+                    self.simpleV1Prefix() +
+                        'payment-requests/' +
+                        encodeURIComponent(String(pk)) +
+                        '/extend',
+                    {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            Authorization: 'Bearer ' + tok
+                        },
+                        credentials: 'same-origin',
+                        body: JSON.stringify({ lifetime: lt })
+                    }
+                )
+                    .then(function(r) {
+                        return r.json().then(function(data) {
+                            return { ok: r.ok, data: data };
+                        });
+                    })
+                    .then(function(res) {
+                        if (!res.ok) {
+                            var msg = self.simpleApiErrorMessage(res.data || {});
+                            self.handshakeBanner = {
+                                type: 'error',
+                                text: msg || t('main.simple.pr_extend_error')
+                            };
+                            self._clearTermsFeedbackLater();
+                            return;
+                        }
+                        var pr = res.data && res.data.payment_request;
+                        if (applyToResolve && pr) {
+                            self.resolvePaymentRequest = pr;
+                        }
+                        self.showExpiredTermsModal = false;
+                        self.showExtendLifetimeModal = false;
+                        self.extendTargetPk = null;
+                        self.extendApplyToResolve = false;
+                        self.acceptModalError = '';
+                        self.handshakeBanner = {
+                            type: 'success',
+                            text: t('main.simple.pr_extend_done')
+                        };
+                        self._clearTermsFeedbackLater();
+                        self.fetchOrders();
+                        if (applyToResolve) self.fetchResolve();
+                    })
+                    .catch(function() {
+                        self.handshakeBanner = {
+                            type: 'error',
+                            text: t('main.simple.pr_extend_error')
+                        };
+                        self._clearTermsFeedbackLater();
+                    })
+                    .finally(function() {
+                        self.extendSubmitting = false;
+                    });
+            },
+            submitExtendFromList: function(req) {
+                if (!req) return;
+                if (!this.isOrdersItemOwner(req)) return;
+                this.openExtendLifetimeModal(req.pk, false);
+            },
+            submitExtendFromDeal: function() {
+                if (!this.resolvePaymentRequest) return;
+                if (!this.isPaymentRequestOwner) return;
+                this.openExtendLifetimeModal(this.resolvePaymentRequest.pk, true);
+            },
+            confirmExtendLifetimeModal: function() {
+                var pk = this.extendTargetPk;
+                if (pk === undefined || pk === null) return;
+                this.submitExtendPaymentRequest(pk, !!this.extendApplyToResolve, this.extendLifetime);
             },
             dealPublicPageUrl: function() {
                 try {
@@ -1047,9 +1717,18 @@
                 return s;
             },
             onResellClick: function() {
+                if (!this.guardTermsNotExpired()) return;
+                if (this.handshakeLockedByOther) {
+                    this.showPrLockedByOtherModal = true;
+                    return;
+                }
                 var tok = getToken();
                 if (!tok) {
                     this.showAuthModal = true;
+                    return;
+                }
+                if (this.viewerRoleChoice !== 'intermediary') {
+                    this.setViewerRoleChoice('intermediary');
                     return;
                 }
                 this.resellModalError = '';
@@ -1148,16 +1827,14 @@
                 return t('main.simple.pr_sum_line_stable_commission_suffix', { amount: s });
             },
             /**
-             * Нога со стейблом для эскроу: база + моя комиссия в стейбле (borrow_amount слота).
-             * Только если стейбл на counter (fiat_to_stable) или на primary (stable_to_fiat) и совпадает с ногой из prLegForAsset(..., false).
+             * Нога со стейблом для эскроу: база + сумма комиссий по залогу (borrow_amount по всем слотам).
+             * Это source-of-trust для взаиморасчётов; структура цепочки не раскрывается, показывается только итог.
              */
             viewerStableLegEscrowTotalFormatted: function() {
-                if (!this.isCommissionerIntermediary || !this.resolvePaymentRequest) return '';
+                if (!this.resolvePaymentRequest) return '';
                 var pr = this.resolvePaymentRequest;
-                var slot = viewerIntermediarySlot(pr, this.viewerDid);
-                var feeRaw =
-                    slot && slot.borrow_amount != null ? String(slot.borrow_amount).trim() : '';
-                if (!feeRaw) return '';
+                var feeTotal = prStableEscrowFeesTotal(pr);
+                if (!feeTotal || !isFinite(feeTotal)) return '';
                 var stableLeg = prLegForAsset(pr, false);
                 if (!stableLeg || String(stableLeg.asset_type || '').toLowerCase() !== 'stable') {
                     return '';
@@ -1166,9 +1843,30 @@
                     stableLeg.amount != null ? String(stableLeg.amount).trim() : '';
                 if (!baseRaw) return '';
                 var ba = parseFloat(sanitizeDecimalAmountInput(baseRaw));
-                var fa = parseFloat(sanitizeDecimalAmountInput(feeRaw));
-                if (!isFinite(ba) || !isFinite(fa)) return '';
-                var sum = ba + fa;
+                if (!isFinite(ba) || !isFinite(feeTotal)) return '';
+                var sum = ba + feeTotal;
+                var code = stableLeg.code ? String(stableLeg.code).trim().toUpperCase() : '';
+                var sumStr = formatAmountForLocale(String(sum));
+                return sumStr + (code ? ' ' + code : '');
+            },
+            /**
+             * Для посредника: «получают» = база B + комиссии предыдущей цепочки (без моей комиссии).
+             */
+            viewerStableLegPrevChainTotalFormatted: function(req) {
+                var pr = req || this.resolvePaymentRequest;
+                if (!pr) return '';
+                var feeBefore = prStableEscrowFeesBeforeViewer(pr, this.viewerDid);
+                if (!isFinite(feeBefore) || feeBefore <= 0) return '';
+                var stableLeg = prLegForAsset(pr, false);
+                if (!stableLeg || String(stableLeg.asset_type || '').toLowerCase() !== 'stable') {
+                    return '';
+                }
+                var baseRaw =
+                    stableLeg.amount != null ? String(stableLeg.amount).trim() : '';
+                if (!baseRaw) return '';
+                var ba = parseFloat(sanitizeDecimalAmountInput(baseRaw));
+                if (!isFinite(ba)) return '';
+                var sum = ba + feeBefore;
                 var code = stableLeg.code ? String(stableLeg.code).trim().toUpperCase() : '';
                 var sumStr = formatAmountForLocale(String(sum));
                 return sumStr + (code ? ' ' + code : '');
@@ -1178,14 +1876,23 @@
                 if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) {
                     return '—';
                 }
-                if (!this.isCommissionerIntermediary) return this.dealViewStatReceive();
-                var extra = this.viewerStableLegEscrowTotalFormatted();
-                return extra || this.dealViewStatReceive();
+                // Owner always sees the exact amount from the request (без надбавок escrow).
+                if (this.isPaymentRequestOwner) {
+                    return this.dealViewStatReceive();
+                }
+                // intermediary: base + prev chain (без своей комиссии)
+                if (this.viewerRoleChoice === 'intermediary') {
+                    var prev = this.viewerStableLegPrevChainTotalFormatted(this.resolvePaymentRequest);
+                    return prev || this.dealViewStatReceive();
+                }
+                // participant/counterparty/не выбрано: base + all fees (escrow lock)
+                var esc = this.viewerStableLegEscrowTotalFormatted();
+                return esc || this.dealViewStatReceive();
             },
-            /** Текст в блоке lockbox: для посредника — стейбл + моя комиссия (как во «второй ноге»). */
+            /** Текст в блоке lockbox: сумма залога для escrow lock (base + все комиссии по залогу). */
             dealLockboxHintEscrowFromPr: function(req) {
                 if (!req) return '';
-                if (this.isCommissionerIntermediary) {
+                if (this.resolvePaymentRequest && req.pk === this.resolvePaymentRequest.pk) {
                     var esc = this.viewerStableLegEscrowTotalFormatted();
                     if (esc) return esc;
                 }
@@ -1193,6 +1900,7 @@
             },
             confirmResellCommissionModal: function() {
                 var self = this;
+                if (!self.guardTermsNotExpired()) return;
                 self.resellModalError = '';
                 var parsed = parseIntermediaryPercentForResell(self.resellCommissionPercent);
                 if (!parsed.ok) {
@@ -1207,6 +1915,7 @@
             },
             submitResellIntermediary: function(intermediaryPercent) {
                 var self = this;
+                if (!self.guardTermsNotExpired()) return;
                 var pctStr =
                     intermediaryPercent !== undefined && intermediaryPercent !== null
                         ? String(intermediaryPercent).trim()
@@ -1289,6 +1998,7 @@
             },
             copyDealPublicLink: function() {
                 var self = this;
+                if (!self.guardTermsNotExpired()) return;
                 var text = self.dealPublicPageUrl();
                 if (!text) return;
                 var done = function() {
@@ -1323,7 +2033,20 @@
                 if (step.num !== '02') return t(step.subKey);
                 if (this.resolveLoading) return '…';
                 if (this.resolveKind === 'payment_request_only' && this.resolvePaymentRequest) {
-                    var line = this.dealLockboxHintFromPr(this.resolvePaymentRequest);
+                    var pr = this.resolvePaymentRequest;
+                    if (pr.deal_id) {
+                        return t('main.simple.handshake_nav_deal_created');
+                    }
+                    if (pr.owner_confirm_pending && !pr.deal_id) {
+                        var v = (this.viewerDid || '').trim();
+                        var owner = (pr.owner_did || '').trim();
+                        var acc = (pr.counterparty_accept_did || '').trim();
+                        if (v === owner) return t('main.simple.handshake_nav_owner_pending');
+                        if (acc && v === acc) return t('main.simple.handshake_nav_counterparty_waiting');
+                        if (pr.handshake_locked_by_other) return t('main.simple.handshake_nav_locked_viewer');
+                        return t('main.simple.handshake_nav_negotiating');
+                    }
+                    var line = this.dealLockboxHintFromPr(pr);
                     return line || t('main.simple.nav_step2_sub');
                 }
                 if (this.resolveKind === 'deal_only' && this.resolveDeal) {
@@ -1380,7 +2103,8 @@
             /** Карточка «Залог»: только стейбл-нога. */
             dealViewStatStableAmount: function() {
                 if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) return '—';
-                return formatPaymentRequestLegLine(prLegForAsset(this.resolvePaymentRequest, false), true);
+                var esc = this.viewerStableLegEscrowTotalFormatted();
+                return esc || formatPaymentRequestLegLine(prLegForAsset(this.resolvePaymentRequest, false), true);
             },
             dealViewStatRate: function() {
                 if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) return '—';
@@ -1509,6 +2233,7 @@
             /**
              * Выставлен счет: суммы обеих ног + коды.
              * Запрос условий: сумма отдачи + направление (получение без суммы).
+             * Контрагент/acceptor: только итоговые суммы ног; разбивка комиссий — только у посредника (isCommissionerIntermediary).
              */
             orderAmountsLine: function(req) {
                 if (!req) return '';
@@ -1520,12 +2245,57 @@
                 var raRaw = cl && cl.amount != null ? String(cl.amount).trim() : '';
                 var ga = gaRaw ? formatAmountForLocale(gaRaw) : '';
                 var ra = raRaw ? formatAmountForLocale(raRaw) : '';
+                // Для non-owner "истинная" сумма в stable-ноге (escrow lock): base + fees.
+                // Owner всегда видит raw amount из заявки.
+                var stableIsReceive = String(req.direction || '') === 'fiat_to_stable';
+                var vd = (this.viewerDid || '').trim();
+                var amIntermediaryForReq = !!(vd && !this.isPaymentRequestOwner && viewerIntermediarySlot(req, vd));
+                if (amIntermediaryForReq) {
+                    var prevStable = this.viewerStableLegPrevChainTotalFormatted(req);
+                    if (prevStable) {
+                        // prevStable already contains code; override stable leg display without раскрытия структуры
+                        if (stableIsReceive) {
+                            ra = prevStable;
+                            rc = '';
+                        } else {
+                            ga = prevStable;
+                            gc = '';
+                        }
+                    }
+                } else if (!this.isPaymentRequestOwner) {
+                    try {
+                        var feeTotal = prStableEscrowFeesTotal(req);
+                        if (feeTotal && isFinite(feeTotal)) {
+                            var stableLeg = prLegForAsset(req, false);
+                            if (stableLeg && String(stableLeg.asset_type || '').toLowerCase() === 'stable') {
+                                var baseRaw =
+                                    stableLeg.amount != null ? String(stableLeg.amount).trim() : '';
+                                if (baseRaw) {
+                                    var ba = parseFloat(sanitizeDecimalAmountInput(baseRaw));
+                                    if (isFinite(ba)) {
+                                        var sum = ba + feeTotal;
+                                        var code = stableLeg.code ? String(stableLeg.code).trim().toUpperCase() : '';
+                                        var sumStr = formatAmountForLocale(String(sum));
+                                        var escStable = sumStr + (code ? ' ' + code : '');
+                                        if (stableIsReceive) {
+                                            ra = escStable;
+                                            rc = '';
+                                        } else {
+                                            ga = escStable;
+                                            gc = '';
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (eEsc) {}
+                }
                 var arrow = ' → ';
                 var lbGive = t('main.simple.pr_give_label');
                 var lbRecv = t('main.simple.pr_receive_label');
                 if (this.orderHasReceiveAmount(req)) {
                     var leftInv = ga ? ga + ' ' + gc : (gc || '—');
-                    var rightInv = ra ? ra + ' ' + rc : (rc || '—');
+                    var rightInv = ra ? (rc ? ra + ' ' + rc : ra) : (rc || '—');
                     return lbGive + ' ' + leftInv + arrow + lbRecv + ' ' + rightInv;
                 }
                 var leftTerms = ga ? ga + ' ' + gc : (gc || '—');
@@ -1581,6 +2351,25 @@
                     return t('main.simple.request_title_invoice', { pk: pk });
                 }
                 return t('main.simple.request_title_terms', { pk: pk });
+            },
+            /** Владелец заявки в списке (для кнопки деактивации). */
+            isOrdersItemOwner: function(req) {
+                var v = (this.viewerDid || '').trim();
+                var o = req && (req.owner_did || '').trim();
+                return !!(v && o && v === o);
+            },
+            /** Краткий статус рукопожатия в карточке списка заявок. */
+            orderHandshakeBadgeText: function(req) {
+                if (!req || req.deactivated_at) return '';
+                if (req.deal_id) return t('main.simple.handshake_list_deal_created');
+                if (!req.owner_confirm_pending) return '';
+                var v = (this.viewerDid || '').trim();
+                var owner = (req.owner_did || '').trim();
+                var acc = (req.counterparty_accept_did || '').trim();
+                if (v === owner) return t('main.simple.handshake_list_owner_confirm');
+                if (acc && v === acc) return t('main.simple.handshake_list_you_accepted');
+                if (req.handshake_locked_by_other) return t('main.simple.handshake_list_locked_other');
+                return '';
             },
             onGiveCodeSelectChange: function() {
                 this.giveAmountFocus = false;
@@ -2039,7 +2828,7 @@
           </div>\
           <template v-if="receiveAmountMode === \'fixed\'">\
             <label class="simple-create__label">{{ t(\'main.simple.amount_label\') }}</label>\
-            <input type="text" class="simple-create__input" :value="receiveAmountInputDisplay" inputmode="decimal" autocomplete="off" :disabled="receiveLocked" :placeholder="t(\'main.simple.amount_optional_ph\')" @focus="onReceiveAmountFocus" @blur="onReceiveAmountBlur" @keydown="onAmountFieldKeydown" @input="onReceiveAmountInput" @compositionend="onReceiveAmountInput" />\
+            <input type="text" class="simple-create__input" :value="receiveAmountInputDisplay" inputmode="decimal" autocomplete="off" :disabled="receiveLocked" :placeholder="t(\'main.simple.amount_required_ph\')" @focus="onReceiveAmountFocus" @blur="onReceiveAmountBlur" @keydown="onAmountFieldKeydown" @input="onReceiveAmountInput" @compositionend="onReceiveAmountInput" />\
           </template>\
         </div>\
       </div>\
@@ -2097,17 +2886,81 @@
       </div>\
     </div>\
   </div>\
+  <div v-if="showAcceptAmountModal" class="simple-deactivate__overlay" @click.self="closeAcceptAmountModal">\
+    <div class="simple-create__modal simple-deactivate__modal" role="dialog" aria-modal="true" aria-labelledby="simple-accept-amt-title" @click.stop>\
+      <h2 id="simple-accept-amt-title" class="simple-create__title">{{ t(\'main.simple.pr_accept_modal_title\') }}</h2>\
+      <p class="simple-deactivate__hint">{{ t(\'main.simple.pr_accept_modal_hint\') }}</p>\
+      <label class="simple-create__label" for="simple-accept-amt-input">{{ t(\'main.simple.pr_accept_modal_label\') }}</label>\
+      <input id="simple-accept-amt-input" type="text" class="simple-create__input" v-model.trim="acceptAmountInput" inputmode="decimal" autocomplete="off" />\
+      <div v-if="acceptModalError" class="simple-create__err">{{ acceptModalError }}</div>\
+      <div class="simple-create__actions">\
+        <button type="button" class="simple-create__btn simple-create__btn--ghost" @click="closeAcceptAmountModal" :disabled="acceptSubmitting">{{ t(\'main.simple.cancel\') }}</button>\
+        <button type="button" class="simple-create__btn simple-create__btn--primary" @click="confirmAcceptAmountModal" :disabled="acceptModalSubmitDisabled">\
+          <span v-if="acceptSubmitting" class="simple-create__btn-spinner" aria-hidden="true"></span>\
+          {{ t(\'main.simple.pr_accept_modal_submit\') }}\
+        </button>\
+      </div>\
+    </div>\
+  </div>\
+  <div v-if="showExpiredTermsModal" class="simple-deactivate__overlay" @click.self="closeExpiredTermsModal">\
+    <div class="simple-create__modal simple-deactivate__modal" role="dialog" aria-modal="true" aria-labelledby="simple-expired-terms-title" @click.stop>\
+      <h2 id="simple-expired-terms-title" class="simple-create__title">{{ t(\'main.simple.pr_expired_terms_title\') }}</h2>\
+      <p class="simple-deactivate__hint">{{ t(\'main.simple.pr_expired_terms_warn\') }}</p>\
+      <div class="simple-create__actions">\
+        <button type="button" class="simple-create__btn simple-create__btn--primary" @click="closeExpiredTermsModal">{{ t(\'main.simple.pr_expired_terms_close\') }}</button>\
+      </div>\
+    </div>\
+  </div>\
+  <div v-if="showExtendLifetimeModal" class="simple-deactivate__overlay" @click.self="closeExtendLifetimeModal">\
+    <div class="simple-create__modal simple-deactivate__modal" role="dialog" aria-modal="true" aria-labelledby="simple-extend-lifetime-title" @click.stop>\
+      <h2 id="simple-extend-lifetime-title" class="simple-create__title">{{ t(\'main.simple.pr_extend_modal_title\') }}</h2>\
+      <p class="simple-deactivate__hint">{{ t(\'main.simple.pr_extend_modal_hint\') }}</p>\
+      <label class="simple-create__label" for="simple-extend-lifetime">{{ t(\'main.simple.pr_extend_modal_label\') }}</label>\
+      <select id="simple-extend-lifetime" v-model="extendLifetime" class="simple-create__select">\
+        <option value="24h">{{ t(\'main.simple.lifetime_24h\') }}</option>\
+        <option value="48h">{{ t(\'main.simple.lifetime_48h\') }}</option>\
+        <option value="72h">{{ t(\'main.simple.lifetime_72h\') }}</option>\
+      </select>\
+      <div class="simple-create__actions">\
+        <button type="button" class="simple-create__btn simple-create__btn--ghost" @click="closeExtendLifetimeModal" :disabled="extendSubmitting">{{ t(\'main.simple.cancel\') }}</button>\
+        <button type="button" class="simple-create__btn simple-create__btn--primary" @click="confirmExtendLifetimeModal" :disabled="extendSubmitting">\
+          <span v-if="extendSubmitting" class="simple-create__btn-spinner" aria-hidden="true"></span>\
+          {{ t(\'main.simple.pr_extend_modal_submit\') }}\
+        </button>\
+      </div>\
+    </div>\
+  </div>\
+  <div v-if="showWalletMismatchModal" class="simple-deactivate__overlay" @click.self="closeWalletMismatchModal">\
+    <div class="simple-create__modal simple-deactivate__modal" role="dialog" aria-modal="true" aria-labelledby="simple-wallet-mismatch-title" @click.stop>\
+      <h2 id="simple-wallet-mismatch-title" class="simple-create__title">{{ t(\'main.simple.wallet_mismatch_title\') }}</h2>\
+      <p class="simple-deactivate__hint">{{ t(\'main.simple.wallet_mismatch_intro\', { primary: profilePrimaryWalletAddress || \'—\' }) }}</p>\
+      <p class="simple-deactivate__hint">{{ t(\'main.simple.wallet_mismatch_admin\') }}</p>\
+      <div class="simple-create__actions">\
+        <button type="button" class="simple-create__btn simple-create__btn--ghost" @click="closeWalletMismatchModal">{{ t(\'main.simple.wallet_mismatch_cancel\') }}</button>\
+        <button type="button" class="simple-create__btn simple-create__btn--primary" @click="confirmWalletMismatchProceed">{{ t(\'main.simple.wallet_mismatch_proceed\') }}</button>\
+      </div>\
+    </div>\
+  </div>\
+  <div v-if="showPrLockedByOtherModal" class="simple-deactivate__overlay" @click.self="closePrLockedByOtherModal">\
+    <div class="simple-create__modal simple-deactivate__modal" role="dialog" aria-modal="true" aria-labelledby="simple-pr-locked-title" @click.stop>\
+      <h2 id="simple-pr-locked-title" class="simple-create__title">{{ t(\'main.simple.pr_locked_other_title\') }}</h2>\
+      <p class="simple-deactivate__hint">{{ t(\'main.simple.pr_locked_other_text\') }}</p>\
+      <div class="simple-create__actions">\
+        <button type="button" class="simple-create__btn simple-create__btn--primary" @click="closePrLockedByOtherModal">{{ t(\'main.simple.pr_locked_other_close\') }}</button>\
+      </div>\
+    </div>\
+  </div>\
   <div v-if="showSpaceNicknameModal" class="simple-deactivate__overlay" @click.self="closeSpaceNicknameModal">\
     <div class="simple-create__modal simple-deactivate__modal" role="dialog" aria-modal="true" aria-labelledby="simple-space-nick-title" @click.stop>\
-      <h2 id="simple-space-nick-title" class="simple-create__title">{{ t(\'main.simple.space_nickname_modal_title\') }}</h2>\
+      <h2 id="simple-space-nick-title" class="simple-create__title">{{ t(\'main.space_profile.form_company_name\') }}</h2>\
       <p class="simple-deactivate__hint">{{ t(\'main.simple.space_nickname_modal_hint\') }}</p>\
-      <label class="simple-create__label" for="simple-space-nick-input">{{ t(\'main.simple.space_nickname_field_label\') }}</label>\
-      <input id="simple-space-nick-input" type="text" class="simple-create__input" v-model.trim="spaceNicknameEdit" maxlength="100" autocomplete="username" />\
-      <div v-if="spaceNicknameError" class="simple-create__err">{{ spaceNicknameError }}</div>\
+      <label class="simple-create__label" for="simple-space-nick-input">{{ t(\'main.space_profile.form_company_name\') }}</label>\
+      <input id="simple-space-nick-input" type="text" class="simple-create__input" v-model.trim="spaceLabelEdit" maxlength="100" autocomplete="organization" />\
+      <div v-if="spaceLabelError" class="simple-create__err">{{ spaceLabelError }}</div>\
       <div class="simple-create__actions">\
-        <button type="button" class="simple-create__btn simple-create__btn--ghost" @click="closeSpaceNicknameModal" :disabled="spaceNicknameSaving">{{ t(\'main.simple.cancel\') }}</button>\
-        <button type="button" class="simple-create__btn simple-create__btn--primary" @click="submitSpaceNickname" :disabled="spaceNicknameSaving">\
-          <span v-if="spaceNicknameSaving" class="simple-create__btn-spinner" aria-hidden="true"></span>\
+        <button type="button" class="simple-create__btn simple-create__btn--ghost" @click="closeSpaceNicknameModal" :disabled="spaceLabelSaving">{{ t(\'main.simple.cancel\') }}</button>\
+        <button type="button" class="simple-create__btn simple-create__btn--primary" @click="submitSpaceNickname" :disabled="spaceLabelSaving">\
+          <span v-if="spaceLabelSaving" class="simple-create__btn-spinner" aria-hidden="true"></span>\
           {{ t(\'main.simple.space_nickname_save\') }}\
         </button>\
       </div>\
@@ -2161,11 +3014,12 @@
           </div>\
           <div v-if="!ordersLoading && !ordersItems.length" class="simple-page__list-msg">{{ t(\'main.simple.deals_empty\') }}</div>\
           <div v-if="!ordersLoading && ordersItems.length" class="simple-page__order-list" role="list">\
-            <div v-for="req in ordersItems" :key="req.uid" class="simple-page__order-card" :class="{ \'simple-page__order-card--deactivated\': req.deactivated_at }" role="listitem">\
+            <div v-for="req in ordersItems" :key="req.uid" class="simple-page__order-card" :class="{ \'simple-page__order-card--deactivated\': req.deactivated_at, \'simple-page__order-card--needs-confirm\': isOrdersItemOwner(req) && req && req.owner_confirm_pending && !req.deal_id && !req.deactivated_at }" role="listitem">\
               <a class="simple-page__order-card-hit" :href="simpleHtmlBase() + \'/deal/\' + encodeURIComponent(String(req.public_ref || req.uid))">\
                 <div class="simple-page__order-card-main">\
                   <div class="simple-page__order-titles">\
                     <span class="simple-page__order-list-title">{{ orderListTitle(req) }}</span>\
+                    <span v-if="orderHandshakeBadgeText(req)" class="simple-page__order-handshake-badge" :class="{ \'simple-page__order-handshake-badge--pulse\': isOrdersItemOwner(req) && req && req.owner_confirm_pending && !req.deal_id && !req.deactivated_at }">{{ orderHandshakeBadgeText(req) }}</span>\
                   </div>\
                 </div>\
                 <div class="simple-page__order-card-sub">\
@@ -2186,7 +3040,8 @@
                 </div>\
               </a>\
               <div class="simple-page__order-card-actions">\
-                <button v-if="!req.deactivated_at" type="button" class="simple-page__order-deactivate-btn" @click.stop="openDeactivateModal(req)">{{ t(\'main.simple.deactivate_btn\') }}</button>\
+                <button v-if="isOrdersItemOwner(req)" type="button" class="simple-page__order-deactivate-btn" @click.stop="submitExtendFromList(req)" :disabled="extendSubmitting" :aria-busy="extendSubmitting ? \'true\' : \'false\'">{{ t(\'main.simple.pr_btn_extend\') }}</button>\
+                <button v-if="!req.deactivated_at && isOrdersItemOwner(req)" type="button" class="simple-page__order-deactivate-btn" @click.stop="openDeactivateModal(req)">{{ t(\'main.simple.deactivate_btn\') }}</button>\
                 <span v-else class="simple-page__order-deactivated-badge">{{ t(\'main.simple.deactivated_badge\') }}</span>\
               </div>\
             </div>\
@@ -2325,6 +3180,14 @@
               </div>\
             </dl>\
           </div>\
+          <div v-if="dealPrTermsPhase && handshakeLockedByOther && !isPaymentRequestOwner" class="simple-page__pr-handshake-locked-hint" role="status">{{ t(\'main.simple.handshake_locked_hint\') }}</div>\
+          <div v-if="showOwnerConfirmBanner" class="simple-page__pr-handshake-banner simple-page__pr-handshake-banner--pulse" role="status">\
+            <p class="simple-page__pr-handshake-banner-text">{{ t(\'main.simple.pr_owner_confirm_banner\') }}</p>\
+            <button type="button" class="simple-page__pr-handshake-banner-btn" @click="submitOwnerConfirm" :disabled="ownerConfirmSubmitting" :aria-busy="ownerConfirmSubmitting ? \'true\' : \'false\'">\
+              <span v-if="ownerConfirmSubmitting" class="simple-create__btn-spinner simple-page__pr-handshake-spinner" aria-hidden="true"></span>\
+              {{ t(\'main.simple.pr_btn_owner_confirm\') }}\
+            </button>\
+          </div>\
           <div class="simple-page__flow-shell">\
             <div class="simple-page__flow-row" :class="{ \'simple-page__flow-row--pr-split\': dealPrTermsPhase }">\
               <div class="simple-page__flow-icon">\
@@ -2338,13 +3201,32 @@
                   <template v-else>\
                     <span class="simple-page__flow-title">{{ t(\'main.simple.deal_flow_offer_title\') }}</span>\
                     <div class="simple-page__pr-terms-actions">\
-                      <button v-if="!isPaymentRequestOwner" type="button" class="simple-page__pr-terms-btn simple-page__pr-terms-btn--resell" @click="onResellClick" :disabled="resellSubmitting" :aria-busy="resellSubmitting ? \'true\' : \'false\'">\
+                      <div v-if="!isPaymentRequestOwner && !viewerAcceptancePending" class="simple-page__pr-role-switch">\
+                        <select class="simple-page__pr-role-select" :value="viewerRoleChoice" @change="setViewerRoleChoice($event && $event.target ? $event.target.value : \'\')" :disabled="roleSubmitting || handshakeLockedByOther">\
+                          <option value="">{{ t(\'main.simple.pr_role_choose\') }}</option>\
+                          <option value="counterparty">{{ t(\'main.simple.pr_role_counterparty\') }}</option>\
+                          <option value="intermediary">{{ t(\'main.simple.pr_role_intermediary\') }}</option>\
+                        </select>\
+                      </div>\
+                      <button v-if="isPaymentRequestOwner" type="button" class="simple-page__pr-terms-btn simple-page__pr-terms-btn--link" @click="submitExtendFromDeal" :disabled="extendSubmitting" :aria-busy="extendSubmitting ? \'true\' : \'false\'">\
+                        <span class="simple-page__pr-terms-btn-label">{{ t(\'main.simple.pr_btn_extend\') }}</span>\
+                      </button>\
+                      <button v-if="showAcceptTermsButton && viewerRoleChoice === \'counterparty\'" type="button" class="simple-page__pr-terms-btn simple-page__pr-terms-btn--accept" @click="onAcceptTermsClick" :disabled="acceptSubmitting || withdrawAcceptSubmitting" :aria-busy="acceptSubmitting ? \'true\' : \'false\'">\
+                        <svg class="simple-page__pr-terms-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\
+                          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>\
+                        </svg>\
+                        <span class="simple-page__pr-terms-btn-label">{{ t(\'main.simple.pr_btn_accept\') }}</span>\
+                      </button>\
+                      <button v-if="showWithdrawAcceptButton" type="button" class="simple-page__pr-terms-btn simple-page__pr-terms-btn--withdraw" @click="submitWithdrawAcceptance" :disabled="withdrawAcceptSubmitting || acceptSubmitting" :aria-busy="withdrawAcceptSubmitting ? \'true\' : \'false\'">\
+                        <span class="simple-page__pr-terms-btn-label">{{ t(\'main.simple.pr_btn_withdraw_accept\') }}</span>\
+                      </button>\
+                      <button v-if="!isPaymentRequestOwner && viewerRoleChoice === \'intermediary\'" type="button" class="simple-page__pr-terms-btn simple-page__pr-terms-btn--resell" @click="onResellClick" :disabled="resellSubmitting" :aria-busy="resellSubmitting ? \'true\' : \'false\'">\
                         <svg class="simple-page__pr-terms-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\
                           <path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4 4 4m6 0v12m0 0l4-4m-4 4-4-4"/>\
                         </svg>\
                         <span class="simple-page__pr-terms-btn-label">{{ t(\'main.simple.pr_btn_resell\') }}</span><span v-if="commissionerResellButtonPctLabel" class="simple-page__pr-terms-btn-pct">{{ commissionerResellButtonPctLabel }}</span>\
                       </button>\
-                      <button type="button" class="simple-page__pr-terms-btn simple-page__pr-terms-btn--link" @click="copyDealPublicLink">\
+                      <button v-if="isPaymentRequestOwner || viewerRoleChoice === \'intermediary\'" type="button" class="simple-page__pr-terms-btn simple-page__pr-terms-btn--link" @click="copyDealPublicLink">\
                         <svg class="simple-page__pr-terms-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\
                           <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>\
                         </svg>\
@@ -2360,8 +3242,9 @@
                     <span class="simple-page__flow-deadline-text">{{ formatExpiryCountdown(resolvePaymentRequest) }}</span>\
                   </span>\
                 </div>\
-                <div v-if="dealPrTermsPhase && (resellBanner || copyLinkBanner)" class="simple-page__pr-terms-feedback">\
+                <div v-if="dealPrTermsPhase && (resellBanner || handshakeBanner || copyLinkBanner)" class="simple-page__pr-terms-feedback">\
                   <div v-if="resellBanner" class="simple-page__pr-inline-msg" :class="resellBanner.type === \'error\' ? \'simple-page__pr-inline-msg--err\' : \'\'">{{ resellBanner.text }}</div>\
+                  <div v-if="handshakeBanner" class="simple-page__pr-inline-msg" :class="handshakeBanner.type === \'error\' ? \'simple-page__pr-inline-msg--err\' : \'\'">{{ handshakeBanner.text }}</div>\
                   <div v-if="copyLinkBanner" class="simple-page__pr-inline-msg">{{ copyLinkBanner }}</div>\
                 </div>\
                 <div class="simple-page__flow-mono simple-page__flow-mono--pr-sum-line">{{ orderAmountsLine(resolvePaymentRequest) }}<template v-if="isCommissionerIntermediary"><span class="simple-page__flow-mono-comm">{{ dealFlowStableCommissionSuffix() }}</span></template></div>\
@@ -2373,7 +3256,7 @@
                 </svg>\
                 <span class="simple-page__flow-deadline-text">{{ formatExpiryCountdown(resolvePaymentRequest) }}</span>\
               </span>\
-              <div class="simple-page__flow-status" :class="{ \'simple-page__flow-status--deactivated\': dealPrDeactivated }">{{ dealPrDeactivated ? t(\'main.simple.request_status_deactivated\') : t(\'main.simple.request_status_terms\') }}</div>\
+              <div class="simple-page__flow-status" :class="{ \'simple-page__flow-status--deactivated\': dealPrDeactivated }">{{ dealPrFlowStatusLabel }}</div>\
             </div>\
             <div class="simple-page__lockbox" :class="{ \'simple-page__lockbox--deactivated\': dealPrDeactivated }">\
               <div class="simple-page__lockbox-tag">{{ t(\'main.simple.lockbox_title\') }}</div>\
@@ -2386,9 +3269,12 @@
                 <svg class="simple-page__svg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>\
                 {{ dealLockboxHintEscrowFromPr(resolvePaymentRequest) || t(\'main.simple.lockbox_inner_placeholder\') }}\
               </div>\
-              <div v-if="!dealPrDeactivated" class="simple-page__lockbox-pending-foot" role="status">\
+              <div v-if="!dealPrDeactivated && dealPrExpiredDuringTerms" class="simple-page__lockbox-pending-foot" role="status">\
+                <p class="simple-page__lockbox-pending-text">{{ t(\'main.simple.lockbox_terms_expired\') }}</p>\
+              </div>\
+              <div v-else-if="!dealPrDeactivated" class="simple-page__lockbox-pending-foot" role="status">\
                 <div class="simple-page__lockbox-spinner" aria-hidden="true"></div>\
-                <p class="simple-page__lockbox-pending-text">{{ t(\'main.simple.lockbox_terms_pending_detail\') }}</p>\
+                <p class="simple-page__lockbox-pending-text">{{ (resolvePaymentRequest && resolvePaymentRequest.owner_confirm_pending) ? t(\'main.simple.lockbox_owner_confirm_pending\') : t(\'main.simple.lockbox_terms_pending_detail\') }}</p>\
               </div>\
               <div v-else class="simple-page__lockbox-deactivated-foot" role="status">\
                 <p class="simple-page__lockbox-deactivated-text">{{ t(\'main.simple.pr_deactivated_lockbox_note\') }}</p>\
@@ -2401,7 +3287,7 @@
                 </div>\
                 <div class="simple-page__flow-body">\
                   <div class="simple-page__flow-title">{{ t(\'main.simple.counter_leg\') }}</div>\
-                  <div class="simple-page__flow-mono">{{ isCommissionerIntermediary ? dealViewStatReceiveEscrowTotal() : dealViewStatReceive() }}</div>\
+                  <div class="simple-page__flow-mono">{{ dealViewStatReceiveEscrowTotal() }}</div>\
                 </div>\
               </div>\
             </div>\

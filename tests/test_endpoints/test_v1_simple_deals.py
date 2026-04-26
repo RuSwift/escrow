@@ -21,6 +21,7 @@ from web.endpoints.dependencies import (
 from web.main import create_app
 
 _OWNER_TRON = "TLrJJkGK4puQGZLFbrPxK2icPgADaNTq5A"
+_OTHER_TRON = "TP8PmmcgrTv1ASwJ7UPe8fDCmbUtTYLxnd"
 
 # Совпадает с owner_did кошелька-арбитра в фикстуре (Wallet).
 SIMPLE_ARBITER_DID = "did:peer:simple_deals_arbiter_owner"
@@ -245,6 +246,97 @@ async def test_create_payment_request_lifetime_48h(main_app_simple_deals):
         exp = datetime.fromisoformat(created["expires_at"].replace("Z", "+00:00"))
         delta = exp - datetime.now(timezone.utc)
         assert timedelta(hours=47) < delta < timedelta(hours=49)
+
+
+@pytest.mark.asyncio
+async def test_list_payment_requests_commissioner_has_borrow_amounts(main_app_simple_deals):
+    """
+    UI variant-B needs escrow total in list view (base + fees).
+    For that, list endpoint must include commissioners slots with borrow_amount for system+intermediary.
+    """
+    app, owner = main_app_simple_deals
+
+    # Create another user (commissioner) in DB for completeness.
+    async for s in app.dependency_overrides[get_db]():
+        other = WalletUser(
+            nickname="simple_api_other",
+            wallet_address=_OTHER_TRON,
+            blockchain="tron",
+            did="did:tron:simple_api_other",
+        )
+        s.add(other)
+        await s.commit()
+        await s.refresh(other)
+        s.add(
+            PrimaryWallet(
+                wallet_user_id=other.id,
+                address=_OTHER_TRON,
+                blockchain="tron",
+            )
+        )
+        await s.commit()
+
+    payload = {
+        "direction": "fiat_to_stable",
+        "primary_leg": {
+            "asset_type": "fiat",
+            "code": "CNY",
+            "amount": "10000",
+            "side": "give",
+        },
+        "counter_leg": {
+            "asset_type": "stable",
+            "code": "USDT",
+            "amount": "100",
+            "side": "receive",
+        },
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # owner creates payment request
+        c = await client.post(_simple_v1_base() + "/payment-requests", json=payload)
+        assert c.status_code == 201, c.text
+        created = c.json()["payment_request"]
+        uid = created["uid"]
+        pk = created["pk"]
+
+        # switch to other (commissioner) and create intermediary slot with 0.8%
+        app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+            standard="tron",
+            wallet_address=_OTHER_TRON,
+            did="did:tron:simple_api_other",
+        )
+        try:
+            rs = await client.post(
+                _simple_v1_base() + f"/payment-requests/{uid}/resell",
+                json={"intermediary_percent": "0.8"},
+            )
+            assert rs.status_code == 200, rs.text
+
+            # list should include borrow_amount for system+intermediary
+            r = await client.get(_simple_v1_base() + "/payment-requests")
+            assert r.status_code == 200, r.text
+            items = r.json()["items"]
+            it = next(x for x in items if x["pk"] == pk)
+            comm = it["commissioners"]
+            assert "system" in comm
+            assert comm["system"].get("borrow_amount")
+            # find intermediary slot for other did
+            i_slots = [
+                s for s in comm.values() if isinstance(s, dict) and s.get("role") == "intermediary"
+            ]
+            assert any(s.get("did") == "did:tron:simple_api_other" for s in i_slots)
+            mine = next(s for s in i_slots if s.get("did") == "did:tron:simple_api_other")
+            assert mine.get("borrow_amount")
+            assert mine.get("commission", {}).get("value") == "0.8"
+        finally:
+            app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+                standard="tron",
+                wallet_address=_OWNER_TRON,
+                did=owner.did,
+            )
 
 
 @pytest.mark.asyncio

@@ -2,20 +2,25 @@
 
 from __future__ import annotations
 
+import copy
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional, Tuple, cast
 
 from pydantic import ValidationError
 from redis.asyncio import Redis
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.short_id import generate_public_ref
-from db.models import PaymentRequest
+from db.models import PaymentRequest, Wallet
+from i18n.translations import get_translation
+from repos.deal import DealRepository
 from repos.payment_request import PaymentRequestRepository, PaymentRequestResolveSegment
+from services.notify import NotifyService
 from services.exchange_wallets import ExchangeWalletService
 from services.payment_request_commission_graph import (
     build_slot_snapshots,
@@ -104,6 +109,7 @@ class PaymentRequestService:
         raw_comm = row.commissioners
         comm = dict(raw_comm) if isinstance(raw_comm, dict) else {}
         keys_for_viewer: List[str] = []
+        participant_keys: List[str] = []
         for sk, slot in comm.items():
             if not isinstance(slot, dict):
                 continue
@@ -111,11 +117,38 @@ class PaymentRequestService:
                 continue
             if str(slot.get("role") or "").strip().lower() == SYSTEM_SLOT_KEY:
                 continue
-            if not is_intermediary_commission_slot(sk, slot):
+            role = str(slot.get("role") or "").strip().lower()
+            if role == "participant":
+                participant_keys.append(sk)
                 continue
-            keys_for_viewer.append(sk)
+            if is_intermediary_commission_slot(sk, slot):
+                keys_for_viewer.append(sk)
 
         if not keys_for_viewer:
+            # participant slots: ensure alias_public_ref exists
+            if not participant_keys:
+                return
+            changed_p = False
+            for target_key in sorted(participant_keys):
+                slot_obj = dict(comm[target_key])
+                if (slot_obj.get("alias_public_ref") or "").strip():
+                    continue
+                alias = await self._generate_unique_alias_public_ref()
+                slot_obj["alias_public_ref"] = alias
+                comm[target_key] = slot_obj
+                changed_p = True
+            if not changed_p:
+                return
+            root_ref = str(getattr(row, "public_ref", "") or "")
+            from web.endpoints.v1.schemas.payment_request_commissioners import (
+                CommissionersPayload,
+                validate_commissioners_parent_refs,
+            )
+            validate_commissioners_parent_refs(comm, root_public_ref=root_ref)
+            CommissionersPayload.model_validate(comm)
+            row.commissioners = comm
+            await self._session.flush()
+            await self._session.refresh(row)
             return
 
         changed = False
@@ -267,6 +300,57 @@ class PaymentRequestService:
             raise ValueError("Заявка не найдена")
 
         row, nick = out
+        await self._session.commit()
+        await self._session.refresh(row)
+        return row, nick
+
+    async def extend_payment_request_owner(
+        self,
+        *,
+        wallet_address: str,
+        owner_did: str,
+        standard: str,
+        arbiter_did: str,
+        pk: int,
+        lifetime: SimplePaymentLifetime = "72h",
+    ) -> Tuple[PaymentRequest, str]:
+        """
+        Продлить срок заявки (expires_at) владельцем.
+
+        Семантика: выставить expires_at = max(now, текущий expires_at) + lifetime (24/48/72h).
+        Для forever (expires_at is NULL) — no-op.
+        """
+        bc = self._blockchain_for_standard(standard)
+        pair = await self._wallet_users.resolve_primary_space_nickname_and_id(
+            wallet_address, bc
+        )
+        if not pair:
+            raise ValueError("No space for this wallet")
+        space_nick, _ = pair
+        await self._space.ensure_owner_or_operator(space_nick, wallet_address)
+
+        got = await self._requests.get_by_pk(pk, arbiter_did=(arbiter_did or "").strip())
+        if got is None:
+            raise ValueError("not_found")
+        row, nick = got
+        od = (owner_did or "").strip()
+        if not od or od != (row.owner_did or "").strip():
+            raise ValueError("not_owner")
+
+        lt = str(lifetime or "72h").strip()
+        if lt not in ("24h", "48h", "72h"):
+            raise ValueError("invalid_lifetime")
+
+        now = datetime.now(timezone.utc)
+        cur = getattr(row, "expires_at", None)
+        if cur is None:
+            # forever; keep as is
+            await self._session.commit()
+            await self._session.refresh(row)
+            return row, nick
+        base = cur if isinstance(cur, datetime) and cur > now else now
+        hours = 24 if lt == "24h" else (48 if lt == "48h" else 72)
+        row.expires_at = base + timedelta(hours=hours)
         await self._session.commit()
         await self._session.refresh(row)
         return row, nick
@@ -496,7 +580,18 @@ class PaymentRequestService:
 
         raw_comm = row.commissioners
         base: Dict[str, Any] = dict(raw_comm) if isinstance(raw_comm, dict) else {}
-        if intermediary_slot_keys_for_did(base, vd):
+        # If viewer already has any slot (participant/intermediary/counterparty) — just ensure alias.
+        has_any = False
+        for _sk, slot in base.items():
+            if not isinstance(slot, dict):
+                continue
+            if (slot.get("did") or "").strip() != vd:
+                continue
+            if str(slot.get("role") or "").strip().lower() == SYSTEM_SLOT_KEY:
+                continue
+            has_any = True
+            break
+        if has_any:
             await self.ensure_commissioner_view(row, vd)
             await self._session.commit()
             await self._session.refresh(row)
@@ -506,17 +601,111 @@ class PaymentRequestService:
         if segment.match_kind == "commissioner_alias" and segment.commissioner_parent_ref:
             parent_override = segment.commissioner_parent_ref.strip()
 
-        try:
-            return await self.apply_resell_intermediary(
-                actor_did=vd,
-                arbiter_did=arbiter_did,
-                public_uid=str(row.uid),
-                intermediary_percent=None,
-                parent_ref_override=parent_override,
-            )
-        except ValueError as exc:
-            logger.info("auto resell on resolve skipped: %s", exc)
+        # Create participant slot (no commission) with personal alias_public_ref.
+        root_ref = str(getattr(row, "public_ref", "") or "")
+        if parent_override is not None:
+            parent_ref = self._canonical_parent_ref_for_resell(base, root_ref, parent_override)
+        else:
+            parent_ref = self._resell_parent_ref(base, root_ref)
+
+        slot_key = self._allocate_new_intermediary_slot_key(base)
+        alias = await self._generate_unique_alias_public_ref()
+        base[slot_key] = {
+            "did": vd,
+            "role": "participant",
+            "parent_id": parent_ref,
+            "alias_public_ref": alias,
+        }
+        from web.endpoints.v1.schemas.payment_request_commissioners import (
+            CommissionersPayload,
+            validate_commissioners_parent_refs,
+        )
+        validate_commissioners_parent_refs(base, root_public_ref=root_ref)
+        CommissionersPayload.model_validate(base)
+        row.commissioners = base
+        await self._session.commit()
+        await self._session.refresh(row)
+        return row, space_nickname
+
+    async def set_payment_request_viewer_role(
+        self,
+        *,
+        actor_did: str,
+        arbiter_did: str,
+        pk: int,
+        role: Literal["counterparty", "intermediary"],
+        parent_ref: Optional[str] = None,
+    ) -> Tuple[PaymentRequest, str]:
+        """
+        Зафиксировать роль viewer на стадии согласования условий.
+
+        - counterparty: убрать (если есть) intermediary-слоты данного did.
+        - intermediary: добавить/обновить intermediary-слот (как resell), опционально с parent_ref (alias в URL).
+        """
+        pair = await self._requests.get_by_pk(pk, arbiter_did=arbiter_did)
+        if pair is None:
+            raise ValueError("not_found")
+        row, space_nickname = pair
+        if row.deactivated_at is not None:
+            raise ValueError("request_deactivated")
+        if row.deal_id is not None:
+            raise ValueError("request_already_accepted")
+
+        actor = (actor_did or "").strip()
+        if not actor:
+            raise ValueError("actor_required")
+        owner = (row.owner_did or "").strip()
+        if actor == owner:
+            raise ValueError("owner_cannot_resell")
+
+        raw_comm = row.commissioners
+        base: Dict[str, Any] = dict(raw_comm) if isinstance(raw_comm, dict) else {}
+        actor_slot_keys = intermediary_slot_keys_for_did(base, actor)
+
+        # Find existing non-system slot key for actor (participant/intermediary/counterparty)
+        slot_key: Optional[str] = None
+        for sk, slot in base.items():
+            if not isinstance(slot, dict):
+                continue
+            if (slot.get("did") or "").strip() != actor:
+                continue
+            if str(slot.get("role") or "").strip().lower() == SYSTEM_SLOT_KEY:
+                continue
+            slot_key = sk
+            break
+        if slot_key is None:
+            raise ValueError("no_viewer_slot")
+
+        slot_obj = dict(base[slot_key]) if isinstance(base.get(slot_key), dict) else {}
+        if role == "counterparty":
+            slot_obj["role"] = "counterparty"
+            # В сегменте комиссию не обнуляем: роль контрагента не участвует в расчётах комиссий,
+            # но если пользователь вернётся к посреднику, прежний % должен сохраниться.
+            base[slot_key] = slot_obj
+            row.commissioners = base
+            self._rebuild_all_commission_snapshots(row)
+            await self._session.commit()
+            await self._session.refresh(row)
             return row, space_nickname
+
+        # role == intermediary
+        slot_obj["role"] = "intermediary"
+        comm = slot_obj.get("commission")
+        if not isinstance(comm, dict):
+            slot_obj["commission"] = {"kind": "percent", "value": "0.5"}
+        else:
+            # Если комиссия залипла в 0 (после выбора контрагента) — вернуть дефолт 0.5%.
+            if str(comm.get("kind") or "").strip().lower() == "percent":
+                v = str(comm.get("value") or "").strip()
+                if v in ("0", "0.0", "0.00"):
+                    comm["value"] = "0.5"
+                    slot_obj["commission"] = comm
+        base[slot_key] = slot_obj
+        row.commissioners = base
+        self._rebuild_all_commission_snapshots(row)
+        await self._session.commit()
+        await self._session.refresh(row)
+        return row, space_nickname
 
     async def apply_resell_intermediary(
         self,
@@ -607,6 +796,311 @@ class PaymentRequestService:
         await self._session.commit()
         await self._session.refresh(row)
         return row, nick
+
+    @staticmethod
+    def _commission_snapshot_keys(comm: Dict[str, Any]) -> List[str]:
+        keys: List[str] = []
+        for k, slot in comm.items():
+            if not isinstance(slot, dict):
+                continue
+            role = str(slot.get("role") or "").strip().lower()
+            if role not in ("system", "intermediary"):
+                continue
+            if isinstance(slot.get("commission"), dict):
+                keys.append(str(k))
+        return keys
+
+    def _validate_commissioners_row(self, row: PaymentRequest, comm: Dict[str, Any]) -> None:
+        root_ref = str(getattr(row, "public_ref", "") or "")
+        from web.endpoints.v1.schemas.payment_request_commissioners import (
+            CommissionersPayload,
+            validate_commissioners_parent_refs,
+        )
+
+        validate_commissioners_parent_refs(comm, root_public_ref=root_ref)
+        CommissionersPayload.model_validate(comm)
+
+    def _rebuild_all_commission_snapshots(self, row: PaymentRequest) -> None:
+        raw = row.commissioners
+        comm = dict(raw) if isinstance(raw, dict) else {}
+        keys = self._commission_snapshot_keys(comm)
+        if not keys:
+            row.commissioners = comm
+            return
+        snaps = build_slot_snapshots(
+            str(row.direction or ""),
+            dict(row.primary_leg) if isinstance(row.primary_leg, dict) else {},
+            dict(row.counter_leg) if isinstance(row.counter_leg, dict) else {},
+            comm,
+            keys,
+        )
+        for k in keys:
+            slot = comm.get(k)
+            if not isinstance(slot, dict):
+                continue
+            if k in snaps:
+                slot["payment_amount"] = snaps[k]["payment_amount"]
+                slot["borrow_amount"] = snaps[k]["borrow_amount"]
+        row.commissioners = comm
+        self._validate_commissioners_row(row, comm)
+
+    @staticmethod
+    def _commissioner_notify_recipients(comm: Dict[str, Any]) -> List[Dict[str, str]]:
+        out: List[Dict[str, str]] = []
+        seen: set[str] = set()
+        for slot in comm.values():
+            if not isinstance(slot, dict):
+                continue
+            did = (slot.get("did") or "").strip()
+            if not did or did == "system":
+                continue
+            if did in seen:
+                continue
+            seen.add(did)
+            out.append({"did": did})
+        return out
+
+    async def _notify_handshake_event(
+        self,
+        *,
+        row: PaymentRequest,
+        space_nickname: str,
+        event: str,
+    ) -> None:
+        notify = NotifyService(self._session, self._redis, self._settings)
+        lang = await notify._language_for_scope(space_nickname)
+        pub = str(row.public_ref or "")
+        keys = {
+            "accepted": "notify.payment_request_handshake_accepted",
+            "confirmed": "notify.payment_request_handshake_confirmed",
+            "withdrawn": "notify.payment_request_handshake_withdrawn",
+        }
+        msg_key = keys.get(event)
+        if not msg_key:
+            return
+        text = get_translation(msg_key, lang, public_ref=pub)
+        await notify.notify_roles(space_nickname, ["owner", "operator"], text)
+        comm = dict(row.commissioners) if isinstance(row.commissioners, dict) else {}
+        recipients = self._commissioner_notify_recipients(comm)
+        if recipients:
+            await notify.send_message(recipients, text)
+
+    async def accept_payment_request_counterparty(
+        self,
+        *,
+        actor_did: str,
+        arbiter_did: str,
+        pk: int,
+        counter_stable_amount: Optional[str] = None,
+    ) -> Tuple[PaymentRequest, str]:
+        pair = await self._requests.get_by_pk(pk, arbiter_did=arbiter_did)
+        if pair is None:
+            raise ValueError("not_found")
+        row, space_nickname = pair
+        if row.deactivated_at is not None:
+            raise ValueError("request_deactivated")
+        if row.deal_id is not None:
+            raise ValueError("request_already_accepted")
+        owner = (row.owner_did or "").strip()
+        actor = (actor_did or "").strip()
+        if not actor:
+            raise ValueError("actor_required")
+        if actor == owner:
+            raise ValueError("owner_cannot_accept")
+
+        locked = (row.counterparty_accept_did or "").strip()
+        if locked and locked != actor:
+            raise ValueError("counterparty_already_locked")
+        if (
+            locked == actor
+            and row.owner_confirm_pending
+            and row.deal_id is None
+        ):
+            await self._session.refresh(row)
+            return row, space_nickname
+
+        direction = str(row.direction or "").strip()
+        if direction not in ("fiat_to_stable", "stable_to_fiat"):
+            raise ValueError("invalid_direction")
+
+        pl = dict(row.primary_leg) if isinstance(row.primary_leg, dict) else {}
+        cl = dict(row.counter_leg) if isinstance(row.counter_leg, dict) else {}
+        discussed = bool(cl.get("amount_discussed"))
+        amt_existing = self._leg_amount_str(cl)
+
+        if discussed:
+            snap = str(counter_stable_amount or "").strip()
+            if not snap:
+                raise ValueError("counter_stable_amount_required")
+            row.counter_leg_snapshot_json = copy.deepcopy(cl)
+            cl["amount"] = snap
+            cl["amount_discussed"] = False
+            row.counter_leg = cl
+            self._validate_simple_legs(
+                cast(SimpleDirection, direction),
+                pl,
+                dict(row.counter_leg) if isinstance(row.counter_leg, dict) else {},
+            )
+            self._rebuild_all_commission_snapshots(row)
+        else:
+            if not amt_existing:
+                raise ValueError("counter_leg_invalid")
+            row.counter_leg_snapshot_json = None
+
+        now = datetime.now(timezone.utc)
+        row.counterparty_accept_did = actor
+        row.counterparty_accept_at = now
+        row.owner_confirm_pending = True
+
+        await self._session.commit()
+        await self._session.refresh(row)
+        await self._notify_handshake_event(
+            row=row, space_nickname=space_nickname, event="accepted"
+        )
+        return row, space_nickname
+
+    async def _signer_from_wallet_user_did(self, did: str) -> Dict[str, str]:
+        """Primary wallet спейса по DID участника (WalletUser)."""
+        d = (did or "").strip()
+        if not d:
+            raise ValueError("signer_did_empty")
+        user = await self._wallet_users.get_by_identifier(d)
+        if user is None:
+            raise ValueError("wallet_user_not_found_for_did")
+        pw = await self._space.get_primary_wallet(user.nickname)
+        addr = (pw.get("address") or "").strip()
+        bc = (str(pw.get("blockchain") or "tron")).strip().lower()
+        if not addr:
+            raise ValueError("primary_wallet_empty")
+        return {"address": addr, "blockchain": bc}
+
+    async def _signer_for_arbiter_did(self, arbiter_did: str) -> Dict[str, str]:
+        """Арбитр: либо спейс (did:tron / did:ethr), либо кошелёк ноды (did:peer / …) из wallets."""
+        aid = (arbiter_did or "").strip()
+        if not aid:
+            raise ValueError("arbiter_did_empty")
+        low = aid.lower()
+        if low.startswith("did:tron:") or low.startswith("did:ethr:"):
+            return await self._signer_from_wallet_user_did(aid)
+        stmt = (
+            select(Wallet.tron_address)
+            .where(
+                Wallet.owner_did == aid,
+                Wallet.role == "arbiter",
+                Wallet.tron_address.isnot(None),
+            )
+            .limit(1)
+        )
+        res = await self._session.execute(stmt)
+        ta = res.scalar_one_or_none()
+        ta_s = (ta or "").strip()
+        if not ta_s:
+            raise ValueError("arbiter_wallet_not_found")
+        return {"address": ta_s, "blockchain": "tron"}
+
+    async def _build_deal_signers_for_simple_confirm(
+        self,
+        *,
+        sender_did: str,
+        receiver_did: str,
+        arbiter_did: str,
+    ) -> Dict[str, Any]:
+        """Фиксированные адреса подписантов escrow на момент создания Deal."""
+        return {
+            "sender": await self._signer_from_wallet_user_did(sender_did),
+            "receiver": await self._signer_from_wallet_user_did(receiver_did),
+            "arbiter": await self._signer_for_arbiter_did(arbiter_did),
+        }
+
+    async def confirm_payment_request_owner(
+        self,
+        *,
+        owner_did: str,
+        arbiter_did: str,
+        pk: int,
+    ) -> Tuple[PaymentRequest, str, str]:
+        pair = await self._requests.get_by_pk(pk, arbiter_did=arbiter_did)
+        if pair is None:
+            raise ValueError("not_found")
+        row, space_nickname = pair
+        od = (owner_did or "").strip()
+        if not od or od != (row.owner_did or "").strip():
+            raise ValueError("not_owner")
+        if row.deal_id is not None:
+            raise ValueError("already_confirmed")
+        if not row.owner_confirm_pending or row.counterparty_accept_at is None:
+            raise ValueError("nothing_to_confirm")
+        cp = (row.counterparty_accept_did or "").strip()
+        if not cp:
+            raise ValueError("nothing_to_confirm")
+
+        deals = DealRepository(self._session, self._redis, self._settings)
+        label = self.build_pair_label(
+            cast(SimpleDirection, str(row.direction or "").strip()),
+            dict(row.primary_leg) if isinstance(row.primary_leg, dict) else {},
+            dict(row.counter_leg) if isinstance(row.counter_leg, dict) else {},
+        )
+        signers = await self._build_deal_signers_for_simple_confirm(
+            sender_did=od,
+            receiver_did=cp,
+            arbiter_did=str(row.arbiter_did or "").strip(),
+        )
+        deal = await deals.create_from_simple_payment_request(
+            sender_did=od,
+            receiver_did=cp,
+            arbiter_did=str(row.arbiter_did or "").strip(),
+            label=label,
+            signers=signers,
+        )
+        row.deal_id = deal.pk
+        row.owner_confirmed_at = datetime.now(timezone.utc)
+        row.owner_confirm_pending = False
+
+        await self._session.commit()
+        await self._session.refresh(row)
+        await self._notify_handshake_event(
+            row=row, space_nickname=space_nickname, event="confirmed"
+        )
+        return row, space_nickname, str(deal.uid)
+
+    async def withdraw_payment_request_acceptance(
+        self,
+        *,
+        actor_did: str,
+        arbiter_did: str,
+        pk: int,
+    ) -> Tuple[PaymentRequest, str]:
+        pair = await self._requests.get_by_pk(pk, arbiter_did=arbiter_did)
+        if pair is None:
+            raise ValueError("not_found")
+        row, space_nickname = pair
+        if row.deal_id is not None:
+            raise ValueError("cannot_withdraw")
+        actor = (actor_did or "").strip()
+        acc = (row.counterparty_accept_did or "").strip()
+        if not acc or actor != acc:
+            raise ValueError("not_accepting_party")
+        if not row.owner_confirm_pending:
+            raise ValueError("no_pending_acceptance")
+
+        snap_raw = row.counter_leg_snapshot_json
+        if isinstance(snap_raw, dict):
+            row.counter_leg = copy.deepcopy(snap_raw)
+            row.counter_leg_snapshot_json = None
+            self._rebuild_all_commission_snapshots(row)
+        else:
+            row.counter_leg_snapshot_json = None
+
+        row.counterparty_accept_did = None
+        row.counterparty_accept_at = None
+        row.owner_confirm_pending = False
+
+        await self._session.commit()
+        await self._session.refresh(row)
+        await self._notify_handshake_event(
+            row=row, space_nickname=space_nickname, event="withdrawn"
+        )
+        return row, space_nickname
 
 
 # Создание Deal при принятии заявки контрагентом — отдельный поток (эндпоинт + fill deal_id).

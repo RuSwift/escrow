@@ -32,10 +32,24 @@ def _intermediary_slot_for_did(comm: dict, did: str) -> dict:
         if (v.get("did") or "").strip() != did:
             continue
         role = str(v.get("role") or "").strip().lower()
-        if role in ("system", "counterparty"):
+        if role != "intermediary":
             continue
         return v
     raise AssertionError(f"no intermediary slot for did={did!r}")
+
+
+def _any_slot_for_did(comm: dict, did: str) -> dict:
+    """Любой слот (кроме system) с данным did — в т.ч. participant."""
+    for v in comm.values():
+        if not isinstance(v, dict):
+            continue
+        if (v.get("did") or "").strip() != did:
+            continue
+        role = str(v.get("role") or "").strip().lower()
+        if role == "system":
+            continue
+        return v
+    raise AssertionError(f"no slot for did={did!r}")
 
 
 def _expected_intermediary_parent_id(comm: dict, root_public_ref: str) -> str:
@@ -71,6 +85,13 @@ async def main_app_simple_resolve(test_db, test_redis, test_settings):
         did="did:tron:simple_resolve_other",
     )
     test_db.add(other)
+    acceptor = WalletUser(
+        nickname="simple_resolve_acceptor",
+        wallet_address="TQAcceptorResolveWallet7777777777",
+        blockchain="tron",
+        did="did:tron:simple_resolve_acceptor",
+    )
+    test_db.add(acceptor)
 
     test_db.add(
         Wallet(
@@ -112,13 +133,13 @@ async def main_app_simple_resolve(test_db, test_redis, test_settings):
     app.dependency_overrides[get_settings] = override_get_settings
     app.dependency_overrides[get_current_wallet_user] = override_current_user
 
-    yield app, owner, other
+    yield app, owner, other, acceptor
     app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
 async def test_resolve_payment_request_only(main_app_simple_resolve):
-    app, owner, _other = main_app_simple_resolve
+    app, owner, _other, _acc = main_app_simple_resolve
     payload = {
         "direction": "fiat_to_stable",
         "primary_leg": {
@@ -167,7 +188,7 @@ async def test_resolve_payment_request_only(main_app_simple_resolve):
 
 @pytest.mark.asyncio
 async def test_resolve_payment_request_other_user_200(main_app_simple_resolve):
-    app, owner, other = main_app_simple_resolve
+    app, owner, other, _acc = main_app_simple_resolve
     payload = {
         "direction": "fiat_to_stable",
         "primary_leg": {
@@ -205,14 +226,15 @@ async def test_resolve_payment_request_other_user_200(main_app_simple_resolve):
             assert body["viewer_did"] == other.did
             pr = body["payment_request"]
             assert pr["uid"] == uid
-            mid = _intermediary_slot_for_did(pr["commissioners"], other.did)
-            assert mid["commission"]["kind"] == "percent"
-            assert mid["commission"]["value"] == "0.5"
-            alias = mid.get("alias_public_ref")
+            slot = _any_slot_for_did(pr["commissioners"], other.did)
+            # По умолчанию роль не определена: participant с персональным alias, без комиссии
+            assert slot.get("role") == "participant"
+            assert slot.get("commission") is None
+            alias = slot.get("alias_public_ref")
             assert alias and len(alias) >= 8
             assert pr["public_ref"] == alias
             assert pr["original_public_ref"] == pub_owner
-            assert mid["parent_id"] == _expected_intermediary_parent_id(
+            assert slot["parent_id"] == _expected_intermediary_parent_id(
                 pr["commissioners"], pub_owner
             )
         finally:
@@ -226,7 +248,7 @@ async def test_resolve_payment_request_other_user_200(main_app_simple_resolve):
 @pytest.mark.asyncio
 async def test_resolve_payment_request_other_user_twice_idempotent(main_app_simple_resolve):
     """Повторный GET resolve тем же «чужим» кошельком не создаёт второй слот — тот же alias/public_ref."""
-    app, owner, other = main_app_simple_resolve
+    app, owner, other, _acc = main_app_simple_resolve
     payload = {
         "direction": "fiat_to_stable",
         "primary_leg": {
@@ -266,12 +288,9 @@ async def test_resolve_payment_request_other_user_twice_idempotent(main_app_simp
             assert pr1["uid"] == pr2["uid"] == uid
             assert pr1["public_ref"] == pr2["public_ref"]
             assert pr1["original_public_ref"] == pr2["original_public_ref"]
-            keys1 = intermediary_slot_keys_for_did(pr1["commissioners"], other.did)
-            keys2 = intermediary_slot_keys_for_did(pr2["commissioners"], other.did)
-            assert keys1 == keys2
-            assert len(keys1) == 1
-            mid = _intermediary_slot_for_did(pr2["commissioners"], other.did)
-            assert mid.get("alias_public_ref") == pr2["public_ref"]
+            s1 = _any_slot_for_did(pr1["commissioners"], other.did)
+            s2 = _any_slot_for_did(pr2["commissioners"], other.did)
+            assert s1.get("alias_public_ref") == s2.get("alias_public_ref") == pr2["public_ref"]
         finally:
             app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
                 standard="tron",
@@ -283,7 +302,7 @@ async def test_resolve_payment_request_other_user_twice_idempotent(main_app_simp
 @pytest.mark.asyncio
 async def test_resolve_payment_request_other_user_uid_then_alias_same_view(main_app_simple_resolve):
     """После первого захода по uid посредник может открыть ту же заявку по своему public_ref (алиасу)."""
-    app, owner, other = main_app_simple_resolve
+    app, owner, other, _acc = main_app_simple_resolve
     payload = {
         "direction": "fiat_to_stable",
         "primary_leg": {
@@ -318,9 +337,7 @@ async def test_resolve_payment_request_other_user_uid_then_alias_same_view(main_
             r_uid = await client.get(f"{_resolve_v1()}/resolve/{uid}")
             assert r_uid.status_code == 200, r_uid.text
             pr_u = r_uid.json()["payment_request"]
-            alias = _intermediary_slot_for_did(pr_u["commissioners"], other.did).get(
-                "alias_public_ref"
-            )
+            alias = _any_slot_for_did(pr_u["commissioners"], other.did).get("alias_public_ref")
             assert alias and len(alias) >= 8
             assert pr_u["public_ref"] == alias
 
@@ -330,7 +347,7 @@ async def test_resolve_payment_request_other_user_uid_then_alias_same_view(main_
             assert pr_a["uid"] == uid
             assert pr_a["public_ref"] == alias
             assert pr_a["original_public_ref"] == pub_owner
-            assert len(intermediary_slot_keys_for_did(pr_a["commissioners"], other.did)) == 1
+            assert _any_slot_for_did(pr_a["commissioners"], other.did).get("alias_public_ref") == alias
         finally:
             app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
                 standard="tron",
@@ -341,7 +358,7 @@ async def test_resolve_payment_request_other_user_uid_then_alias_same_view(main_
 
 @pytest.mark.asyncio
 async def test_resolve_not_found_404(main_app_simple_resolve):
-    app, _owner, _other = main_app_simple_resolve
+    app, _owner, _other, _acc = main_app_simple_resolve
     async with AsyncClient(
         transport=ASGITransport(app=app),
         base_url="http://test",
@@ -355,7 +372,7 @@ async def test_resolve_not_found_404(main_app_simple_resolve):
 @pytest.mark.asyncio
 async def test_resolve_payment_request_wrong_arbiter_404(main_app_simple_resolve):
     """Заявка с другим arbiter_did не отдаётся в чужом arbiter_space_did path."""
-    app, _owner, _other = main_app_simple_resolve
+    app, _owner, _other, _acc = main_app_simple_resolve
     wrong_prefix = f"/v1/arbiter/{quote('did:peer:other_arbiter_context', safe='')}"
     payload = {
         "direction": "fiat_to_stable",
@@ -468,7 +485,7 @@ async def test_resolve_deal_only(test_db, test_redis, test_settings):
 
 @pytest.mark.asyncio
 async def test_resell_owner_forbidden_400(main_app_simple_resolve):
-    app, owner, _other = main_app_simple_resolve
+    app, owner, _other, _acc = main_app_simple_resolve
     payload = {
         "direction": "fiat_to_stable",
         "primary_leg": {
@@ -500,7 +517,7 @@ async def test_resell_owner_forbidden_400(main_app_simple_resolve):
 
 @pytest.mark.asyncio
 async def test_resell_percent_below_min_400(main_app_simple_resolve):
-    app, owner, other = main_app_simple_resolve
+    app, owner, other, _acc = main_app_simple_resolve
     payload = {
         "direction": "fiat_to_stable",
         "primary_leg": {
@@ -544,7 +561,7 @@ async def test_resell_percent_below_min_400(main_app_simple_resolve):
 
 @pytest.mark.asyncio
 async def test_resell_other_user_sets_resell_slot(main_app_simple_resolve):
-    app, owner, other = main_app_simple_resolve
+    app, owner, other, acceptor = main_app_simple_resolve
     payload = {
         "direction": "fiat_to_stable",
         "primary_leg": {
@@ -603,6 +620,168 @@ async def test_resell_other_user_sets_resell_slot(main_app_simple_resolve):
             pr2 = r2.json()["payment_request"]
             mid2 = _intermediary_slot_for_did(pr2["commissioners"], other.did)
             assert mid2["commission"]["value"] == "1"
+        finally:
+            app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+                standard="tron",
+                wallet_address=_OWNER_TRON,
+                did=owner.did,
+            )
+
+
+@pytest.mark.asyncio
+async def test_resolve_commissioner_alias_does_not_auto_resell_acceptor(main_app_simple_resolve):
+    """Acceptor, открывший commissioner alias, не должен становиться intermediary автоматически."""
+    app, owner, other, acceptor = main_app_simple_resolve
+    payload = {
+        "direction": "fiat_to_stable",
+        "primary_leg": {
+            "asset_type": "fiat",
+            "code": "CNY",
+            "amount": "10000",
+            "side": "give",
+        },
+        "counter_leg": {
+            "asset_type": "stable",
+            "code": "USDT",
+            "amount": "100",
+            "side": "receive",
+        },
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        c = await client.post(_resolve_v1() + "/payment-requests", json=payload)
+        uid = c.json()["payment_request"]["uid"]
+
+        # other user becomes intermediary via explicit resell (gets alias)
+        app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+            standard="tron",
+            wallet_address=_OTHER_TRON,
+            did=other.did,
+        )
+        r = await client.post(
+            f"{_resolve_v1()}/payment-requests/{uid}/resell",
+            json={"intermediary_percent": "0.5"},
+        )
+        assert r.status_code == 200, r.text
+        pr = r.json()["payment_request"]
+        mid = _intermediary_slot_for_did(pr["commissioners"], other.did)
+        alias = mid.get("alias_public_ref")
+        assert alias
+
+        # acceptor opens alias: should not auto-create intermediary slot
+        app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+            standard="tron",
+            wallet_address=acceptor.wallet_address,
+            did=acceptor.did,
+        )
+        ra = await client.get(f"{_resolve_v1()}/resolve/{alias}")
+        assert ra.status_code == 200, ra.text
+        pr_acc = ra.json()["payment_request"]
+        # Сервер создаёт participant слот и отдаёт персональный alias (а не исходный сегмент ссылки).
+        slot_acc = _any_slot_for_did(pr_acc["commissioners"], acceptor.did)
+        assert slot_acc.get("role") == "participant"
+        assert slot_acc.get("commission") is None
+        assert pr_acc["public_ref"] == slot_acc.get("alias_public_ref")
+        assert pr_acc["public_ref"] != alias
+        with pytest.raises(AssertionError):
+            _intermediary_slot_for_did(pr_acc["commissioners"], acceptor.did)
+
+
+@pytest.mark.asyncio
+async def test_viewer_role_toggle_preserves_commission(main_app_simple_resolve):
+    """
+    Toggle viewer role should not clear commission for the same segment/alias.
+
+    Flow:
+    - other resolves uid -> participant slot (no commission, has alias)
+    - set role intermediary -> default 0.5%
+    - resell to 0.8%
+    - set role counterparty -> commission must remain 0.8 (but ignored in calc)
+    - set role intermediary -> commission must still be 0.8
+    """
+    app, owner, other, _acceptor = main_app_simple_resolve
+    payload = {
+        "direction": "fiat_to_stable",
+        "primary_leg": {
+            "asset_type": "fiat",
+            "code": "CNY",
+            "amount": "10000",
+            "side": "give",
+        },
+        "counter_leg": {
+            "asset_type": "stable",
+            "code": "USDT",
+            "amount": "100",
+            "side": "receive",
+        },
+    }
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        c = await client.post(_resolve_v1() + "/payment-requests", json=payload)
+        assert c.status_code == 201, c.text
+        uid = c.json()["payment_request"]["uid"]
+
+        app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+            standard="tron",
+            wallet_address=_OTHER_TRON,
+            did=other.did,
+        )
+        try:
+            r0 = await client.get(f"{_resolve_v1()}/resolve/{uid}")
+            assert r0.status_code == 200, r0.text
+            pr0 = r0.json()["payment_request"]
+            slot0 = _any_slot_for_did(pr0["commissioners"], other.did)
+            assert slot0.get("role") == "participant"
+            assert slot0.get("commission") is None
+            alias = slot0.get("alias_public_ref")
+            assert alias
+
+            # choose intermediary -> default 0.5
+            vr1 = await client.post(
+                f"{_resolve_v1()}/payment-requests/{pr0['pk']}/viewer-role",
+                json={"role": "intermediary"},
+            )
+            assert vr1.status_code == 200, vr1.text
+            pr1 = vr1.json()["payment_request"]
+            mid1 = _intermediary_slot_for_did(pr1["commissioners"], other.did)
+            assert mid1["commission"]["kind"] == "percent"
+            assert mid1["commission"]["value"] == "0.5"
+            assert mid1.get("alias_public_ref") == alias
+
+            # resell -> 0.8
+            rs = await client.post(
+                f"{_resolve_v1()}/payment-requests/{uid}/resell",
+                json={"intermediary_percent": "0.8"},
+            )
+            assert rs.status_code == 200, rs.text
+            pr2 = rs.json()["payment_request"]
+            mid2 = _intermediary_slot_for_did(pr2["commissioners"], other.did)
+            assert mid2["commission"]["value"] == "0.8"
+
+            # switch to counterparty: commission must stay 0.8
+            vr2 = await client.post(
+                f"{_resolve_v1()}/payment-requests/{pr0['pk']}/viewer-role",
+                json={"role": "counterparty"},
+            )
+            assert vr2.status_code == 200, vr2.text
+            pr3 = vr2.json()["payment_request"]
+            slot3 = _any_slot_for_did(pr3["commissioners"], other.did)
+            assert slot3.get("role") == "counterparty"
+            assert slot3.get("commission", {}).get("value") == "0.8"
+
+            # back to intermediary: still 0.8
+            vr3 = await client.post(
+                f"{_resolve_v1()}/payment-requests/{pr0['pk']}/viewer-role",
+                json={"role": "intermediary"},
+            )
+            assert vr3.status_code == 200, vr3.text
+            pr4 = vr3.json()["payment_request"]
+            mid4 = _intermediary_slot_for_did(pr4["commissioners"], other.did)
+            assert mid4["commission"]["value"] == "0.8"
         finally:
             app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
                 standard="tron",

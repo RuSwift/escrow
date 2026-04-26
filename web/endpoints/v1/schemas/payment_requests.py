@@ -85,6 +85,26 @@ class PaymentRequestOut(BaseModel):
     )
     primary_ramp_wallet_id: Optional[int] = None
     deal_id: Optional[int] = None
+    owner_confirm_pending: bool = Field(
+        default=False,
+        description="Ждём подтверждения владельца после accept контрагента",
+    )
+    counterparty_accept_at: Optional[datetime] = Field(
+        default=None,
+        description="Время accept контрагента",
+    )
+    counterparty_accept_did: Optional[str] = Field(
+        default=None,
+        description="DID контрагента, принявшего заявку (до Deal)",
+    )
+    owner_confirmed_at: Optional[datetime] = Field(
+        default=None,
+        description="Время подтверждения владельцем / создания Deal",
+    )
+    handshake_locked_by_other: bool = Field(
+        default=False,
+        description="Другой контрагент уже принял (first lock); текущему недоступно",
+    )
     expires_at: Optional[datetime] = Field(
         default=None,
         description="Окончание срока; null — без ограничения",
@@ -105,6 +125,7 @@ class PaymentRequestOut(BaseModel):
         *,
         space_nickname: Optional[str] = None,
         viewer_did: Optional[str] = None,
+        segment_public_ref: Optional[str] = None,
     ) -> PaymentRequestOut:
         pl = dict(row.primary_leg) if isinstance(row.primary_leg, dict) else {}
         cl = dict(row.counter_leg) if isinstance(row.counter_leg, dict) else {}
@@ -150,6 +171,18 @@ class PaymentRequestOut(BaseModel):
                     public_ref_out = alias
                     original_out = column_ref
                 break
+            # Если viewer не имеет слота и пришёл по alias в URL (commissioner_alias),
+            # сохраняем сегмент как public_ref для стабильного URL (иначе UI перепишет на owner public_ref).
+            seg = (segment_public_ref or "").strip()
+            if seg and public_ref_out == column_ref:
+                public_ref_out = seg
+                original_out = column_ref
+
+        acc_did = str(getattr(row, "counterparty_accept_did", "") or "").strip()
+        pending_own = bool(getattr(row, "owner_confirm_pending", False))
+        locked_other = False
+        if vw and vw != owner_did and pending_own and acc_did and vw != acc_did:
+            locked_other = True
 
         return cls(
             pk=int(row.pk),
@@ -173,6 +206,11 @@ class PaymentRequestOut(BaseModel):
                 else None
             ),
             deal_id=int(row.deal_id) if row.deal_id is not None else None,
+            owner_confirm_pending=pending_own,
+            counterparty_accept_at=getattr(row, "counterparty_accept_at", None),
+            counterparty_accept_did=acc_did if acc_did else None,
+            owner_confirmed_at=getattr(row, "owner_confirmed_at", None),
+            handshake_locked_by_other=locked_other,
             expires_at=getattr(row, "expires_at", None),
             deactivated_at=getattr(row, "deactivated_at", None),
             created_at=row.created_at,
@@ -217,3 +255,42 @@ class PaymentRequestResellBody(BaseModel):
 
 class PaymentRequestResellResponse(BaseModel):
     payment_request: PaymentRequestOut
+
+
+class PaymentRequestViewerRoleBody(BaseModel):
+    role: Literal["counterparty", "intermediary"] = Field(
+        ...,
+        description="Роль зрителя на стадии согласования условий: контрагент или посредник",
+    )
+    parent_ref: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        description="Опциональный parent ref (alias) из URL, если роль=intermediary и нужно встроиться после конкретного посредника",
+    )
+
+
+class PaymentRequestViewerRoleResponse(BaseModel):
+    payment_request: PaymentRequestOut
+
+
+class PaymentRequestAcceptBody(BaseModel):
+    counter_stable_amount: Optional[str] = Field(
+        default=None,
+        max_length=64,
+        description="Финальная сумма stable для counter leg (если сумма была «на согласовании»)",
+    )
+
+
+class PaymentRequestHandshakeResponse(BaseModel):
+    payment_request: PaymentRequestOut
+    deal_uid: Optional[str] = Field(
+        default=None,
+        description="Публичный uid созданной сделки (только после успешного confirm)",
+    )
+
+
+class PaymentRequestExtendBody(BaseModel):
+    lifetime: SimplePaymentLifetime = Field(
+        default="72h",
+        description="На сколько продлить: 24h / 48h / 72h",
+    )
