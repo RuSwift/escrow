@@ -134,6 +134,7 @@ def collect_slot_percents_in_order(commissioners: Dict[str, Any]) -> List[Decima
     """
     Порядок: system → все посредники (ключи по сортировке) → counterparty.
     Параллельная сумма fee_i = B * pct_i / 100 для каждого слота.
+    Для system слота учитываются обе части: основная и арбитражная.
     """
     if not isinstance(commissioners, dict):
         return []
@@ -144,20 +145,34 @@ def collect_slot_percents_in_order(commissioners: Dict[str, Any]) -> List[Decima
         slot = commissioners[key]
         if not isinstance(slot, dict):
             continue
+
+        # Собираем проценты из слота
+        slot_percents: List[Decimal] = []
+
+        # 1. Основная комиссия
         comm = slot.get("commission")
-        if not isinstance(comm, dict):
-            continue
-        if (comm.get("kind") or "") != "percent":
-            continue
-        p = percent_str_to_decimal(str(comm.get("value") or ""))
-        if p is None:
-            continue
+        if isinstance(comm, dict) and (comm.get("kind") or "") == "percent":
+            p = percent_str_to_decimal(str(comm.get("value") or ""))
+            if p is not None:
+                slot_percents.append(p)
+
+        # 2. Комиссия арбитра (только для system слота)
         if is_system_commission_slot(key, slot):
-            sys_p.append(p)
+            arb_comm = slot.get("arbiter_commission")
+            if isinstance(arb_comm, dict) and (arb_comm.get("kind") or "") == "percent":
+                ap = percent_str_to_decimal(str(arb_comm.get("value") or ""))
+                if ap is not None:
+                    slot_percents.append(ap)
+
+        if not slot_percents:
+            continue
+
+        if is_system_commission_slot(key, slot):
+            sys_p.extend(slot_percents)
         elif is_counterparty_commission_slot(key, slot):
-            cp_p.append(p)
+            cp_p.extend(slot_percents)
         elif is_intermediary_commission_slot(key, slot):
-            mid_p.append(p)
+            mid_p.extend(slot_percents)
     return sys_p + mid_p + cp_p
 
 
@@ -229,6 +244,14 @@ def build_slot_snapshots(
         bor_s = ""
         if kind == "percent":
             pct = percent_str_to_decimal(str(comm_obj.get("value") or ""))
+            # Суммируем с комиссией арбитра для system слота
+            if is_system_commission_slot(key, slot):
+                arb_comm = slot.get("arbiter_commission")
+                if isinstance(arb_comm, dict) and (arb_comm.get("kind") or "") == "percent":
+                    ap = percent_str_to_decimal(str(arb_comm.get("value") or ""))
+                    if ap is not None:
+                        pct = (pct or Decimal(0)) + ap
+
             if pct is not None and b is not None:
                 bor_s = format_amount_str(_fee_from_b(b, pct))
             if pct is not None and fa is not None:

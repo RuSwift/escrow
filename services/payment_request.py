@@ -16,7 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.short_id import generate_public_ref
-from db.models import PaymentRequest, Wallet, WalletUser
+from db.models import GuarantorProfile, PaymentRequest, Wallet, WalletUser
 from i18n.translations import get_translation
 from repos.deal import DealRepository
 from repos.payment_request import PaymentRequestRepository, PaymentRequestResolveSegment
@@ -84,6 +84,57 @@ class PaymentRequestService:
         if "." in t:
             t = t.rstrip("0").rstrip(".")
         return t or "0"
+
+    async def _get_arbiter_commission_info(
+        self, arbiter_did: str, space_nick: str
+    ) -> Tuple[Optional[Decimal], Optional[str]]:
+        """Получить процент комиссии и адрес выплаты арбитра из профиля."""
+        # 1. Найти WalletUser по DID арбитра
+        stmt_user = select(WalletUser).where(WalletUser.did == arbiter_did)
+        res_user = await self._session.execute(stmt_user)
+        user = res_user.scalar_one_or_none()
+        if not user:
+            # Fallback для тестов и прода: если DID did:tron:..., ищем по адресу
+            if arbiter_did.startswith("did:tron:"):
+                addr = arbiter_did[len("did:tron:"):]
+                stmt_user = select(WalletUser).where(WalletUser.wallet_address == addr)
+                res_user = await self._session.execute(stmt_user)
+                user = res_user.scalar_one_or_none()
+
+        if not user:
+            return None, None
+
+        # 2. Найти GuarantorProfile для этого пользователя и спейса
+        stmt = select(GuarantorProfile).where(
+            GuarantorProfile.wallet_user_id == user.id,
+            GuarantorProfile.space == space_nick,
+        )
+        res = await self._session.execute(stmt)
+        profile = res.scalar_one_or_none()
+        if not profile:
+            # ПОПРОБУЕМ НАЙТИ ПРОФИЛЬ БЕЗ ПРИВЯЗКИ К SPACE (как fallback)
+            stmt_any = select(GuarantorProfile).where(GuarantorProfile.wallet_user_id == user.id)
+            res_any = await self._session.execute(stmt_any)
+            profile = res_any.scalar_one_or_none()
+            if not profile:
+                return None, None
+
+        # 3. Найти первичный кошелек арбитра для выплат
+        from services.space import SpaceService
+        space_svc = SpaceService(self._session, self._redis, self._settings)
+        pw = await space_svc.get_primary_wallet(user.nickname)
+        addr = (pw.get("address") or "").strip() if pw else None
+        
+        # Fallback для тестов: если primary_wallets пуст, ищем в PrimaryWallet модели
+        if not addr:
+            from db.models import PrimaryWallet
+            stmt_pw = select(PrimaryWallet).where(PrimaryWallet.wallet_user_id == user.id)
+            res_pw = await self._session.execute(stmt_pw)
+            pw_model = res_pw.scalar_one_or_none()
+            if pw_model:
+                addr = pw_model.address
+
+        return profile.commission_percent, addr
 
     async def _generate_unique_alias_public_ref(self) -> str:
         for attempt in range(_ALIAS_UNIQUE_RETRIES):
@@ -192,6 +243,8 @@ class PaymentRequestService:
         primary_leg: Dict[str, Any],
         counter_leg: Dict[str, Any],
         blockchain: str,
+        arbiter_did: str,
+        space_nick: str,
     ) -> Dict[str, Any]:
         cw = self._settings.commission_wallet
         addr = (cw.address_for_blockchain(blockchain) or "").strip()
@@ -208,6 +261,17 @@ class PaymentRequestService:
             "alias_public_ref": sys_alias,
             "payout_address": addr,
         }
+
+        # Добавляем комиссию арбитра
+        arb_pct, arb_addr = await self._get_arbiter_commission_info(arbiter_did, space_nick)
+        if arb_pct is not None:
+            system_slot["arbiter_commission"] = {
+                "kind": "percent",
+                "value": self._format_percent_decimal(arb_pct),
+            }
+            if arb_addr:
+                system_slot["arbiter_payout_address"] = arb_addr
+
         comm = {SYSTEM_SLOT_KEY: system_slot}
         snaps = build_slot_snapshots(
             str(direction),
@@ -412,6 +476,8 @@ class PaymentRequestService:
                 primary_leg=primary_leg,
                 counter_leg=counter_leg,
                 blockchain=bc,
+                arbiter_did=arb,
+                space_nick=space_nick,
             )
             try:
                 row = await self._requests.insert(

@@ -1803,6 +1803,23 @@
                 if (!raw) return '—';
                 return this.formatPercentForUi(raw) + ' %';
             },
+            /** Суммарный процент системы и арбитра для отображения в списках/деталях. */
+            systemCommissionPercentLine: function(req) {
+                var pr = req || this.resolvePaymentRequest;
+                if (!pr || !pr.commissioners) return '—';
+                var slot = pr.commissioners['system'];
+                if (!slot || !slot.commission) return '—';
+                
+                var sysPct = parseFloat(sanitizeDecimalAmountInput(slot.commission.value || '0'));
+                var arbPct = 0;
+                if (slot.arbiter_commission && slot.arbiter_commission.kind === 'percent') {
+                    arbPct = parseFloat(sanitizeDecimalAmountInput(slot.arbiter_commission.value || '0'));
+                }
+                
+                var total = sysPct + arbPct;
+                if (!isFinite(total)) return '—';
+                return this.formatPercentForUi(String(total)) + ' %';
+            },
             /** Доля комиссии по фиатной ноге (API payment_amount + код фиата). */
             commissionerCommissionFiatLine: function() {
                 if (!this.isCommissionerIntermediary) return '—';

@@ -31,6 +31,15 @@ class CommissionerSlot(BaseModel):
         default=None,
         description="Комиссия слота; обязательна для system/intermediary/counterparty, отсутствует для participant",
     )
+    arbiter_commission: Optional[CommissionerCommission] = Field(
+        default=None,
+        description="Дополнительная комиссия арбитра (только для system слота)",
+    )
+    arbiter_payout_address: Optional[str] = Field(
+        default=None,
+        max_length=128,
+        description="Адрес выплаты комиссии арбитра",
+    )
     role: Optional[CommissionerRole] = Field(
         default=None,
         description="intermediary по умолчанию при отсутствии ключа (кроме явного system)",
