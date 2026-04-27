@@ -354,7 +354,10 @@ _CONFIRM_ERR_DETAIL = {
     "wallet_user_not_found_for_did": "Участник сделки не найден в системе",
     "primary_wallet_empty": "Не задан primary wallet участника",
     "arbiter_did_empty": "Не указан арбитр",
-    "arbiter_wallet_not_found": "Не найден кошелёк арбитра для подписи",
+    "arbiter_wallet_not_found": (
+        "Не найден кошелёк арбитра для подписи: ни PrimaryWallet у WalletUser, "
+        "ни node-кошелька role='arbiter'"
+    ),
 }
 
 _WITHDRAW_ERR_DETAIL = {

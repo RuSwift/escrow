@@ -6,3 +6,4 @@ _temp/
 *.egg-info/
 *.pyc
 .env.local
+ex/

@@ -1056,13 +1056,31 @@ class PaymentRequestService:
         return {"address": addr, "blockchain": bc}
 
     async def _signer_for_arbiter_did(self, arbiter_did: str) -> Dict[str, str]:
-        """Арбитр: либо спейс (did:tron / did:ethr), либо кошелёк ноды (did:peer / …) из wallets."""
+        """
+        Подписант арбитра в Deal.signers.
+
+        Приоритет (без правок в БД):
+          1) WalletUser + PrimaryWallet — Simple-режим, любой DID
+             (did:tron:, did:ethr:, did:web:, did:peer:, …);
+          2) wallets-таблица (role='arbiter') — node-арбитр с DIDComm.
+        """
         aid = (arbiter_did or "").strip()
         if not aid:
             raise ValueError("arbiter_did_empty")
-        low = aid.lower()
-        if low.startswith("did:tron:") or low.startswith("did:ethr:"):
+
+        try:
             return await self._signer_from_wallet_user_did(aid)
+        except ValueError as e:
+            code = str(e)
+            if code not in ("wallet_user_not_found_for_did", "primary_wallet_empty"):
+                raise
+            logger.info(
+                "arbiter signer: WalletUser path failed (%s) for did=%s, "
+                "trying wallets fallback",
+                code,
+                aid,
+            )
+
         stmt = (
             select(Wallet.tron_address)
             .where(
@@ -1076,6 +1094,11 @@ class PaymentRequestService:
         ta = res.scalar_one_or_none()
         ta_s = (ta or "").strip()
         if not ta_s:
+            logger.warning(
+                "arbiter_wallet_not_found: did=%s — no WalletUser+PrimaryWallet "
+                "and no wallets row with role='arbiter'",
+                aid,
+            )
             raise ValueError("arbiter_wallet_not_found")
         return {"address": ta_s, "blockchain": "tron"}
 
@@ -1144,6 +1167,7 @@ class PaymentRequestService:
             arbiter_did=str(row.arbiter_did or "").strip(),
             label=label,
             signers=signers,
+            commissioners=row.commissioners if isinstance(row.commissioners, dict) else None,
         )
         row.deal_id = deal.pk
         row.owner_confirmed_at = datetime.now(timezone.utc)

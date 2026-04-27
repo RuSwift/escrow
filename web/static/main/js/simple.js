@@ -268,13 +268,16 @@
         var base = prStableBaseAmount(pr);
         if (!isFinite(base)) return NaN;
         var direction = String(pr.direction || '');
-        if (direction !== 'stable_to_fiat') {
-            return base;
-        }
         var fees = prStableEscrowFeesTotal(pr);
         if (!isFinite(fees) || fees <= 0) return base;
-        var net = base - fees;
-        return net > 0 ? net : 0;
+
+        if (direction === 'stable_to_fiat') {
+            var net = base - fees;
+            return net > 0 ? net : 0;
+        } else if (direction === 'fiat_to_stable') {
+            return base + fees;
+        }
+        return base;
     }
 
     /**
@@ -3411,7 +3414,7 @@
                   <div v-if="handshakeBanner" class="simple-page__pr-inline-msg" :class="handshakeBanner.type === \'error\' ? \'simple-page__pr-inline-msg--err\' : \'\'">{{ handshakeBanner.text }}</div>\
                   <div v-if="copyLinkBanner" class="simple-page__pr-inline-msg">{{ copyLinkBanner }}</div>\
                 </div>\
-                <div class="simple-page__flow-mono simple-page__flow-mono--pr-sum-line">{{ orderAmountsLine(resolvePaymentRequest) }}<template v-if="isCommissionerIntermediary"><span class="simple-page__flow-mono-comm">{{ dealFlowStableCommissionSuffix() }}</span></template></div>\
+                <div class="simple-page__flow-mono simple-page__flow-mono--pr-sum-line">{{ orderAmountsLine(resolvePaymentRequest) }}<template v-if="isCommissionerIntermediary"><span class="simple-page__flow-mono-comm" style="color:var(--simple-warning)">{{ dealFlowStableCommissionSuffix() }}</span></template></div>\
               </div>\
               <span v-if="dealPrTermsPhase && resolvePaymentRequest && resolvePaymentRequest.expires_at && !resolvePaymentRequest.deactivated_at" class="simple-page__flow-deadline simple-page__flow-deadline--pr-split" role="status" :aria-label="t(\'main.simple.deal_flow_deadline_aria\')">\
                 <svg class="simple-page__ico-clock simple-page__ico-clock--flow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\

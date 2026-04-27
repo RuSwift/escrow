@@ -721,3 +721,226 @@ async def test_withdraw_after_confirm_400(main_app_handshake):
             json={},
         )
         assert r.status_code == 400
+
+
+@pytest_asyncio.fixture
+async def main_app_simple_arbiter(test_db, test_redis, test_settings):
+    """
+    Сценарий: Simple-арбитр с DID, не являющимся did:tron:/did:ethr:
+    (например, did:web:...), у которого:
+      - есть запись WalletUser с wallet_address;
+      - НЕТ записи в wallets с role='arbiter'.
+
+    Цель — проверить, что _signer_for_arbiter_did резолвит подписанта арбитра
+    через WalletUser+PrimaryWallet, а не через wallets-fallback.
+    """
+    arbiter_did_web = "did:web:escrow.ruswift.ru:simple_arbiter_user"
+    arbiter_addr = "TArbiterSimpleWebDIDHandshake11111"
+
+    arbiter_user = WalletUser(
+        nickname="simple_arb_space",
+        wallet_address=arbiter_addr,
+        blockchain="tron",
+        did=arbiter_did_web,
+    )
+    test_db.add(arbiter_user)
+    await test_db.commit()
+    await test_db.refresh(arbiter_user)
+
+    owner_addr = "TOwnerSimpleWebArbiterHandshake22"
+    other_addr = "TOtherSimpleWebArbiterHandshake33"
+    owner = WalletUser(
+        nickname="simple_arb_owner",
+        wallet_address=owner_addr,
+        blockchain="tron",
+        did=f"did:tron:{owner_addr}",
+    )
+    other = WalletUser(
+        nickname="simple_arb_other",
+        wallet_address=other_addr,
+        blockchain="tron",
+        did=f"did:tron:{other_addr}",
+    )
+    test_db.add(owner)
+    test_db.add(other)
+    await test_db.commit()
+
+    app = create_app()
+
+    async def override_get_db():
+        yield test_db
+
+    async def override_get_redis():
+        yield test_redis
+
+    async def override_get_settings():
+        return ResolvedSettings(
+            settings=test_settings,
+            has_key=True,
+            is_admin_configured=True,
+            is_node_initialized=True,
+        )
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_redis] = override_get_redis
+    app.dependency_overrides[get_settings] = override_get_settings
+
+    yield app, owner, other, arbiter_did_web, arbiter_addr, owner_addr, other_addr
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_confirm_resolves_arbiter_via_wallet_user_for_did_web(
+    main_app_simple_arbiter, test_db
+):
+    """
+    Конфирм проходит для арбитра с did:web:... — подписант резолвится
+    через WalletUser+PrimaryWallet, без записи в wallets (role='arbiter').
+    """
+    app, owner, other, arbiter_did, arbiter_addr, owner_addr, other_addr = (
+        main_app_simple_arbiter
+    )
+    base_url = f"/v1/arbiter/{quote(arbiter_did, safe='')}"
+
+    no_arbiter_wallet = (
+        await test_db.execute(
+            select(Wallet).where(
+                Wallet.owner_did == arbiter_did,
+                Wallet.role == "arbiter",
+            )
+        )
+    ).first()
+    assert no_arbiter_wallet is None, (
+        "Тест требует отсутствия wallets-записи с role='arbiter' для arbiter_did"
+    )
+
+    payload = {
+        "direction": "fiat_to_stable",
+        "primary_leg": {
+            "asset_type": "fiat",
+            "code": "USD",
+            "amount": "100",
+            "side": "give",
+        },
+        "counter_leg": {
+            "asset_type": "stable",
+            "code": "USDT",
+            "amount": "14",
+            "side": "receive",
+        },
+    }
+    with patch("services.payment_request.NotifyService") as NS:
+        ns = NS.return_value
+        ns._language_for_scope = AsyncMock(return_value="ru")
+        ns.notify_roles = AsyncMock()
+        ns.send_message = AsyncMock()
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+                standard="tron",
+                wallet_address=owner_addr,
+                did=owner.did,
+            )
+            c = await client.post(base_url + "/payment-requests", json=payload)
+            assert c.status_code == 201, c.text
+            pk = c.json()["payment_request"]["pk"]
+
+            app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+                standard="tron",
+                wallet_address=other_addr,
+                did=other.did,
+            )
+            a = await client.post(base_url + f"/payment-requests/{pk}/accept", json={})
+            assert a.status_code == 200, a.text
+
+            app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+                standard="tron",
+                wallet_address=owner_addr,
+                did=owner.did,
+            )
+            cf = await client.post(
+                base_url + f"/payment-requests/{pk}/confirm", json={}
+            )
+            assert cf.status_code == 200, cf.text
+            body = cf.json()
+            deal_pk = int(body["payment_request"]["deal_id"])
+            res_deal = await test_db.execute(select(Deal).where(Deal.pk == deal_pk))
+            deal_row = res_deal.scalar_one()
+            sig = deal_row.signers
+            assert sig["arbiter"]["address"] == arbiter_addr
+            assert sig["arbiter"]["blockchain"] == "tron"
+
+
+@pytest.mark.asyncio
+async def test_confirm_falls_back_to_wallets_for_node_arbiter(
+    main_app_handshake, test_db
+):
+    """
+    Регрессионный: для node-арбитра (did:peer:...) без WalletUser confirm
+    резолвит подписанта через wallets-fallback, как раньше.
+    """
+    app, owner, other, _third = main_app_handshake
+
+    no_user = (
+        await test_db.execute(
+            select(WalletUser).where(WalletUser.did == SIMPLE_HANDSHAKE_ARBITER)
+        )
+    ).first()
+    assert no_user is None, (
+        "Тест требует отсутствия WalletUser для node-арбитерского DID"
+    )
+
+    payload = {
+        "direction": "fiat_to_stable",
+        "primary_leg": {
+            "asset_type": "fiat",
+            "code": "USD",
+            "amount": "100",
+            "side": "give",
+        },
+        "counter_leg": {
+            "asset_type": "stable",
+            "code": "USDT",
+            "amount": "14",
+            "side": "receive",
+        },
+    }
+    with patch("services.payment_request.NotifyService") as NS:
+        ns = NS.return_value
+        ns._language_for_scope = AsyncMock(return_value="ru")
+        ns.notify_roles = AsyncMock()
+        ns.send_message = AsyncMock()
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+        ) as client:
+            c = await client.post(_v1() + "/payment-requests", json=payload)
+            assert c.status_code == 201, c.text
+            pk = c.json()["payment_request"]["pk"]
+
+            app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+                standard="tron",
+                wallet_address=_OTHER_TRON,
+                did=other.did,
+            )
+            a = await client.post(
+                _v1() + f"/payment-requests/{pk}/accept", json={}
+            )
+            assert a.status_code == 200, a.text
+
+            app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+                standard="tron",
+                wallet_address=_OWNER_TRON,
+                did=owner.did,
+            )
+            cf = await client.post(
+                _v1() + f"/payment-requests/{pk}/confirm", json={}
+            )
+            assert cf.status_code == 200, cf.text
+            deal_pk = int(cf.json()["payment_request"]["deal_id"])
+            res_deal = await test_db.execute(select(Deal).where(Deal.pk == deal_pk))
+            deal_row = res_deal.scalar_one()
+            sig = deal_row.signers
+            assert sig["arbiter"]["address"] == "TArbiterHandshakeTest11111111111"

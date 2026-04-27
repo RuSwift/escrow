@@ -28,6 +28,7 @@ class DealRepository(BaseRepository):
         arbiter_did: str,
         label: str,
         signers: Optional[Dict[str, Any]] = None,
+        commissioners: Optional[Dict[str, Any]] = None,
     ) -> Deal:
         """Минимальная сделка после подтверждения владельцем Simple-заявки."""
         uid = uuid.uuid4().hex
@@ -39,6 +40,7 @@ class DealRepository(BaseRepository):
             label=(label or "").strip() or "—",
             status="wait_deposit",
             signers=signers if signers else None,
+            commissioners=commissioners if commissioners else None,
         )
         self._session.add(deal)
         await self._session.flush()
