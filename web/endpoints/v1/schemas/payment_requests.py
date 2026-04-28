@@ -79,6 +79,13 @@ class PaymentRequestOut(BaseModel):
     )
     primary_leg: Dict[str, Any]
     counter_leg: Dict[str, Any]
+    counter_leg_was_discussed: bool = Field(
+        default=False,
+        description=(
+            "True, если counter leg изначально создавался как обсуждаемый (TC-3/TC-4) "
+            "и был позже зафиксирован контрагентом"
+        ),
+    )
     commissioners: Dict[str, CommissionerSlot] = Field(
         default_factory=dict,
         description="Слоты комиссионеров; запись через API позже",
@@ -155,6 +162,8 @@ class PaymentRequestOut(BaseModel):
         except ValidationError:
             commissioners_out = coerce_commissioners_payload(raw_comm)
 
+        was_discussed = bool(getattr(row, "counter_leg_snapshot_json", None))
+
         column_ref = str(getattr(row, "public_ref", "") or "")
         public_ref_out = column_ref
         original_out: Optional[str] = None
@@ -199,6 +208,7 @@ class PaymentRequestOut(BaseModel):
             space_nickname=space_nickname,
             primary_leg=pl,
             counter_leg=cl,
+            counter_leg_was_discussed=was_discussed,
             commissioners=commissioners_out,
             primary_ramp_wallet_id=(
                 int(row.primary_ramp_wallet_id)

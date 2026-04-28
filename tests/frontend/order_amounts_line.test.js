@@ -5,6 +5,7 @@ describe('orderAmountsLineParts (matches list/detail numbers)', () => {
     it('TC-3 fiat_to_stable: acceptor sees base 1000 USDT', () => {
         const pr = {
             direction: 'fiat_to_stable',
+            counter_leg_was_discussed: true,
             owner_did: 'did:owner',
             primary_leg: { asset_type: 'fiat', amount: '10000', code: 'CNY' },
             counter_leg: { asset_type: 'stable', amount: '1000', code: 'USDT' },
@@ -21,6 +22,7 @@ describe('orderAmountsLineParts (matches list/detail numbers)', () => {
     it('TC-3 fiat_to_stable: intermediary sees 993 USDT', () => {
         const pr = {
             direction: 'fiat_to_stable',
+            counter_leg_was_discussed: true,
             owner_did: 'did:owner',
             primary_leg: { asset_type: 'fiat', amount: '10000', code: 'CNY' },
             counter_leg: { asset_type: 'stable', amount: '1000', code: 'USDT' },
@@ -36,6 +38,7 @@ describe('orderAmountsLineParts (matches list/detail numbers)', () => {
     it('TC-3 fiat_to_stable: owner sees net 990 USDT', () => {
         const pr = {
             direction: 'fiat_to_stable',
+            counter_leg_was_discussed: true,
             owner_did: 'did:owner',
             primary_leg: { asset_type: 'fiat', amount: '10000', code: 'CNY' },
             counter_leg: { asset_type: 'stable', amount: '1000', code: 'USDT' },
@@ -46,6 +49,21 @@ describe('orderAmountsLineParts (matches list/detail numbers)', () => {
         };
         const parts = orderAmountsLineParts(pr, 'did:owner');
         expect(parts.receive).toBe('990.00 USDT');
+    });
+
+    it('TC-1 fiat_to_stable: acceptor sees body + fees (1010 USDT)', () => {
+        const pr = {
+            direction: 'fiat_to_stable',
+            owner_did: 'did:owner',
+            primary_leg: { asset_type: 'fiat', amount: '10000', code: 'CNY' },
+            counter_leg: { asset_type: 'stable', amount: '1000', code: 'USDT' },
+            commissioners: {
+                system: { role: 'system', borrow_amount: '3' },
+                i_me: { role: 'intermediary', did: 'did:me', borrow_amount: '7' }
+            }
+        };
+        const parts = orderAmountsLineParts(pr, 'did:acceptor');
+        expect(parts.receive).toBe('1010.00 USDT');
     });
 });
 

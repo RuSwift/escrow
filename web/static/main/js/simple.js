@@ -275,9 +275,11 @@
             var net = base - fees;
             return net > 0 ? net : 0;
         } else if (direction === 'fiat_to_stable') {
-            // fiat_to_stable (в т.ч. TC-3): комиссии удерживаются из залога,
-            // поэтому контрагент/акцептор не видит комиссий и видит базу B.
-            return base;
+            // TC-3/TC-4: сумма counter leg согласовывалась контрагентом, комиссии удерживаются из залога.
+            // TC-1: сумма стейблов фиксирована — комиссии добавляются сверху по цепочке (акцептор видит B + fees).
+            var negotiated = !!(pr.counter_leg_was_discussed || (pr.counter_leg && pr.counter_leg.amount_discussed));
+            if (negotiated) return base;
+            return base + fees;
         }
         return base;
     }
@@ -292,6 +294,8 @@
         if (!isFinite(base)) return NaN;
         var direction = String(pr.direction || '');
         if (direction !== 'fiat_to_stable') return base;
+        var negotiated = !!(pr.counter_leg_was_discussed || (pr.counter_leg && pr.counter_leg.amount_discussed));
+        if (!negotiated) return base;
         var fees = prStableEscrowFeesTotal(pr);
         if (!isFinite(fees) || fees <= 0) return base;
         var net = base - fees;
@@ -308,6 +312,12 @@
         if (!isFinite(base)) return NaN;
         var direction = String(pr.direction || '');
         if (direction !== 'fiat_to_stable') return base;
+        var negotiated = !!(pr.counter_leg_was_discussed || (pr.counter_leg && pr.counter_leg.amount_discussed));
+        if (!negotiated) {
+            var feesAll = prStableEscrowFeesTotal(pr);
+            if (!isFinite(feesAll) || feesAll <= 0) return base;
+            return base + feesAll;
+        }
         var slot = viewerIntermediarySlot(pr, viewerDid);
         if (!slot) return base;
         var feeRaw = slot.borrow_amount != null ? String(slot.borrow_amount).trim() : '';
@@ -2085,22 +2095,51 @@
                     return '—';
                 }
                 var pr = this.resolvePaymentRequest;
-                // Owner: получает net (B − fees) для fiat_to_stable (см. dealViewStatReceive).
+                var direction = String(pr.direction || '');
+                var negotiated =
+                    !!(pr.counter_leg_was_discussed || (pr.counter_leg && pr.counter_leg.amount_discussed));
+
+                // Owner: для negotiated (TC-3) получает net (B − fees); для TC-1 видит тело B.
                 if (this.isPaymentRequestOwner) return this.dealViewStatReceive();
-                // Intermediary: показываем "получают" = B − моя комиссия (TC-3).
+
+                // Intermediary:
+                // - negotiated (TC-3): показываем "получают" = B − моя комиссия.
+                // - fixed (TC-1): escrow lock = B + Σfees.
                 if (this.viewerRoleChoice === 'intermediary') {
-                    var intermNet = prStableNetForIntermediary(pr, this.viewerDid);
-                    var formattedInterm = formatStableAmountWithCode(pr, intermNet);
+                    var interm = prStableNetForIntermediary(pr, this.viewerDid);
+                    var formattedInterm = formatStableAmountWithCode(pr, interm);
                     return formattedInterm || this.dealViewStatReceive();
                 }
-                // Counterparty/participant: комиссии не раскрываем — показываем базу B.
-                var base = prStableBaseAmount(pr);
-                var formatted = formatStableAmountWithCode(pr, base);
-                return formatted || this.dealViewStatReceive();
+
+                // Counterparty/participant:
+                // - negotiated (TC-3): escrow lock = B (комиссии удерживаются из B).
+                // - fixed (TC-1): escrow lock = B + Σfees.
+                if (direction === 'fiat_to_stable') {
+                    var base = prStableBaseAmount(pr);
+                    var feesAll = prStableEscrowFeesTotal(pr);
+                    var sum = negotiated ? base : base + (isFinite(feesAll) ? feesAll : 0);
+                    var formatted = formatStableAmountWithCode(pr, sum);
+                    return formatted || this.dealViewStatReceive();
+                }
+                // stable_to_fiat: по умолчанию показываем базу стейбла
+                var base2 = prStableBaseAmount(pr);
+                var formatted2 = formatStableAmountWithCode(pr, base2);
+                return formatted2 || this.dealViewStatReceive();
             },
             /** Текст в блоке lockbox: сумма залога для escrow lock (base + все комиссии по залогу). */
             dealLockboxHintEscrowFromPr: function(req) {
                 if (!req) return '';
+                var direction = String(req.direction || '');
+                var negotiated =
+                    !!(req.counter_leg_was_discussed || (req.counter_leg && req.counter_leg.amount_discussed));
+                if (direction === 'fiat_to_stable') {
+                    var base = prStableBaseAmount(req);
+                    if (!isFinite(base)) return this.dealLockboxHintFromPr(req);
+                    var feesAll = prStableEscrowFeesTotal(req);
+                    var sum = negotiated ? base : base + (isFinite(feesAll) ? feesAll : 0);
+                    var formatted = formatStableAmountWithCode(req, sum);
+                    return formatted || this.dealLockboxHintFromPr(req);
+                }
                 return this.dealLockboxHintFromPr(req);
             },
             confirmResellCommissionModal: function() {
@@ -2316,9 +2355,18 @@
             dealViewStatStableAmount: function() {
                 if (!this.resolvePaymentRequest) return '—';
                 var pr = this.resolvePaymentRequest;
-                // В UI «Залог» показываем базу B (комиссии удерживаются из неё).
+                var direction = String(pr.direction || '');
+                var negotiated =
+                    !!(pr.counter_leg_was_discussed || (pr.counter_leg && pr.counter_leg.amount_discussed));
+                // Для TC-1 залог должен включать комиссии: B + Σfees.
+                // Для negotiated (TC-3) залог равен базе B (комиссии удерживаются из неё).
                 var base = prStableBaseAmount(pr);
-                var formatted = formatStableAmountWithCode(pr, base);
+                var sum = base;
+                if (direction === 'fiat_to_stable' && !negotiated) {
+                    var feesAll = prStableEscrowFeesTotal(pr);
+                    if (isFinite(feesAll)) sum = base + feesAll;
+                }
+                var formatted = formatStableAmountWithCode(pr, sum);
                 return formatted || formatPaymentRequestLegLine(prLegForAsset(pr, false), true);
             },
             dealViewStatRate: function() {

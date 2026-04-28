@@ -99,8 +99,11 @@ function prStableNetForDisplay(pr) {
         var net = base - fees;
         return net > 0 ? net : 0;
     } else if (direction === 'fiat_to_stable') {
-        // fiat_to_stable: комиссии удерживаются из залога; контрагент/акцептор видит базу B.
-        return base;
+        // TC-3/TC-4: сумма counter leg согласовывалась контрагентом, комиссии удерживаются из залога.
+        // TC-1: сумма стейблов фиксирована — комиссии добавляются сверху по цепочке (акцептор видит B + fees).
+        var negotiated = !!(pr.counter_leg_was_discussed || (pr.counter_leg && pr.counter_leg.amount_discussed));
+        if (negotiated) return base;
+        return base + fees;
     }
     return base;
 }
@@ -111,6 +114,8 @@ function prStableNetForOwner(pr) {
     if (!isFinite(base)) return NaN;
     var direction = String(pr.direction || '');
     if (direction !== 'fiat_to_stable') return base;
+    var negotiated = !!(pr.counter_leg_was_discussed || (pr.counter_leg && pr.counter_leg.amount_discussed));
+    if (!negotiated) return base;
     var fees = prStableEscrowFeesTotal(pr);
     if (!isFinite(fees) || fees <= 0) return base;
     var net = base - fees;
@@ -123,6 +128,12 @@ function prStableNetForIntermediary(pr, viewerDid) {
     if (!isFinite(base)) return NaN;
     var direction = String(pr.direction || '');
     if (direction !== 'fiat_to_stable') return base;
+    var negotiated = !!(pr.counter_leg_was_discussed || (pr.counter_leg && pr.counter_leg.amount_discussed));
+    if (!negotiated) {
+        var feesAll = prStableEscrowFeesTotal(pr);
+        if (!isFinite(feesAll) || feesAll <= 0) return base;
+        return base + feesAll;
+    }
     var slot = viewerIntermediarySlot(pr, viewerDid);
     if (!slot) return base;
     var feeRaw = slot.borrow_amount != null ? String(slot.borrow_amount).trim() : '';
@@ -176,6 +187,7 @@ function orderAmountsLineParts(pr, viewerDid) {
     var hasReceiveAmount = !!recvAmt;
 
     if (direction === 'fiat_to_stable' && hasReceiveAmount) {
+        var negotiated = !!(pr.counter_leg_was_discussed || (cl && cl.amount_discussed));
         if (amOwner) {
             var ownNet = prStableNetForOwner(pr);
             recvAmt = _fmt2(ownNet);
@@ -183,9 +195,13 @@ function orderAmountsLineParts(pr, viewerDid) {
             var intermNet = prStableNetForIntermediary(pr, vd);
             recvAmt = _fmt2(intermNet);
         } else {
-            // acceptor/counterparty sees base B
             var base = prStableBaseAmount(pr);
-            recvAmt = _fmt2(base);
+            if (negotiated) {
+                recvAmt = _fmt2(base);
+            } else {
+                var feesAll = prStableEscrowFeesTotal(pr);
+                recvAmt = _fmt2(base + (isFinite(feesAll) ? feesAll : 0));
+            }
         }
     }
 
