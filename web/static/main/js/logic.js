@@ -133,6 +133,83 @@ function prStableNetForIntermediary(pr, viewerDid) {
     return net > 0 ? net : 0;
 }
 
+function _fmt2(n) {
+    if (!isFinite(n)) return '';
+    return (Math.round(n * 1e2) / 1e2).toFixed(2);
+}
+
+function _legCode(leg) {
+    return leg && leg.code ? String(leg.code).trim().toUpperCase() : '';
+}
+
+function _legAmountStr(leg) {
+    if (!leg) return '';
+    var raw = leg.amount != null ? String(leg.amount).trim() : '';
+    if (!raw) return '';
+    var v = parseFloat(sanitizeDecimalAmountInput(raw));
+    return isFinite(v) ? _fmt2(v) : '';
+}
+
+/**
+ * Unit-test helper: builds the same "give/receive" amounts selection as simple.js orderAmountsLine,
+ * but with deterministic formatting (dot decimal, 2 digits) for assertions.
+ *
+ * Returns: { give: "10000.00 CNY", receive: "993.00 USDT", hasReceiveAmount: boolean }
+ */
+function orderAmountsLineParts(pr, viewerDid) {
+    if (!pr) return { give: '', receive: '', hasReceiveAmount: false };
+    var pl = pr.primary_leg || {};
+    var cl = pr.counter_leg || {};
+    var direction = String(pr.direction || '');
+    var stableIsReceive = direction === 'fiat_to_stable';
+    var vd = (viewerDid || '').trim();
+    var ownerDid = (pr.owner_did || '').trim();
+    var amOwner = !!(vd && ownerDid && vd === ownerDid);
+    var amIntermediary = !!(vd && !amOwner && viewerIntermediarySlot(pr, vd));
+
+    var giveLeg = stableIsReceive ? pl : cl;
+    var recvLeg = stableIsReceive ? cl : pl;
+    var giveCode = _legCode(giveLeg);
+    var recvCode = _legCode(recvLeg);
+    var giveAmt = _legAmountStr(giveLeg);
+    var recvAmt = _legAmountStr(recvLeg);
+    var hasReceiveAmount = !!recvAmt;
+
+    if (direction === 'fiat_to_stable' && hasReceiveAmount) {
+        if (amOwner) {
+            var ownNet = prStableNetForOwner(pr);
+            recvAmt = _fmt2(ownNet);
+        } else if (amIntermediary) {
+            var intermNet = prStableNetForIntermediary(pr, vd);
+            recvAmt = _fmt2(intermNet);
+        } else {
+            // acceptor/counterparty sees base B
+            var base = prStableBaseAmount(pr);
+            recvAmt = _fmt2(base);
+        }
+    }
+
+    // stable_to_fiat: for non-owner use prStableNetForDisplay (base - fees); owner sees raw legs
+    if (direction === 'stable_to_fiat' && hasReceiveAmount) {
+        var stableLeg = prLegForAsset(pr, false);
+        var stableCode = _legCode(stableLeg);
+        var netStable = prStableNetForDisplay(pr);
+        if (!amOwner && isFinite(netStable)) {
+            if (stableIsReceive) {
+                recvAmt = _fmt2(netStable);
+                recvCode = stableCode;
+            } else {
+                giveAmt = _fmt2(netStable);
+                giveCode = stableCode;
+            }
+        }
+    }
+
+    var give = (giveAmt ? giveAmt + (giveCode ? ' ' + giveCode : '') : (giveCode || ''));
+    var receive = (recvAmt ? recvAmt + (recvCode ? ' ' + recvCode : '') : (recvCode || ''));
+    return { give: give, receive: receive, hasReceiveAmount: hasReceiveAmount };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
         sanitizeDecimalAmountInput: sanitizeDecimalAmountInput,
@@ -142,6 +219,7 @@ if (typeof module !== 'undefined' && module.exports) {
         prStableBaseAmount: prStableBaseAmount,
         prStableNetForDisplay: prStableNetForDisplay,
         prStableNetForOwner: prStableNetForOwner,
-        prStableNetForIntermediary: prStableNetForIntermediary
+        prStableNetForIntermediary: prStableNetForIntermediary,
+        orderAmountsLineParts: orderAmountsLineParts
     };
 }

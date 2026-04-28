@@ -6,7 +6,8 @@ const {
     prStableEscrowFeesTotal,
     prStableBaseAmount,
     prStableNetForOwner,
-    prStableNetForIntermediary
+    prStableNetForIntermediary,
+    orderAmountsLineParts
 } = require('../../web/static/main/js/logic.js');
 
 const tests = [];
@@ -148,6 +149,29 @@ describe('TC-3: fiat_to_stable negotiated stable (commissioner & owner views)', 
 
     it('intermediary should see base - my fee (993 USDT)', () => {
         expect(prStableNetForIntermediary(pr, 'did:me')).toBe(993.0);
+    });
+});
+
+describe('orderAmountsLineParts: list/detail stable numbers', () => {
+    const pr = {
+        direction: 'fiat_to_stable',
+        owner_did: 'did:owner',
+        primary_leg: { asset_type: 'fiat', amount: '10000', code: 'CNY' },
+        counter_leg: { asset_type: 'stable', amount: '1000', code: 'USDT' },
+        commissioners: {
+            system: { role: 'system', borrow_amount: '3' },
+            i_me: { role: 'intermediary', did: 'did:me', borrow_amount: '7' }
+        }
+    };
+
+    it('acceptor sees 1000 USDT', () => {
+        expect(orderAmountsLineParts(pr, 'did:acceptor').receive).toBe('1000.00 USDT');
+    });
+    it('intermediary sees 993 USDT', () => {
+        expect(orderAmountsLineParts(pr, 'did:me').receive).toBe('993.00 USDT');
+    });
+    it('owner sees 990 USDT', () => {
+        expect(orderAmountsLineParts(pr, 'did:owner').receive).toBe('990.00 USDT');
     });
 });
 
