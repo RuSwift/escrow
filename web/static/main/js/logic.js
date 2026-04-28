@@ -99,9 +99,38 @@ function prStableNetForDisplay(pr) {
         var net = base - fees;
         return net > 0 ? net : 0;
     } else if (direction === 'fiat_to_stable') {
-        return base + fees;
+        // fiat_to_stable: комиссии удерживаются из залога; контрагент/акцептор видит базу B.
+        return base;
     }
     return base;
+}
+
+function prStableNetForOwner(pr) {
+    if (!pr) return NaN;
+    var base = prStableBaseAmount(pr);
+    if (!isFinite(base)) return NaN;
+    var direction = String(pr.direction || '');
+    if (direction !== 'fiat_to_stable') return base;
+    var fees = prStableEscrowFeesTotal(pr);
+    if (!isFinite(fees) || fees <= 0) return base;
+    var net = base - fees;
+    return net > 0 ? net : 0;
+}
+
+function prStableNetForIntermediary(pr, viewerDid) {
+    if (!pr) return NaN;
+    var base = prStableBaseAmount(pr);
+    if (!isFinite(base)) return NaN;
+    var direction = String(pr.direction || '');
+    if (direction !== 'fiat_to_stable') return base;
+    var slot = viewerIntermediarySlot(pr, viewerDid);
+    if (!slot) return base;
+    var feeRaw = slot.borrow_amount != null ? String(slot.borrow_amount).trim() : '';
+    if (!feeRaw) return base;
+    var fa = parseFloat(sanitizeDecimalAmountInput(feeRaw));
+    if (!isFinite(fa) || fa <= 0) return base;
+    var net = base - fa;
+    return net > 0 ? net : 0;
 }
 
 if (typeof module !== 'undefined' && module.exports) {
@@ -111,6 +140,8 @@ if (typeof module !== 'undefined' && module.exports) {
         prLegForAsset: prLegForAsset,
         prStableEscrowFeesTotal: prStableEscrowFeesTotal,
         prStableBaseAmount: prStableBaseAmount,
-        prStableNetForDisplay: prStableNetForDisplay
+        prStableNetForDisplay: prStableNetForDisplay,
+        prStableNetForOwner: prStableNetForOwner,
+        prStableNetForIntermediary: prStableNetForIntermediary
     };
 }

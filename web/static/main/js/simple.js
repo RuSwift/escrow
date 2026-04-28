@@ -275,9 +275,56 @@
             var net = base - fees;
             return net > 0 ? net : 0;
         } else if (direction === 'fiat_to_stable') {
-            return base + fees;
+            // fiat_to_stable (в т.ч. TC-3): комиссии удерживаются из залога,
+            // поэтому контрагент/акцептор не видит комиссий и видит базу B.
+            return base;
         }
         return base;
+    }
+
+    /**
+     * Net-сумма стейбла для владельца заявки при fiat_to_stable:
+     * owner получает B − sum(fees).
+     */
+    function prStableNetForOwner(pr) {
+        if (!pr) return NaN;
+        var base = prStableBaseAmount(pr);
+        if (!isFinite(base)) return NaN;
+        var direction = String(pr.direction || '');
+        if (direction !== 'fiat_to_stable') return base;
+        var fees = prStableEscrowFeesTotal(pr);
+        if (!isFinite(fees) || fees <= 0) return base;
+        var net = base - fees;
+        return net > 0 ? net : 0;
+    }
+
+    /**
+     * Net-сумма стейбла для посредника (viewerDid) при fiat_to_stable:
+     * показываем "получают" = B − моя комиссия.
+     */
+    function prStableNetForIntermediary(pr, viewerDid) {
+        if (!pr) return NaN;
+        var base = prStableBaseAmount(pr);
+        if (!isFinite(base)) return NaN;
+        var direction = String(pr.direction || '');
+        if (direction !== 'fiat_to_stable') return base;
+        var slot = viewerIntermediarySlot(pr, viewerDid);
+        if (!slot) return base;
+        var feeRaw = slot.borrow_amount != null ? String(slot.borrow_amount).trim() : '';
+        if (!feeRaw) return base;
+        var fa = parseFloat(sanitizeDecimalAmountInput(feeRaw));
+        if (!isFinite(fa) || fa <= 0) return base;
+        var net = base - fa;
+        return net > 0 ? net : 0;
+    }
+
+    function formatStableAmountWithCode(pr, amountNum) {
+        if (!pr || !isFinite(amountNum)) return '';
+        var stableLeg = prLegForAsset(pr, false);
+        var code = stableLeg && stableLeg.code ? String(stableLeg.code).trim().toUpperCase() : '';
+        var sumStr = formatAmountForLocale(String(amountNum));
+        if (!sumStr) return code || '';
+        return sumStr + (code ? ' ' + code : '');
     }
 
     /**
@@ -2037,26 +2084,23 @@
                 if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) {
                     return '—';
                 }
-                // Owner always sees the exact amount from the request (без надбавок escrow).
-                if (this.isPaymentRequestOwner) {
-                    return this.dealViewStatReceive();
-                }
-                // intermediary: base + prev chain (без своей комиссии)
+                var pr = this.resolvePaymentRequest;
+                // Owner: получает net (B − fees) для fiat_to_stable (см. dealViewStatReceive).
+                if (this.isPaymentRequestOwner) return this.dealViewStatReceive();
+                // Intermediary: показываем "получают" = B − моя комиссия (TC-3).
                 if (this.viewerRoleChoice === 'intermediary') {
-                    var prev = this.viewerStableLegPrevChainTotalFormatted(this.resolvePaymentRequest);
-                    return prev || this.dealViewStatReceive();
+                    var intermNet = prStableNetForIntermediary(pr, this.viewerDid);
+                    var formattedInterm = formatStableAmountWithCode(pr, intermNet);
+                    return formattedInterm || this.dealViewStatReceive();
                 }
-                // participant/counterparty/не выбрано: base + all fees (escrow lock)
-                var esc = this.viewerStableLegEscrowTotalFormatted();
-                return esc || this.dealViewStatReceive();
+                // Counterparty/participant: комиссии не раскрываем — показываем базу B.
+                var base = prStableBaseAmount(pr);
+                var formatted = formatStableAmountWithCode(pr, base);
+                return formatted || this.dealViewStatReceive();
             },
             /** Текст в блоке lockbox: сумма залога для escrow lock (base + все комиссии по залогу). */
             dealLockboxHintEscrowFromPr: function(req) {
                 if (!req) return '';
-                if (this.resolvePaymentRequest && req.pk === this.resolvePaymentRequest.pk) {
-                    var esc = this.viewerStableLegEscrowTotalFormatted();
-                    if (esc) return esc;
-                }
                 return this.dealLockboxHintFromPr(req);
             },
             confirmResellCommissionModal: function() {
@@ -2247,6 +2291,12 @@
             dealViewStatReceive: function() {
                 if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) return '—';
                 var pr = this.resolvePaymentRequest;
+                var direction = String(pr.direction || '');
+                if (this.isPaymentRequestOwner && direction === 'fiat_to_stable') {
+                    var ownNet = prStableNetForOwner(pr);
+                    var ownFormatted = formatStableAmountWithCode(pr, ownNet);
+                    if (ownFormatted) return ownFormatted;
+                }
                 var cl = pr.counter_leg || {};
                 var amt = cl.amount != null ? String(cl.amount).trim() : '';
                 var code = cl.code ? String(cl.code).trim().toUpperCase() : '';
@@ -2265,9 +2315,11 @@
             /** Карточка «Залог»: только стейбл-нога. */
             dealViewStatStableAmount: function() {
                 if (!this.resolvePaymentRequest) return '—';
-                // Escrow total (base + fees) when available; fallback to raw stable leg line.
-                var esc = this.viewerStableLegEscrowTotalFormatted();
-                return esc || formatPaymentRequestLegLine(prLegForAsset(this.resolvePaymentRequest, false), true);
+                var pr = this.resolvePaymentRequest;
+                // В UI «Залог» показываем базу B (комиссии удерживаются из неё).
+                var base = prStableBaseAmount(pr);
+                var formatted = formatStableAmountWithCode(pr, base);
+                return formatted || formatPaymentRequestLegLine(prLegForAsset(pr, false), true);
             },
             dealViewStatRate: function() {
                 if (!this.resolvePaymentRequest) return '—';
@@ -2401,8 +2453,8 @@
              * TC-2 (stable_to_fiat): для non-owner стейбл-нога показывается как net B − Σfees
              *   (комиссии вычитаются из «отдают» по стейблу — owner деопонирует B + fees,
              *   но контрагент в итоге получает B − fees; в листинге показываем именно это).
-             * TC-1 (fiat_to_stable): для non-owner стейбл-нога показывается как B + Σfees
-             *   (контрагент кладёт в эскроу B + fees при direction fiat_to_stable).
+             * TC-1/TC-3 (fiat_to_stable): для acceptor/контрагента стейбл-нога показывается как база B (комиссии удерживаются из B).
+             * Для owner: показываем net B − Σfees. Для посредника: показываем "получают" = B − моя комиссия и отдельной строкой мою комиссию.
              */
             orderAmountsLine: function(req) {
                 if (!req) return '';
@@ -2419,14 +2471,27 @@
                 var vd = (this.viewerDid || '').trim();
                 var amOwnerForReq = !!(vd && (req.owner_did || '').trim() === vd);
                 var amIntermediaryForReq = !!(vd && !amOwnerForReq && viewerIntermediarySlot(req, vd));
-                if (amIntermediaryForReq) {
-                    var prevStable = this.viewerStableLegPrevChainTotalFormatted(req);
-                    if (prevStable) {
+                if (amOwnerForReq && direction === 'fiat_to_stable') {
+                    var ownNet = prStableNetForOwner(req);
+                    var ownStable = formatStableAmountWithCode(req, ownNet);
+                    if (ownStable) {
                         if (stableIsReceive) {
-                            ra = prevStable;
+                            ra = ownStable;
                             rc = '';
                         } else {
-                            ga = prevStable;
+                            ga = ownStable;
+                            gc = '';
+                        }
+                    }
+                } else if (amIntermediaryForReq && direction === 'fiat_to_stable') {
+                    var intermNet = prStableNetForIntermediary(req, vd);
+                    var intermStable = formatStableAmountWithCode(req, intermNet);
+                    if (intermStable) {
+                        if (stableIsReceive) {
+                            ra = intermStable;
+                            rc = '';
+                        } else {
+                            ga = intermStable;
                             gc = '';
                         }
                     }
