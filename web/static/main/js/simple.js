@@ -2100,7 +2100,10 @@
                     !!(pr.counter_leg_was_discussed || (pr.counter_leg && pr.counter_leg.amount_discussed));
 
                 // Owner: для negotiated (TC-3) получает net (B − fees); для TC-1 видит тело B.
-                if (this.isPaymentRequestOwner) return this.dealViewStatReceive();
+                if (this.isPaymentRequestOwner) {
+                    if (negotiated) return ''; // Owner doesn't see final amount in TC-3
+                    return this.dealViewStatReceive();
+                }
 
                 // Intermediary:
                 // - negotiated (TC-3): показываем "получают" = B − моя комиссия.

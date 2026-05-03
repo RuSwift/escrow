@@ -1030,12 +1030,36 @@ class PaymentRequestService:
             cl["amount"] = snap
             cl["amount_discussed"] = False
             row.counter_leg = cl
+            # Force SQLAlchemy to see the change in the JSONB field
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(row, "counter_leg")
+            
+            # Rebuild snapshots using the updated legs explicitly
+            raw_comm = row.commissioners
+            comm = dict(raw_comm) if isinstance(raw_comm, dict) else {}
+            keys = self._commission_snapshot_keys(comm)
+            if keys:
+                from services.payment_request_commission_graph import build_slot_snapshots
+                snaps = build_slot_snapshots(
+                    direction,
+                    pl,
+                    cl,
+                    comm,
+                    keys,
+                )
+                for k in keys:
+                    slot = comm.get(k)
+                    if isinstance(slot, dict) and k in snaps:
+                        slot["payment_amount"] = snaps[k]["payment_amount"]
+                        slot["borrow_amount"] = snaps[k]["borrow_amount"]
+                row.commissioners = comm
+                flag_modified(row, "commissioners")
+            
             self._validate_simple_legs(
                 cast(SimpleDirection, direction),
                 pl,
-                dict(row.counter_leg) if isinstance(row.counter_leg, dict) else {},
+                cl,
             )
-            self._rebuild_all_commission_snapshots(row)
         else:
             if not amt_existing:
                 raise ValueError("counter_leg_invalid")

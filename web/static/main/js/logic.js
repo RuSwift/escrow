@@ -189,8 +189,14 @@ function orderAmountsLineParts(pr, viewerDid) {
     if (direction === 'fiat_to_stable' && hasReceiveAmount) {
         var negotiated = !!(pr.counter_leg_was_discussed || (cl && cl.amount_discussed));
         if (amOwner) {
-            var ownNet = prStableNetForOwner(pr);
-            recvAmt = _fmt2(ownNet);
+            // Owner doesn't see the final net amount if it was negotiated (TC-3)
+            if (negotiated) {
+                recvAmt = '';
+                hasReceiveAmount = false;
+            } else {
+                var ownNet = prStableNetForOwner(pr);
+                recvAmt = _fmt2(ownNet);
+            }
         } else if (amIntermediary) {
             var intermNet = prStableNetForIntermediary(pr, vd);
             recvAmt = _fmt2(intermNet);
