@@ -912,7 +912,7 @@
             /** Строка статуса справа в блоке «Условия по заявке» (рукопожатие / сделка). */
             dealPrFlowStatusLabel: function() {
                 if (this.dealPrDeactivated) return t('main.simple.request_status_deactivated');
-                if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) {
+                if (!this.resolvePaymentRequest) {
                     return t('main.simple.request_status_terms');
                 }
                 var pr = this.resolvePaymentRequest;
@@ -930,7 +930,7 @@
             },
             /** True если заявка истекла по expires_at. */
             dealPrExpired: function() {
-                if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) return false;
+                if (!this.resolvePaymentRequest) return false;
                 var pr = this.resolvePaymentRequest;
                 if (!pr || !pr.expires_at) return false;
                 var ts = Date.parse(String(pr.expires_at));
@@ -2091,7 +2091,7 @@
             },
             /** «Вторая нога» / залог для посредника: сумма + комиссия (эскроу). */
             dealViewStatReceiveEscrowTotal: function() {
-                if (this.resolveKind !== 'payment_request_only' || !this.resolvePaymentRequest) {
+                if (!this.resolvePaymentRequest) {
                     return '—';
                 }
                 var pr = this.resolvePaymentRequest;
@@ -2355,9 +2355,8 @@
                 var fmt = amt ? formatAmountForLocale(amt) : '';
                 return fmt ? fmt + ' ' + code : (code || '—');
             },
-            /** Карточка «Сумма»: только фиат-нога. */
+            /** Сумма фиата для отображения в плашке статов. */
             dealViewStatFiatAmount: function() {
-                // In deal_only we still have resolvePaymentRequest (linked PR); reuse the same display logic.
                 if (!this.resolvePaymentRequest) return '—';
                 return formatPaymentRequestLegLine(prLegForAsset(this.resolvePaymentRequest, true), false);
             },
@@ -3629,6 +3628,23 @@
               <div class="simple-page__stat-sub">TRON</div>\
             </div>\
           </div>\
+          <div v-if="isCommissionerIntermediary" class="simple-page__flow-shell" style="margin-bottom:0.75rem">\
+            <div class="simple-page__flow-row">\
+              <div class="simple-page__flow-icon">\
+                <svg class="simple-page__svg--lg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>\
+              </div>\
+              <div class="simple-page__flow-body">\
+                <div class="simple-page__flow-title">{{ t(\'main.simple.commission_detail_section_title\') }}</div>\
+                <div class="simple-page__flow-mono">\
+                  <div style="display:flex;flex-direction:column;gap:0.25rem">\
+                    <div><span style="color:var(--simple-muted);font-weight:600">{{ t(\'main.simple.commission_detail_rate\') }}:</span> {{ commissionerCommissionPercentLine() }}</div>\
+                    <div><span style="color:var(--simple-muted);font-weight:600">{{ t(\'main.simple.commission_detail_on_fiat\') }}:</span> {{ commissionerCommissionFiatLine() }}</div>\
+                    <div><span style="color:var(--simple-muted);font-weight:600">{{ t(\'main.simple.commission_detail_on_pledge\') }}:</span> {{ commissionerCommissionStableLine() }}</div>\
+                  </div>\
+                </div>\
+              </div>\
+            </div>\
+          </div>\
           <div v-if="resolvePaymentRequest" class="simple-page__flow-shell" style="margin-bottom:0.75rem">\
             <div class="simple-page__flow-row" :class="{ \'simple-page__flow-row--pr-split\': true }">\
               <div class="simple-page__flow-icon">\
@@ -3638,7 +3654,7 @@
                 <div class="simple-page__flow-title-row" :class="{ \'simple-page__flow-title-row--pr-tools\': true }">\
                   <span class="simple-page__flow-title">{{ t(\'main.simple.deal_flow_offer_title\') }}</span>\
                 </div>\
-                <div class="simple-page__flow-mono simple-page__flow-mono--pr-sum-line">{{ orderAmountsLine(resolvePaymentRequest) }}</div>\
+                <div class="simple-page__flow-mono simple-page__flow-mono--pr-sum-line">{{ orderAmountsLine(resolvePaymentRequest) }}<template v-if="isCommissionerIntermediary"><span class="simple-page__flow-mono-comm" style="color:var(--simple-warning)">{{ dealFlowStableCommissionSuffix() }}</span></template></div>\
               </div>\
             </div>\
           </div>\
