@@ -4,25 +4,46 @@
 """
 from pathlib import Path
 import json
+from typing import Optional
 
 _TRANSLATIONS: dict[str, dict[str, str]] = {}
+_TRANSLATIONS_MTIME_NS: Optional[int] = None
 _TRANSLATIONS_DIR = Path(__file__).resolve().parent / "translations"
 
 
 def _load_translations() -> dict[str, dict[str, str]]:
     """Ленивая загрузка словарей переводов из JSON-файлов."""
-    global _TRANSLATIONS
-    if _TRANSLATIONS:
+    global _TRANSLATIONS, _TRANSLATIONS_MTIME_NS
+    if not _TRANSLATIONS_DIR.is_dir():
+        _TRANSLATIONS = {}
+        _TRANSLATIONS_MTIME_NS = None
         return _TRANSLATIONS
+
+    # If already loaded, reload only when translation files changed.
+    if _TRANSLATIONS:
+        try:
+            mtime_ns = max((p.stat().st_mtime_ns for p in _TRANSLATIONS_DIR.glob("*.json")), default=0)
+        except OSError:
+            mtime_ns = 0
+        if _TRANSLATIONS_MTIME_NS is not None and mtime_ns and mtime_ns <= _TRANSLATIONS_MTIME_NS:
+            return _TRANSLATIONS
+
     if not _TRANSLATIONS_DIR.is_dir():
         _TRANSLATIONS = {}
         return _TRANSLATIONS
+
+    tables: dict[str, dict[str, str]] = {}
     for path in _TRANSLATIONS_DIR.glob("*.json"):
         try:
             with open(path, encoding="utf-8") as f:
-                _TRANSLATIONS[path.stem.lower()] = json.load(f)
+                tables[path.stem.lower()] = json.load(f)
         except (json.JSONDecodeError, OSError):
             continue
+    _TRANSLATIONS = tables
+    try:
+        _TRANSLATIONS_MTIME_NS = max((p.stat().st_mtime_ns for p in _TRANSLATIONS_DIR.glob("*.json")), default=0) or None
+    except OSError:
+        _TRANSLATIONS_MTIME_NS = None
     return _TRANSLATIONS
 
 

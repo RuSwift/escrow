@@ -934,6 +934,7 @@
   "main.simple.request_status_deactivated": "Deactivated",
   "main.simple.lockbox_inner_placeholder": "Locked amount appears once you move to an active deal.",
   "main.simple.lockbox_terms_pending_detail": "Escrow details will be available after the parties reach agreement",
+  "main.simple.lockbox_amount_pending_note": "The exact amount will be calculated once the parties agree on the amount",
   "main.simple.lockbox_owner_confirm_pending": "Waiting for owner confirmation",
   "main.simple.lockbox_terms_expired": "This application has expired — the terms were not agreed in time. Contact the request owner to extend its validity or create a new application with updated terms.",
   "main.simple.pr_expired_terms_warn": "The terms were not agreed in time. Contact the request owner to extend its validity or create a new application with updated terms.",

@@ -2311,6 +2311,13 @@
                 var code = stableLeg.code ? String(stableLeg.code).trim().toUpperCase() : '';
                 var fmt = amt ? formatAmountForLocale(amt) : '';
                 if (fmt && code) return fmt + ' ' + code;
+                if (!amt && stableLeg.amount_discussed) {
+                    // TC-3/TC-4: сумма ещё не согласована — показываем подсказку вместо пустого залога.
+                    var note = t('main.simple.lockbox_amount_pending_note');
+                    if (!note) note = t('main.simple.counter_discussed');
+                    if (code && note) return code + ' — ' + note;
+                    return note || code || '';
+                }
                 return code || '';
             },
             /** Текст под заголовком мобильного summary для активного шага. */

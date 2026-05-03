@@ -152,6 +152,33 @@ class PaymentRequestService:
         viewer_did: str,
     ) -> None:
         """Для не-system слота комиссионера: создать alias_public_ref и снимки при отсутствии."""
+        # Восстановление borrow_amount снимков после согласования суммы (TC-3/TC-4):
+        # в legacy данных могли остаться пустые borrow_amount, из-за чего UI не показывает комиссию в стейбле.
+        # Это безопасно делать в ensure_*: метод уже используется в resolve/list и допускает лёгкую нормализацию.
+        try:
+            if isinstance(getattr(row, "counter_leg_snapshot_json", None), dict):
+                cl = dict(row.counter_leg) if isinstance(row.counter_leg, dict) else {}
+                has_amount = bool(str(cl.get("amount") or "").strip())
+                if has_amount and isinstance(row.commissioners, dict):
+                    comm0 = dict(row.commissioners)
+                    keys0 = self._commission_snapshot_keys(comm0)
+                    stale = False
+                    for k in keys0:
+                        slot = comm0.get(k)
+                        if not isinstance(slot, dict):
+                            continue
+                        ba = slot.get("borrow_amount")
+                        if ba is None or str(ba).strip() == "":
+                            stale = True
+                            break
+                    if stale:
+                        self._rebuild_all_commission_snapshots(row)
+                        await self._session.flush()
+                        await self._session.refresh(row)
+        except Exception:
+            # не блокируем UX, даже если данные повреждены
+            pass
+
         vd = (viewer_did or "").strip()
         owner = (row.owner_did or "").strip()
         if not vd or vd == owner:

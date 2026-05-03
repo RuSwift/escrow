@@ -64,12 +64,12 @@ describe('TC-1: fiat_to_stable (CNY -> USDT)', () => {
         expect(prStableBaseAmount(pr)).toBe(100);
     });
 
-    it('should return base for acceptor display (100.00 USDT)', () => {
-        expect(prStableNetForDisplay(pr)).toBe(100.0);
+    it('should return base + fees for acceptor display (101.00 USDT)', () => {
+        expect(prStableNetForDisplay(pr)).toBe(101.0);
     });
 
-    it('should return base - fees for owner receive display (99.00 USDT)', () => {
-        expect(prStableNetForOwner(pr)).toBe(99.0);
+    it('should return base for owner receive display (100.00 USDT)', () => {
+        expect(prStableNetForOwner(pr)).toBe(100.0);
     });
 });
 
@@ -115,8 +115,8 @@ describe('Edge Cases', () => {
                 'system': { role: 'system', borrow_amount: '10,50' }
             }
         };
-        expect(prStableNetForDisplay(pr)).toBe(1000.0);
-        expect(prStableNetForOwner(pr)).toBe(989.5);
+        expect(prStableNetForDisplay(pr)).toBe(1010.5);
+        expect(prStableNetForOwner(pr)).toBe(1000.0);
     });
 
     it('should return NaN if stable leg is missing', () => {
@@ -131,6 +131,7 @@ describe('Edge Cases', () => {
 describe('TC-3: fiat_to_stable negotiated stable (commissioner & owner views)', () => {
     const pr = {
         direction: 'fiat_to_stable',
+        counter_leg_was_discussed: true,
         primary_leg: { asset_type: 'fiat', amount: '10000', code: 'CNY' },
         counter_leg: { asset_type: 'stable', amount: '1000', code: 'USDT' },
         commissioners: {
@@ -155,6 +156,7 @@ describe('TC-3: fiat_to_stable negotiated stable (commissioner & owner views)', 
 describe('orderAmountsLineParts: list/detail stable numbers', () => {
     const pr = {
         direction: 'fiat_to_stable',
+        counter_leg_was_discussed: true,
         owner_did: 'did:owner',
         primary_leg: { asset_type: 'fiat', amount: '10000', code: 'CNY' },
         counter_leg: { asset_type: 'stable', amount: '1000', code: 'USDT' },
