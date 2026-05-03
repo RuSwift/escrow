@@ -172,8 +172,8 @@ describe('orderAmountsLineParts: list/detail stable numbers', () => {
     it('intermediary sees 993 USDT', () => {
         expect(orderAmountsLineParts(pr, 'did:me').receive).toBe('993.00 USDT');
     });
-    it('owner sees 990 USDT', () => {
-        expect(orderAmountsLineParts(pr, 'did:owner').receive).toBe('990.00 USDT');
+    it('owner sees nothing (negotiated)', () => {
+        expect(orderAmountsLineParts(pr, 'did:owner').receive).toBe('USDT');
     });
 });
 
