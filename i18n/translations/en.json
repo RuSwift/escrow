@@ -850,6 +850,8 @@
   "main.simple.deal_uid_footer": "Deal: {uid}",
   "main.simple.counter_discussed_short": "TBD",
   "main.simple.pr_give_label": "Give",
+  "main.simple.role_hint_i_give": "I give {amount}",
+  "main.simple.role_hint_i_receive": "I receive {amount}",
   "main.simple.pr_receive_label": "Receive",
   "main.simple.deal_flow_offer_title": "Offer terms",
   "main.simple.pr_btn_resell": "Resell",

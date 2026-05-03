@@ -2604,6 +2604,52 @@
                 var rightTerms = rc || '—';
                 return lbGive + ' ' + leftTerms + arrow + lbRecv + ' ' + rightTerms;
             },
+            /** Жирная надпись-подсказка: что делает текущий пользователь в этой сделке. */
+            orderAmountsRoleHint: function(req) {
+                if (!req || !this.viewerDid) return '';
+                var v = (this.viewerDid || '').trim();
+                var owner = (req.owner_did || '').trim();
+                var acceptor = (req.counterparty_accept_did || '').trim();
+                var isOwner = v === owner;
+                var isAcceptor = v === acceptor;
+                if (!isOwner && !isAcceptor) return '';
+
+                var pl = req.primary_leg || {};
+                var cl = req.counter_leg || {};
+                var direction = String(req.direction || '');
+                
+                var displayAmount = '—';
+                if (isOwner) {
+                    // Owner всегда отдает primary_leg
+                    var amtRaw = pl.amount != null ? String(pl.amount).trim() : '';
+                    var code = pl.code ? String(pl.code).trim().toUpperCase() : '';
+                    var fmt = amtRaw ? formatAmountForLocale(amtRaw) : '';
+                    displayAmount = (fmt ? fmt + ' ' + code : code) || '—';
+                } else if (isAcceptor) {
+                    // Acceptor всегда отдает counter_leg
+                    var amtRaw2 = cl.amount != null ? String(cl.amount).trim() : '';
+                    var code2 = cl.code ? String(cl.code).trim().toUpperCase() : '';
+                    
+                    // Для TC-1/TC-3 (fiat_to_stable) акцептор отдает стейбл (залог) с учетом комиссий
+                    if (direction === 'fiat_to_stable') {
+                        var base = prStableBaseAmount(req);
+                        var negotiated = !!(req.counter_leg_was_discussed || (cl && cl.amount_discussed));
+                        var sum = base;
+                        if (!negotiated) {
+                            var feesAll = prStableEscrowFeesTotal(req);
+                            if (isFinite(feesAll)) sum = base + feesAll;
+                        }
+                        displayAmount = formatStableAmountWithCode(req, sum) || (code2 || '—');
+                    } else {
+                        // Для TC-2/TC-4 (stable_to_fiat) акцептор отдает фиат
+                        var fmt2 = amtRaw2 ? formatAmountForLocale(amtRaw2) : '';
+                        displayAmount = (fmt2 ? fmt2 + ' ' + code2 : code2) || '—';
+                    }
+                }
+
+                return t('main.simple.role_hint_i_give', { amount: displayAmount });
+            },
+
             /** Оставшееся время до expires_at; тикает раз в секунду через countdownTick. */
             formatExpiryCountdown: function(order) {
                 var _tick = this.countdownTick;
@@ -3355,6 +3401,7 @@
                 </div>\
                 <div class="simple-page__order-card-sub">\
                   <div class="simple-page__order-card-sub-primary">\
+                    <div v-if="orderAmountsRoleHint(req)" style="font-weight:800;font-size:0.85rem;margin-bottom:0.15rem;color:var(--simple-primary)">{{ orderAmountsRoleHint(req) }}</div>\
                     <span class="simple-page__order-amounts">{{ orderAmountsLine(req) }}</span>\
                     <span v-if="orderListCommissionerPercentLine(req)" class="simple-page__order-commission-pct">{{ orderListCommissionerPercentLine(req) }}</span>\
                   </div>\
@@ -3567,7 +3614,10 @@
                   <div v-if="handshakeBanner" class="simple-page__pr-inline-msg" :class="handshakeBanner.type === \'error\' ? \'simple-page__pr-inline-msg--err\' : \'\'">{{ handshakeBanner.text }}</div>\
                   <div v-if="copyLinkBanner" class="simple-page__pr-inline-msg">{{ copyLinkBanner }}</div>\
                 </div>\
-                <div class="simple-page__flow-mono simple-page__flow-mono--pr-sum-line">{{ orderAmountsLine(resolvePaymentRequest) }}<template v-if="isCommissionerIntermediary"><span class="simple-page__flow-mono-comm" style="color:var(--simple-warning)">{{ dealFlowStableCommissionSuffix() }}</span></template></div>\
+                <div class="simple-page__flow-mono simple-page__flow-mono--pr-sum-line">\
+                  <div v-if="orderAmountsRoleHint(resolvePaymentRequest)" style="font-weight:800;margin-bottom:0.25rem;color:var(--simple-primary)">{{ orderAmountsRoleHint(resolvePaymentRequest) }}</div>\
+                  {{ orderAmountsLine(resolvePaymentRequest) }}<template v-if="isCommissionerIntermediary"><span class="simple-page__flow-mono-comm" style="color:var(--simple-warning)">{{ dealFlowStableCommissionSuffix() }}</span></template>\
+                </div>\
               </div>\
               <span v-if="dealPrTermsPhase && resolvePaymentRequest && resolvePaymentRequest.expires_at && !resolvePaymentRequest.deactivated_at" class="simple-page__flow-deadline simple-page__flow-deadline--pr-split" role="status" :aria-label="t(\'main.simple.deal_flow_deadline_aria\')">\
                 <svg class="simple-page__ico-clock simple-page__ico-clock--flow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\
@@ -3684,7 +3734,10 @@
                 <div class="simple-page__flow-title-row" :class="{ \'simple-page__flow-title-row--pr-tools\': true }">\
                   <span class="simple-page__flow-title">{{ t(\'main.simple.deal_flow_offer_title\') }}</span>\
                 </div>\
-                <div class="simple-page__flow-mono simple-page__flow-mono--pr-sum-line">{{ orderAmountsLine(resolvePaymentRequest) }}<template v-if="isCommissionerIntermediary"><span class="simple-page__flow-mono-comm" style="color:var(--simple-warning)">{{ dealFlowStableCommissionSuffix() }}</span></template></div>\
+                <div class="simple-page__flow-mono simple-page__flow-mono--pr-sum-line">\
+                  <div v-if="orderAmountsRoleHint(resolvePaymentRequest)" style="font-weight:800;margin-bottom:0.25rem;color:var(--simple-primary)">{{ orderAmountsRoleHint(resolvePaymentRequest) }}</div>\
+                  {{ orderAmountsLine(resolvePaymentRequest) }}<template v-if="isCommissionerIntermediary"><span class="simple-page__flow-mono-comm" style="color:var(--simple-warning)">{{ dealFlowStableCommissionSuffix() }}</span></template>\
+                </div>\
               </div>\
             </div>\
           </div>\
