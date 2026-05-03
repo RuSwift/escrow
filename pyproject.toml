@@ -43,6 +43,7 @@ pytest-asyncio = "^0.24"
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+norecursedirs = ["tests/e2e"]
 markers = [
     "network: тесты с реальными HTTP-запросами (pytest -m network)",
     "no_db: тесты без фикстуры БД (см. ESCROW_PYTEST_NO_DB в tests/conftest.py)",
