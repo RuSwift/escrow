@@ -1903,21 +1903,29 @@
             /** Текущий % из своего слота посредника, иначе значение по умолчанию для поля модалки. */
             initialResellCommissionPercentForModal: function() {
                 var pr = this.resolvePaymentRequest;
-                if (!pr || !pr.commissioners || typeof pr.commissioners !== 'object') {
-                    return '0.5';
+                if (pr && pr.commissioners && typeof pr.commissioners === 'object') {
+                    var slot = viewerIntermediarySlot(pr, this.viewerDid);
+                    if (slot && typeof slot === 'object' && slot.commission && String(slot.commission.kind || '').toLowerCase() === 'percent') {
+                        var raw = slot.commission.value;
+                        if (raw !== undefined && raw !== null) {
+                            var s = sanitizeDecimalAmountInput(String(raw).trim());
+                            if (s) {
+                                var parsed = parseIntermediaryPercentForResell(s);
+                                if (parsed.ok) return parsed.apiValue;
+                                return s;
+                            }
+                        }
+                    }
                 }
-                var slot = viewerIntermediarySlot(pr, this.viewerDid);
-                if (!slot || typeof slot !== 'object') return '0.5';
-                var c = slot.commission;
-                if (!c || typeof c !== 'object') return '0.5';
-                if (String(c.kind || '').toLowerCase() !== 'percent') return '0.5';
-                var raw = c.value;
-                if (raw === undefined || raw === null) return '0.5';
-                var s = sanitizeDecimalAmountInput(String(raw).trim());
-                if (!s) return '0.5';
-                var parsed = parseIntermediaryPercentForResell(s);
-                if (parsed.ok) return parsed.apiValue;
-                return s;
+                // Fallback to UI preferences
+                if (this._uiPrefsPayloadCache && this._uiPrefsPayloadCache.intermediary_commission) {
+                    var pref = String(this._uiPrefsPayloadCache.intermediary_commission).trim();
+                    if (pref) {
+                        var parsedPref = parseIntermediaryPercentForResell(pref);
+                        if (parsedPref.ok) return parsedPref.apiValue;
+                    }
+                }
+                return '0.5';
             },
             onResellClick: function() {
                 if (!this.guardTermsNotExpired()) return;
@@ -1937,6 +1945,16 @@
                 this.resellModalError = '';
                 this.resellCommissionPercent = this.initialResellCommissionPercentForModal();
                 this.showResellCommissionModal = true;
+                // Refresh prefs in background
+                var self = this;
+                this.fetchSimpleCreateUiPrefs().then(function(payload) {
+                    if (payload && typeof payload === 'object') {
+                        self._uiPrefsPayloadCache = Object.assign({}, self._uiPrefsPayloadCache || {}, payload);
+                        if (self.showResellCommissionModal) {
+                            self.resellCommissionPercent = self.initialResellCommissionPercentForModal();
+                        }
+                    }
+                });
             },
             closeResellCommissionModal: function() {
                 if (this.resellSubmitting) return;
@@ -2222,6 +2240,7 @@
                         if (pr) {
                             self.resolvePaymentRequest = pr;
                         }
+                        self.persistIntermediaryCommissionUiPref(pctStr);
                         self.resellBanner = {
                             type: 'success',
                             text: t('main.simple.pr_resell_done', {
@@ -2902,6 +2921,35 @@
                     })
                     .catch(function() { /* ignore */ });
             },
+            persistIntermediaryCommissionUiPref: function(percent) {
+                var url = this.simpleUiPrefsUrl();
+                if (!url) return;
+                var tok = getToken();
+                if (!tok) return;
+                var body = {
+                    intermediary_commission: String(percent || '0.5').trim()
+                };
+                var self = this;
+                fetch(url, {
+                    method: 'PATCH',
+                    headers: {
+                        Accept: 'application/json',
+                        'Content-Type': 'application/json',
+                        Authorization: 'Bearer ' + tok
+                    },
+                    credentials: 'same-origin',
+                    body: JSON.stringify(body)
+                })
+                    .then(function(r) {
+                        return r.ok ? r.json() : null;
+                    })
+                    .then(function(data) {
+                        if (data && data.payload && typeof data.payload === 'object') {
+                            self._uiPrefsPayloadCache = Object.assign({}, self._uiPrefsPayloadCache || {}, data.payload);
+                        }
+                    })
+                    .catch(function() { /* ignore */ });
+            },
             assetMeta: function(code) {
                 var c = (code || '').trim().toUpperCase();
                 if (!c) return null;
@@ -3446,23 +3494,6 @@
               <div class="simple-page__stat-sub">TRON</div>\
             </div>\
           </div>\
-          <div v-if="isCommissionerIntermediary" class="simple-page__commissioner-panel" role="region" :aria-label="t(\'main.simple.commission_detail_section_title\')">\
-            <div class="simple-page__commissioner-panel-head">{{ t(\'main.simple.commission_detail_section_title\') }}</div>\
-            <dl class="simple-page__commissioner-rows">\
-              <div class="simple-page__commissioner-row">\
-                <dt class="simple-page__commissioner-dt">{{ t(\'main.simple.commission_detail_rate\') }}</dt>\
-                <dd class="simple-page__commissioner-dd">{{ commissionerCommissionPercentLine() }}</dd>\
-              </div>\
-              <div class="simple-page__commissioner-row">\
-                <dt class="simple-page__commissioner-dt">{{ t(\'main.simple.commission_detail_on_fiat\') }}</dt>\
-                <dd class="simple-page__commissioner-dd">{{ commissionerCommissionFiatLine() }}</dd>\
-              </div>\
-              <div class="simple-page__commissioner-row">\
-                <dt class="simple-page__commissioner-dt">{{ t(\'main.simple.commission_detail_on_pledge\') }}</dt>\
-                <dd class="simple-page__commissioner-dd">{{ commissionerCommissionStableLine() }}</dd>\
-              </div>\
-            </dl>\
-          </div>\
           <div v-if="dealPrTermsPhase && handshakeLockedByOther && !isPaymentRequestOwner" class="simple-page__pr-handshake-locked-hint" role="status">{{ t(\'main.simple.handshake_locked_hint\') }}</div>\
           <div v-if="showOwnerConfirmBanner" class="simple-page__pr-handshake-banner simple-page__pr-handshake-banner--pulse" role="status">\
             <p class="simple-page__pr-handshake-banner-text">{{ t(\'main.simple.pr_owner_confirm_banner\') }}</p>\
@@ -3497,7 +3528,7 @@
                           <option value="intermediary">{{ t(\'main.simple.pr_role_intermediary\') }}</option>\
                         </select>\
                       </div>\
-                      <button v-if="isPaymentRequestOwner" type="button" class="simple-page__pr-terms-btn simple-page__pr-terms-btn--link" @click="submitExtendFromDeal" :disabled="extendSubmitting" :aria-busy="extendSubmitting ? \'true\' : \'false\'">\
+                      <button v-if="isPaymentRequestOwner && !showOwnerConfirmBanner" type="button" class="simple-page__pr-terms-btn simple-page__pr-terms-btn--link" @click="submitExtendFromDeal" :disabled="extendSubmitting" :aria-busy="extendSubmitting ? \'true\' : \'false\'">\
                         <span class="simple-page__pr-terms-btn-label">{{ t(\'main.simple.pr_btn_extend\') }}</span>\
                       </button>\
                       <button v-if="showAcceptTermsButton && viewerRoleChoice === \'counterparty\'" type="button" class="simple-page__pr-terms-btn simple-page__pr-terms-btn--accept" @click="onAcceptTermsClick" :disabled="acceptSubmitting || withdrawAcceptSubmitting" :aria-busy="acceptSubmitting ? \'true\' : \'false\'">\
@@ -3515,7 +3546,7 @@
                         </svg>\
                         <span class="simple-page__pr-terms-btn-label">{{ t(\'main.simple.pr_btn_resell\') }}</span><span v-if="commissionerResellButtonPctLabel" class="simple-page__pr-terms-btn-pct">{{ commissionerResellButtonPctLabel }}</span>\
                       </button>\
-                      <button v-if="isPaymentRequestOwner || viewerRoleChoice === \'intermediary\'" type="button" class="simple-page__pr-terms-btn simple-page__pr-terms-btn--link" @click="copyDealPublicLink">\
+                      <button v-if="(isPaymentRequestOwner && !showOwnerConfirmBanner) || viewerRoleChoice === \'intermediary\'" type="button" class="simple-page__pr-terms-btn simple-page__pr-terms-btn--link" @click="copyDealPublicLink">\
                         <svg class="simple-page__pr-terms-ico" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">\
                           <path stroke-linecap="round" stroke-linejoin="round" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>\
                         </svg>\
@@ -3638,7 +3669,6 @@
                 <div class="simple-page__flow-mono">\
                   <div style="display:flex;flex-direction:column;gap:0.25rem">\
                     <div><span style="color:var(--simple-muted);font-weight:600">{{ t(\'main.simple.commission_detail_rate\') }}:</span> {{ commissionerCommissionPercentLine() }}</div>\
-                    <div><span style="color:var(--simple-muted);font-weight:600">{{ t(\'main.simple.commission_detail_on_fiat\') }}:</span> {{ commissionerCommissionFiatLine() }}</div>\
                     <div><span style="color:var(--simple-muted);font-weight:600">{{ t(\'main.simple.commission_detail_on_pledge\') }}:</span> {{ commissionerCommissionStableLine() }}</div>\
                   </div>\
                 </div>\
