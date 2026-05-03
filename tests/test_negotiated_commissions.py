@@ -120,3 +120,70 @@ async def test_tc3_commission_recalculation_on_accept(tc3_app_setup):
         assert system_slot is not None
         assert system_slot["borrow_amount"] != ""
         assert float(system_slot["borrow_amount"]) > 0
+
+@pytest.mark.asyncio
+async def test_tc4_commission_recalculation_on_accept(tc3_app_setup):
+    """
+    TC-4: Проверка пересчета комиссий при фиксации суммы акцептором (stable_to_fiat).
+    1. Owner создает заявку "Отдаю 1000 USDT, получаю ? CNY (согласуется)".
+    2. Commissioner устанавливает свою комиссию 0.7%.
+    3. Acceptor принимает заявку и устанавливает сумму 10000 CNY.
+    4. Проверяем, что в commissioners появились рассчитанные borrow_amount (вычитаемые из USDT).
+    """
+    app, owner, other, comm = tc3_app_setup
+    
+    # 1. Owner создает заявку (stable_to_fiat)
+    payload = {
+        "direction": "stable_to_fiat",
+        "primary_leg": {
+            "asset_type": "stable",
+            "code": "USDT",
+            "amount": "1000",
+            "side": "give",
+        },
+        "counter_leg": {
+            "asset_type": "fiat",
+            "code": "CNY",
+            "amount": None,
+            "side": "receive",
+            "amount_discussed": True,
+        },
+    }
+    
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        # Auth as Owner
+        app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+            standard="tron", wallet_address=_OWNER_TRON, did=owner.did
+        )
+        c = await client.post(_v1() + "/payment-requests", json=payload)
+        assert c.status_code == 201
+        uid = c.json()["payment_request"]["uid"]
+        pk = c.json()["payment_request"]["pk"]
+
+        # 2. Commissioner устанавливает комиссию 0.7%
+        app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+            standard="tron", wallet_address=_COMMISSIONER_TRON, did=comm.did
+        )
+        r = await client.post(_v1() + f"/payment-requests/{uid}/resell", json={"intermediary_percent": "0.7"})
+        assert r.status_code == 200
+
+        # 3. Acceptor принимает и ставит 10000 CNY
+        app.dependency_overrides[get_current_wallet_user] = lambda: UserInfo(
+            standard="tron", wallet_address=_OTHER_TRON, did=other.did
+        )
+        # В TC-4 акцептор вводит сумму фиата
+        a = await client.post(_v1() + f"/payment-requests/{pk}/accept", json={"counter_stable_amount": "10000"})
+        assert a.status_code == 200
+        
+        pr = a.json()["payment_request"]
+        commissioners = pr["commissioners"]
+        
+        # 4. Проверяем пересчет
+        # Сумма USDT фиксирована (1000), комиссии должны рассчитаться от нее.
+        interm_slot = next((s for s in commissioners.values() if s.get("role") == "intermediary"), None)
+        assert interm_slot is not None
+        assert float(interm_slot["borrow_amount"]) == 7.0
+        
+        system_slot = commissioners.get("system")
+        assert system_slot is not None
+        assert float(system_slot["borrow_amount"]) > 0
