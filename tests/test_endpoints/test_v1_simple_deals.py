@@ -111,6 +111,7 @@ async def main_app_simple_deals(test_db, test_redis, test_settings):
 
     yield app, owner
     app.dependency_overrides.clear()
+    app.dependency_overrides.clear()
 
 
 @pytest.mark.asyncio
@@ -485,6 +486,37 @@ async def test_arbiter_unknown_slug_list_404(main_app_simple_deals):
 @pytest.mark.asyncio
 async def test_create_payment_request_via_arbiter_public_slug(main_app_simple_deals):
     app, owner = main_app_simple_deals
+    
+    # Создаем другого пользователя, который будет автором заявки (т.к. арбитр не может быть автором)
+    # Используем уникальный адрес, чтобы не было конфликтов с другими тестами
+    requester_addr = "TRequesterSlugAddress111111111111"
+    async for s in app.dependency_overrides[get_db]():
+        requester = WalletUser(
+            nickname="requester_slug",
+            wallet_address=requester_addr,
+            blockchain="tron",
+            did="did:tron:requester_slug",
+        )
+        s.add(requester)
+        await s.commit()
+        await s.refresh(requester)
+        s.add(
+            PrimaryWallet(
+                wallet_user_id=requester.id,
+                address=requester_addr,
+                blockchain="tron",
+            )
+        )
+        await s.commit()
+        
+        async def override_requester():
+            return UserInfo(
+                standard="tron",
+                wallet_address=requester_addr,
+                did=requester.did,
+            )
+        app.dependency_overrides[get_current_wallet_user] = override_requester
+
     payload = {
         "direction": "fiat_to_stable",
         "primary_leg": {
@@ -514,7 +546,7 @@ async def test_create_payment_request_via_arbiter_public_slug(main_app_simple_de
         # В тесте мы передаем SIMPLE_ARBITER_SLUG, который привязан к owner.
         # В ответе arbiter_did должен соответствовать DID того, кто является арбитром для этого слага.
         assert created["arbiter_did"] == owner.did
-        assert created["space_id"] == owner.id
+        assert created["space_id"] == requester.id
 
         lst = await client.get(base_slug + "/payment-requests")
         assert lst.status_code == 200

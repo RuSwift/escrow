@@ -14,6 +14,17 @@ _ARB = "did:test:arbiter_simple_html"
 
 @pytest_asyncio.fixture
 async def main_app(test_db, test_redis, test_settings):
+    from db.models import Wallet
+    test_db.add(
+        Wallet(
+            name="Test Arbiter",
+            encrypted_mnemonic="enc",
+            role="arbiter",
+            owner_did=_ARB,
+        )
+    )
+    await test_db.commit()
+
     app = create_app()
 
     async def override_get_db():
