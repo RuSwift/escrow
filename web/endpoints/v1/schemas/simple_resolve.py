@@ -8,7 +8,7 @@ from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from db.models import Deal
+from db.models import Deal, EscrowModel
 
 from web.endpoints.v1.schemas.payment_requests import PaymentRequestOut
 
@@ -30,13 +30,26 @@ class SimpleDealOut(BaseModel):
         description="Сумма сделки (decimal из модели)",
     )
     escrow_id: Optional[int] = None
+    escrow_address: Optional[str] = Field(
+        default=None,
+        description="Адрес мультисиг LockBox (escrow_operations.escrow_address)",
+    )
+    escrow_status: Optional[str] = Field(
+        default=None,
+        description="Статус мультисиг LockBox (awaiting_funding, active, ...)",
+    )
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
 
     @classmethod
-    def from_model(cls, row: Deal) -> SimpleDealOut:
+    def from_model(
+        cls,
+        row: Deal,
+        *,
+        escrow: Optional[EscrowModel] = None,
+    ) -> SimpleDealOut:
         return cls(
             uid=str(row.uid),
             status=str(row.status or ""),
@@ -48,6 +61,8 @@ class SimpleDealOut(BaseModel):
             description=row.description,
             amount=row.amount,
             escrow_id=int(row.escrow_id) if row.escrow_id is not None else None,
+            escrow_address=str(escrow.escrow_address) if escrow else None,
+            escrow_status=str(escrow.status) if escrow else None,
             created_at=row.created_at,
             updated_at=row.updated_at,
         )

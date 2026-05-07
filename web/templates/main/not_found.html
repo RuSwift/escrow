@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="{{ locale | default('ru') }}">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>{{ _('main.errors.arbiter_not_found') }} — {{ app_name }}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/main/css/site.css" />
+  <link rel="stylesheet" href="/static/main/css/simple.css" />
+</head>
+<body class="m-0 p-0 overflow-x-hidden">
+  <div class="simple-page">
+    <div class="simple-page__window">
+      <header class="simple-page__titlebar">
+        <div class="simple-page__titlebar-left">
+          <div class="simple-page__titlebar-left-inner">
+            <span class="simple-page__space-nick-caption">{{ app_name }}</span>
+          </div>
+        </div>
+        <div class="simple-page__titlebar-text">404</div>
+        <div class="simple-page__titlebar-actions">
+          <a href="/" class="simple-page__link-home">{{ _('main.errors.go_to_home') }}</a>
+        </div>
+      </header>
+
+      <main class="simple-page__body">
+        <div class="simple-page__list-root">
+          <div class="simple-page__main-scroll simple-page__main-scroll--list">
+            <div class="simple-page__list-inner">
+              <div class="simple-page__list-msg">
+                <div style="margin-bottom: 2rem; display: flex; justify-content: center;">
+                  <div style="background: var(--simple-accent-glow); padding: 2rem; border-radius: 9999px; color: var(--simple-primary);">
+                    <svg style="width: 4rem; height: 4rem;" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                </div>
+                <h1 style="font-size: 1.5rem; font-weight: 800; margin-bottom: 1rem; color: var(--simple-fg);">
+                  {{ _('main.errors.arbiter_not_found') }}
+                </h1>
+                <p style="font-size: 0.9rem; color: var(--simple-muted); margin-bottom: 2rem;">
+                  {{ _('main.invite.invalid_message') }}
+                </p>
+                <a href="/" class="simple-page__orders-cta" style="max-width: 200px; margin: 0 auto;">
+                  {{ _('main.errors.go_to_home') }}
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <footer class="simple-page__footer">
+        <div class="simple-page__footer-row">
+          <div class="simple-page__dot-online"></div>
+          <span>{{ _('main.simple.network_ok') }}</span>
+        </div>
+        <div class="simple-page__footer-row">
+          <span>&copy; 2026 {{ app_name }}</span>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <script>
+    // Simple theme support
+    (function() {
+      const theme = localStorage.getItem('simple_theme') || 'light';
+      if (theme === 'dark') {
+        document.querySelector('.simple-page').classList.add('simple-page--dark');
+      }
+    })();
+  </script>
+</body>
+</html>

@@ -19,6 +19,7 @@ from core.short_id import generate_public_ref
 from db.models import GuarantorProfile, PaymentRequest, Wallet, WalletUser
 from i18n.translations import get_translation
 from repos.deal import DealRepository
+from repos.escrow import EscrowRepository
 from repos.payment_request import PaymentRequestRepository, PaymentRequestResolveSegment
 from services.notify import NotifyService
 from services.exchange_wallets import ExchangeWalletService
@@ -481,6 +482,8 @@ class PaymentRequestService:
         arb = (arbiter_did or "").strip()
         if not arb:
             raise ValueError("arbiter_did is required")
+        if owner_did == arb:
+            raise ValueError("arbiter_cannot_be_owner")
 
         await self._space.ensure_owner_or_operator(space_nick, wallet_address)
 
@@ -771,6 +774,8 @@ class PaymentRequestService:
 
         slot_obj = dict(base[slot_key]) if isinstance(base.get(slot_key), dict) else {}
         if role == "counterparty":
+            if actor == (row.arbiter_did or "").strip():
+                raise ValueError("arbiter_cannot_be_counterparty")
             slot_obj["role"] = "counterparty"
             # В сегменте комиссию не обнуляем: роль контрагента не участвует в расчётах комиссий,
             # но если пользователь вернётся к посреднику, прежний % должен сохраниться.
@@ -1001,6 +1006,8 @@ class PaymentRequestService:
             raise ValueError("actor_required")
         if actor == owner:
             raise ValueError("owner_cannot_accept")
+        if actor == (row.arbiter_did or "").strip():
+            raise ValueError("arbiter_cannot_be_counterparty")
 
         locked = (row.counterparty_accept_did or "").strip()
         if locked and locked != actor:
@@ -1167,12 +1174,72 @@ class PaymentRequestService:
             "arbiter": await self._signer_for_arbiter_did(arbiter_did),
         }
 
+    async def _resolve_escrow_for_deal(
+        self,
+        *,
+        signers: Dict[str, Any],
+        owner_did: str,
+        force_new_escrow: bool = False,
+    ) -> int:
+        """Найти или создать EscrowModel для тройки участников сделки.
+
+        Если force_new_escrow=False и активный эскроу уже есть — возвращает его id.
+        Иначе генерирует новую мнемонику и создаёт новый EscrowModel.
+        Возвращает escrow_id (int).
+        """
+        from didcomm.crypto import EthCrypto
+        from services.tron.utils import keypair_from_mnemonic
+
+        sender_addr = str((signers.get("sender") or {}).get("address") or "").strip()
+        receiver_addr = str((signers.get("receiver") or {}).get("address") or "").strip()
+        arbiter_addr = str((signers.get("arbiter") or {}).get("address") or "").strip()
+
+        if not sender_addr or not receiver_addr or not arbiter_addr:
+            raise ValueError("escrow_signer_address_missing")
+
+        escrow_repo = EscrowRepository(self._session, self._redis, self._settings)
+
+        if not force_new_escrow:
+            existing = await escrow_repo.find_active_for_participants(
+                sender_addr=sender_addr,
+                receiver_addr=receiver_addr,
+                arbiter_addr=arbiter_addr,
+            )
+            if existing is not None:
+                logger.info(
+                    "reusing escrow id=%s address=%s for deal",
+                    existing.id,
+                    existing.escrow_address,
+                )
+                return int(existing.id)
+
+        mnemonic = EthCrypto.generate_mnemonic(strength=128)
+        tron_address, _ = keypair_from_mnemonic(mnemonic, account_index=0)
+        encrypted = self._requests.encrypt_data(mnemonic)
+
+        escrow = await escrow_repo.create_deal_escrow(
+            sender_addr=sender_addr,
+            receiver_addr=receiver_addr,
+            arbiter_addr=arbiter_addr,
+            escrow_address=tron_address,
+            encrypted_mnemonic=encrypted,
+            owner_did=owner_did,
+        )
+        logger.info(
+            "created new escrow id=%s address=%s (force=%s)",
+            escrow.id,
+            escrow.escrow_address,
+            force_new_escrow,
+        )
+        return int(escrow.id)
+
     async def confirm_payment_request_owner(
         self,
         *,
         owner_did: str,
         arbiter_did: str,
         pk: int,
+        force_new_escrow: bool = False,
     ) -> Tuple[PaymentRequest, str, str]:
         pair = await self._requests.get_by_pk(pk, arbiter_did=arbiter_did)
         if pair is None:
@@ -1212,6 +1279,16 @@ class PaymentRequestService:
             receiver_did=receiver_did,
             arbiter_did=str(row.arbiter_did or "").strip(),
         )
+        escrow_id: Optional[int] = None
+        try:
+            escrow_id = await self._resolve_escrow_for_deal(
+                signers=signers,
+                owner_did=owner_did,
+                force_new_escrow=force_new_escrow,
+            )
+        except Exception:
+            logger.exception("escrow resolve failed for pr pk=%s; deal created without escrow", pk)
+
         deal = await deals.create_from_simple_payment_request(
             sender_did=sender_did,
             receiver_did=receiver_did,
@@ -1219,6 +1296,7 @@ class PaymentRequestService:
             label=label,
             signers=signers,
             commissioners=row.commissioners if isinstance(row.commissioners, dict) else None,
+            escrow_id=escrow_id,
         )
         row.deal_id = deal.pk
         row.owner_confirmed_at = datetime.now(timezone.utc)

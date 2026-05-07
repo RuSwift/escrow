@@ -191,6 +191,17 @@ async def _loop_multisig_wallets(redis: Redis, settings: Settings) -> None:
                         n,
                         elapsed_ms,
                     )
+                    # Also process deal escrows (EscrowModel)
+                    t1 = time.perf_counter()
+                    ne = await ms.process_batch_escrow()
+                    elapsed_e = (time.perf_counter() - t1) * 1000
+                    if ne:
+                        logger.info(
+                            "cron task=%s: processed %s escrow(s) in %.0fms",
+                            task,
+                            ne,
+                            elapsed_e,
+                        )
         except Exception:
             logger.exception("cron task=%s: tick raised", task)
         await asyncio.sleep(MULTISIG_WALLET_SEC)

@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from redis.asyncio import Redis
 
 import db as db_module
-from db.models import Wallet
+from db.models import EscrowModel, Wallet
 from repos.wallet import WalletRepository
 from repos.wallet_user import WalletUserRepository
 from services.notify import NotifyService, RampNotifyEvent
@@ -497,6 +497,268 @@ class MultisigWalletMaintenanceService:
         if w is None:
             return False
         return await self.process_wallet(w, force_balance_refresh=force_balance_refresh)
+
+    # ------------------------------------------------------------------
+    # EscrowModel (deal-specific multisig) lifecycle
+    # ------------------------------------------------------------------
+
+    async def process_batch_escrow(self, batch_size: int = 5) -> int:
+        """Обработать батч незавершённых EscrowModel.
+
+        Аналог process_batch, но для таблицы escrow_operations.
+        Возвращает число записей, у которых были изменения.
+        """
+        limit = max(1, int(batch_size))
+        terminal = ("active", "inactive", "failed")
+        stmt = (
+            select(EscrowModel)
+            .where(EscrowModel.status.notin_(terminal))
+            .order_by(EscrowModel.id)
+            .limit(limit)
+            .with_for_update(skip_locked=True)
+        )
+        processed = 0
+        async with self._session.begin():
+            res = await self._session.execute(stmt)
+            rows = list(res.scalars().all())
+            for row in rows:
+                eid = row.id
+                try:
+                    async with self._session.begin_nested():
+                        current = await self._session.get(
+                            EscrowModel, eid, populate_existing=True
+                        )
+                        if current is None:
+                            continue
+                        changed = await self.process_escrow(current)
+                        if changed:
+                            processed += 1
+                except Exception:
+                    logger.exception(
+                        "escrow maintenance failed for escrow id=%s", eid
+                    )
+        try:
+            await self._session.commit()
+        except Exception:
+            await self._session.rollback()
+            logger.exception("escrow batch commit failed")
+        return processed
+
+    async def process_escrow(self, escrow: EscrowModel, *, force_balance_refresh: bool = True) -> bool:
+        """Один проход по state machine для EscrowModel.
+
+        Статус хранится в escrow.status.
+        Мета (balance, tx_id, …) хранится в escrow.multisig_config под ключом '_meta'.
+        """
+        st = str(escrow.status or "").strip()
+        if st in ("active", "inactive", "failed"):
+            return False
+
+        tron = str(escrow.escrow_address or "").strip()
+        if not tron:
+            return False
+
+        if not (escrow.encrypted_mnemonic or "").strip():
+            logger.warning("escrow id=%s has no encrypted_mnemonic, skip", escrow.id)
+            return False
+
+        async with TronGridClient(settings=self._settings) as client:
+            return await self._process_escrow_with_client(
+                escrow=escrow,
+                tron=tron,
+                client=client,
+                force_balance_refresh=force_balance_refresh,
+            )
+
+    def _escrow_meta(self, escrow: EscrowModel) -> dict:
+        cfg = dict(escrow.multisig_config or {})
+        return dict(cfg.get("_meta") or {})
+
+    def _merge_escrow_meta(self, escrow: EscrowModel, updates: dict) -> None:
+        from sqlalchemy.orm.attributes import flag_modified
+        cfg = dict(escrow.multisig_config or {})
+        meta = dict(cfg.get("_meta") or {})
+        meta.update(updates)
+        cfg["_meta"] = meta
+        escrow.multisig_config = cfg
+        flag_modified(escrow, "multisig_config")
+
+    async def _process_escrow_with_client(
+        self,
+        *,
+        escrow: EscrowModel,
+        tron: str,
+        client: TronGridClient,
+        force_balance_refresh: bool,
+    ) -> bool:
+        from services.multisig_wallet.meta import validate_actors_threshold
+        from services.tron.utils import (
+            account_permissions_snapshot,
+            is_custom_multisig_active_permission,
+            keypair_from_mnemonic,
+        )
+
+        st = str(escrow.status or "").strip()
+        meta = self._escrow_meta(escrow)
+        cfg = dict(escrow.multisig_config or {})
+
+        # Check on-chain: already configured externally?
+        acc: Optional[Dict[str, Any]] = None
+        try:
+            acc = await client.get_account(tron)
+        except Exception as e:
+            logger.warning("escrow id=%s chain read: %s", escrow.id, e)
+
+        if acc is not None and is_custom_multisig_active_permission(acc):
+            escrow.status = "active"
+            self._merge_escrow_meta(
+                escrow, {"last_chain_check_at": _utc_iso(), "last_error": None}
+            )
+            return True
+
+        min_sun = int(meta.get("min_trx_sun") or MULTISIG_DEFAULT_MIN_TRX_SUN)
+
+        if st in ("awaiting_funding", "ready_for_permissions", "pending"):
+            try:
+                if acc is not None:
+                    sun = int(acc.get("balance") or 0)
+                else:
+                    bal = await self._list_tron_native_trx_balances_isolated(
+                        [tron], refresh_cache=force_balance_refresh
+                    )
+                    sun = int(bal.get(tron, 0))
+            except Exception as e:
+                logger.warning("escrow id=%s balance: %s", escrow.id, e)
+                return False
+            self._merge_escrow_meta(
+                escrow,
+                {"last_trx_balance_sun": sun, "last_chain_check_at": _utc_iso()},
+            )
+            if sun < min_sun:
+                escrow.status = "awaiting_funding"
+                return True
+            escrow.status = "ready_for_permissions"
+            meta = self._escrow_meta(escrow)
+
+        if escrow.status == "ready_for_permissions":
+            meta = self._escrow_meta(escrow)
+            tx_existing = (meta.get("permission_tx_id") or "").strip()
+            if tx_existing:
+                escrow.status = "permissions_submitted"
+                return True
+
+            actors = cfg.get("actors") or []
+            tn = cfg.get("threshold_n")
+            tm = cfg.get("threshold_m")
+            if not actors or tn is None or tm is None:
+                logger.warning("escrow id=%s: missing actors/threshold in config", escrow.id)
+                return False
+
+            try:
+                validate_actors_threshold(list(actors), int(tn), int(tm), main_tron_address=tron)
+            except ValueError as e:
+                self._merge_escrow_meta(escrow, {"last_error": str(e)})
+                escrow.status = "failed"
+                return True
+
+            perm_name = str(meta.get("permission_name") or MULTISIG_DEFAULT_PERMISSION_NAME)[:32]
+
+            # Estimate cost
+            try:
+                estimated_sun = await client.estimate_permission_update_sun(
+                    owner_address=tron,
+                    owner_tron_addresses=[tron],
+                    actor_addresses=list(actors),
+                    threshold=int(tn),
+                    permission_name=perm_name,
+                    margin=0.10,
+                )
+            except Exception as e:
+                logger.warning("escrow id=%s estimate failed: %s", escrow.id, e)
+                estimated_sun = MULTISIG_DEFAULT_MIN_TRX_SUN
+
+            current_sun = int(meta.get("last_trx_balance_sun") or 0)
+            recalculated_min_sun = max(MULTISIG_DEFAULT_MIN_TRX_SUN, max(1, int(estimated_sun)))
+            self._merge_escrow_meta(
+                escrow,
+                {"min_trx_sun": recalculated_min_sun, "last_chain_check_at": _utc_iso()},
+            )
+            if current_sun < recalculated_min_sun:
+                escrow.status = "awaiting_funding"
+                return True
+
+            # Decrypt mnemonic and sign
+            try:
+                plain = self._repo.decrypt_data(escrow.encrypted_mnemonic)
+            except Exception as e:
+                self._merge_escrow_meta(escrow, {"last_error": f"decrypt failed: {e}"})
+                escrow.status = "failed"
+                return True
+
+            _addr, pk_hex = keypair_from_mnemonic(plain, account_index=0)
+            if _addr != tron:
+                self._merge_escrow_meta(escrow, {"last_error": "mnemonic address mismatch"})
+                escrow.status = "failed"
+                return True
+
+            try:
+                txid, bout = await client.permission_update_sign_and_broadcast(
+                    owner_address=tron,
+                    owner_tron_addresses=[tron],
+                    actor_addresses=list(actors),
+                    threshold=int(tn),
+                    permission_name=perm_name,
+                    owner_private_key_hex=pk_hex,
+                )
+                if not bout.get("result"):
+                    raise RuntimeError(str(bout.get("message") or bout.get("code") or bout))
+            except Exception as e:
+                logger.warning("escrow id=%s broadcast failed: %s", escrow.id, e)
+                self._merge_escrow_meta(
+                    escrow,
+                    {"last_error": str(e)[:500], "last_chain_check_at": _utc_iso()},
+                )
+                escrow.status = "failed"
+                return True
+
+            self._merge_escrow_meta(
+                escrow,
+                {
+                    "permission_tx_id": txid,
+                    "broadcast_at": _utc_iso(),
+                    "last_error": None,
+                },
+            )
+            escrow.status = "permissions_submitted"
+            return True
+
+        if escrow.status == "permissions_submitted":
+            meta = self._escrow_meta(escrow)
+            txid = (meta.get("permission_tx_id") or "").strip()
+            if not txid:
+                return False
+            try:
+                ok = await client.get_transaction_success(txid)
+            except Exception as e:
+                logger.warning("escrow id=%s tx info: %s", escrow.id, e)
+                return False
+            if ok is None:
+                return False
+            if ok is False:
+                self._merge_escrow_meta(
+                    escrow,
+                    {"last_error": f"transaction failed: {txid}", "last_chain_check_at": _utc_iso()},
+                )
+                escrow.status = "failed"
+                return True
+            escrow.status = "active"
+            self._merge_escrow_meta(
+                escrow, {"last_error": None, "last_chain_check_at": _utc_iso()}
+            )
+            logger.info("escrow id=%s address=%s activated", escrow.id, tron)
+            return True
+
+        return False
 
 
 def _mnemonic_ok(wallet: Wallet) -> bool:

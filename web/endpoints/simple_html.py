@@ -18,15 +18,18 @@ from web.main_context import (
 
 async def _simple_template_ctx(
     request: Request, session: AsyncSession, *, arbiter_space_did: str
-) -> dict:
+) -> dict | None:
+    display = await arbiter_segment_display_label(session, arbiter_space_did)
+    if display is None:
+        return None
+
     ctx = main_context(request, "dashboard")
     ctx["simple_stablecoins_json"] = collateral_stablecoin_tokens_json()
     ctx["simple_system_currencies_json"] = system_currencies_codes_json()
     ctx.setdefault("simple_deal_uid", "")
     ctx.setdefault("simple_order_id", "")
     ctx["arbiter_space_did"] = arbiter_space_did
-    display = await arbiter_segment_display_label(session, arbiter_space_did)
-    ctx["arbiter_display_name"] = (display or "").strip()
+    ctx["arbiter_display_name"] = display.strip()
     return ctx
 
 
@@ -42,6 +45,10 @@ def create_simple_html_router(templates: Jinja2Templates) -> APIRouter:
     ):
         arb = (arbiter_space_did or "").strip()
         ctx = await _simple_template_ctx(request, session, arbiter_space_did=arb)
+        if ctx is None:
+            return templates.TemplateResponse(
+                "main/not_found.html", main_context(request), status_code=404
+            )
         ctx["simple_deal_uid"] = (deal_uid or "").strip()
         ctx["simple_order_id"] = ""
         return templates.TemplateResponse("main/simple.html", ctx)
@@ -57,6 +64,10 @@ def create_simple_html_router(templates: Jinja2Templates) -> APIRouter:
         arb = (arbiter_space_did or "").strip()
         leg = (legacy_id or "").strip()
         ctx = await _simple_template_ctx(request, session, arbiter_space_did=arb)
+        if ctx is None:
+            return templates.TemplateResponse(
+                "main/not_found.html", main_context(request), status_code=404
+            )
         ctx["simple_deal_uid"] = ""
         ctx["simple_order_id"] = leg
         return templates.TemplateResponse("main/simple.html", ctx)
@@ -69,6 +80,10 @@ def create_simple_html_router(templates: Jinja2Templates) -> APIRouter:
     ):
         arb = (arbiter_space_did or "").strip()
         ctx = await _simple_template_ctx(request, session, arbiter_space_did=arb)
+        if ctx is None:
+            return templates.TemplateResponse(
+                "main/not_found.html", main_context(request), status_code=404
+            )
         ctx["simple_deal_uid"] = ""
         ctx["simple_order_id"] = ""
         return templates.TemplateResponse("main/simple.html", ctx)

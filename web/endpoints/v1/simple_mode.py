@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Path, Query, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
+from pydantic import BaseModel
 from sqlalchemy import select
 
 from core.exceptions import SpacePermissionDenied
-from db.models import Deal, PaymentRequest
+from db.models import Deal, EscrowModel, PaymentRequest
 from services.arbiter_path import ArbiterPathResolveService
 from services.payment_request import PaymentRequestService
 from services.simple_resolve import ResolvedDeal, ResolvedPaymentRequest, SimpleResolveService
@@ -36,6 +37,20 @@ from web.endpoints.v1.schemas.payment_requests import (
 from web.endpoints.v1.schemas.simple_resolve import SimpleDealOut, SimpleResolveResponse
 
 router = APIRouter(prefix="/arbiter/{arbiter_space_did}", tags=["simple"])
+
+
+class ConfirmPaymentRequestBody(BaseModel):
+    force_new_escrow: bool = False
+
+
+async def _load_escrow_for_deal(session, deal_row: Deal) -> Optional[EscrowModel]:
+    """Загрузить EscrowModel для сделки по escrow_id (если есть)."""
+    if deal_row.escrow_id is None:
+        return None
+    res = await session.execute(
+        select(EscrowModel).where(EscrowModel.id == deal_row.escrow_id).limit(1)
+    )
+    return res.scalar_one_or_none()
 
 
 async def get_resolved_arbiter_did(
@@ -87,6 +102,7 @@ async def resolve_simple_context(
             )
             deal_row = res_deal.scalar_one_or_none()
             if deal_row is not None:
+                escrow_row = await _load_escrow_for_deal(payment_svc._session, deal_row)
                 return SimpleResolveResponse(
                     kind="deal_only",
                     viewer_did=user.did,
@@ -98,7 +114,7 @@ async def resolve_simple_context(
                         space_nickname=nick,
                         viewer_did=user.did,
                     ),
-                    deal=SimpleDealOut.from_model(deal_row),
+                    deal=SimpleDealOut.from_model(deal_row, escrow=escrow_row),
                 )
         return SimpleResolveResponse(
             kind="payment_request_only",
@@ -127,6 +143,7 @@ async def resolve_simple_context(
         pr_ref = str(pr_model.public_ref or "") or None
         pr_heading = str(pr_model.heading or "") or None
         pr_out = PaymentRequestOut.from_model(pr_model, space_nickname=None, viewer_did=user.did)
+    escrow_row = await _load_escrow_for_deal(svc._session, result.row)
     return SimpleResolveResponse(
         kind="deal_only",
         viewer_did=user.did,
@@ -134,7 +151,7 @@ async def resolve_simple_context(
         payment_request_public_ref=pr_ref,
         payment_request_heading=pr_heading,
         payment_request=pr_out,
-        deal=SimpleDealOut.from_model(result.row),
+        deal=SimpleDealOut.from_model(result.row, escrow=escrow_row),
     )
 
 
@@ -210,6 +227,8 @@ async def create_payment_request(
         ) from e
     except ValueError as e:
         msg = str(e)
+        if msg == "arbiter_cannot_be_owner":
+            msg = "Арбитр не может быть автором заявки"
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=msg,
@@ -343,6 +362,7 @@ _ACCEPT_ERR_DETAIL = {
     "counter_leg_invalid": "Некорректная нога получения",
     "invalid_direction": "Некорректное направление заявки",
     "counterparty_already_locked": "Условия уже согласуются с другим контрагентом",
+    "arbiter_cannot_be_counterparty": "Арбитр не может быть стороной сделки",
 }
 
 _CONFIRM_ERR_DETAIL = {
@@ -381,6 +401,7 @@ _VIEWER_ROLE_ERR_DETAIL = {
     "actor_required": "Не определён пользователь",
     "owner_cannot_resell": "Автор заявки не может менять роль на этой странице",
     "no_viewer_slot": "Слот участника не найден (обновите страницу)",
+    "arbiter_cannot_be_counterparty": "Арбитр не может быть стороной сделки",
 }
 
 
@@ -510,6 +531,7 @@ async def confirm_payment_request(
     arbiter_did: ResolvedArbiterDid,
     user: CurrentWalletUser,
     pk: int = Path(..., ge=1),
+    body: ConfirmPaymentRequestBody = Body(default_factory=ConfirmPaymentRequestBody),
     svc: PaymentRequestService = Depends(get_payment_request_service),
 ):
     """Владелец подтверждает заявку после accept контрагента; создаётся Deal."""
@@ -518,6 +540,7 @@ async def confirm_payment_request(
             owner_did=user.did,
             arbiter_did=arbiter_did,
             pk=pk,
+            force_new_escrow=body.force_new_escrow,
         )
     except ValueError as e:
         code = str(e)

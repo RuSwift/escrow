@@ -469,6 +469,9 @@
                 withdrawAcceptSubmitting: false,
                 ownerConfirmSubmitting: false,
                 ownerRejectSubmitting: false,
+                tronLinkFundingBusy: false,
+                tronLinkFundError: null,
+                forceNewEscrow: false,
                 showAcceptAmountModal: false,
                 acceptAmountInput: '',
                 acceptModalError: '',
@@ -1039,6 +1042,71 @@
                     .catch(function() {})
                     .finally(function() {
                         self.roleSubmitting = false;
+                    });
+            },
+            getTronWebForFunding: function() {
+                if (window.tronLink && window.tronLink.request) {
+                    return window.tronLink.request({ method: 'tron_requestAccounts' }).then(function(res) {
+                        if (res && res.code === 200) {
+                            var tw = window.tronLink.tronWeb || window.tronWeb;
+                            if (tw) return tw;
+                        }
+                        throw new Error('USER_REJECTED');
+                    });
+                }
+                if (window.tronWeb && window.tronWeb.defaultAddress && window.tronWeb.defaultAddress.base58) {
+                    return Promise.resolve(window.tronWeb);
+                }
+                throw new Error('NO_TRONLINK');
+            },
+            fundMultisigViaTronLink: function() {
+                var self = this;
+                var d = this.resolveDeal;
+                if (!d || !d.escrow_address) return;
+                var to = d.escrow_address;
+                var amountSun = 150 * 1e6; // 150 TRX
+                var FEE_BUFFER_SUN = 3000000; // 3 TRX buffer
+
+                this.tronLinkFundError = null;
+                this.tronLinkFundingBusy = true;
+                this.getTronWebForFunding()
+                    .then(function(tw) {
+                        var from = (tw.defaultAddress && tw.defaultAddress.base58) ? tw.defaultAddress.base58 : '';
+                        if (!from) throw new Error('NO_ADDRESS');
+                        
+                        function buildAndBroadcast() {
+                            return tw.transactionBuilder.sendTrx(to, amountSun, from).then(function(tx) {
+                                return tw.trx.sign(tx);
+                            }).then(function(signed) {
+                                return tw.trx.sendRawTransaction(signed);
+                            });
+                        }
+
+                        if (!tw.trx || typeof tw.trx.getBalance !== 'function') {
+                            return buildAndBroadcast();
+                        }
+                        return tw.trx.getBalance(from).then(function(senderBalRaw) {
+                            var sb = Number(senderBalRaw);
+                            if (sb < (amountSun + FEE_BUFFER_SUN)) {
+                                throw new Error('INSUFFICIENT_SENDER_TRX');
+                            }
+                            return buildAndBroadcast();
+                        });
+                    })
+                    .then(function(res) {
+                        var ok = res && (res.result === true || res.result === 'SUCCESS' || res.code === 'SUCCESS' || !!res.txid);
+                        if (ok) return;
+                        throw new Error('broadcast');
+                    })
+                    .catch(function(e) {
+                        var code = e && e.message ? e.message : '';
+                        if (code === 'NO_TRONLINK') self.tronLinkFundError = t('main.tron.install_tronlink');
+                        else if (code === 'USER_REJECTED') self.tronLinkFundError = t('main.tron.unlock_try_again');
+                        else if (code === 'INSUFFICIENT_SENDER_TRX') self.tronLinkFundError = 'Недостаточно TRX на кошельке';
+                        else self.tronLinkFundError = t('main.dialog.error_title');
+                    })
+                    .finally(function() {
+                        self.tronLinkFundingBusy = false;
                     });
             },
             needsWalletPrimaryMismatch: function() {
@@ -1671,7 +1739,7 @@
                             Authorization: 'Bearer ' + tok
                         },
                         credentials: 'same-origin',
-                        body: '{}'
+                        body: JSON.stringify({ force_new_escrow: !!self.forceNewEscrow })
                     }
                 )
                     .then(function(r) {
@@ -2443,6 +2511,29 @@
                 var s = String(d.label || '').trim();
                 if (!s) return String(d.uid || '').slice(0, 24);
                 return s.length > 52 ? s.slice(0, 49) + '…' : s;
+            },
+            dealEscrowStatusText: function() {
+                var d = this.resolveDeal;
+                if (!d) return '';
+                var st = String(d.escrow_status || '').trim();
+                if (!st) return '';
+                if (st === 'active') return t('main.simple.lockbox_multisig_active');
+                if (st === 'awaiting_funding') return t('main.simple.lockbox_multisig_awaiting_funding');
+                if (st === 'ready_for_permissions') return t('main.simple.lockbox_multisig_awaiting_funding');
+                if (st === 'permissions_submitted') return t('main.simple.lockbox_multisig_permissions_submitted');
+                if (st === 'failed') return t('main.simple.lockbox_multisig_failed');
+                return t('main.simple.lockbox_multisig_pending');
+            },
+            dealEscrowInitializing: function() {
+                var d = this.resolveDeal;
+                if (!d) return false;
+                var st = String(d.escrow_status || '').trim();
+                return st === 'awaiting_funding' || st === 'ready_for_permissions' || st === 'permissions_submitted';
+            },
+            dealEscrowAddressTronscanUrl: function() {
+                var d = this.resolveDeal;
+                if (!d || !d.escrow_address) return '';
+                return 'https://tronscan.org/#/address/' + encodeURIComponent(d.escrow_address) + '/permissions';
             },
             onOrdersSearchInput: function() {
                 var self = this;
@@ -3544,6 +3635,12 @@
           <div v-if="dealPrTermsPhase && handshakeLockedByOther && !isPaymentRequestOwner" class="simple-page__pr-handshake-locked-hint" role="status">{{ t(\'main.simple.handshake_locked_hint\') }}</div>\
           <div v-if="showOwnerConfirmBanner" class="simple-page__pr-handshake-banner simple-page__pr-handshake-banner--pulse" role="status">\
             <p class="simple-page__pr-handshake-banner-text">{{ t(\'main.simple.pr_owner_confirm_banner\') }}</p>\
+            <div style="margin-bottom:0.75rem">\
+              <label style="display:flex;align-items:center;gap:0.5rem;cursor:pointer;font-size:0.875em;color:var(--simple-muted)">\
+                <input type="checkbox" v-model="forceNewEscrow" style="width:1rem;height:1rem;cursor:pointer" />\
+                {{ t(\'main.simple.confirm_force_new_escrow_label\') }}\
+              </label>\
+            </div>\
             <div class="simple-page__pr-handshake-banner-actions">\
               <button type="button" class="simple-page__pr-handshake-banner-btn" @click="submitOwnerConfirm" :disabled="ownerConfirmSubmitting || ownerRejectSubmitting" :aria-busy="ownerConfirmSubmitting ? \'true\' : \'false\'">\
                 <span v-if="ownerConfirmSubmitting" class="simple-create__btn-spinner simple-page__pr-handshake-spinner" aria-hidden="true"></span>\
@@ -3741,27 +3838,46 @@
               </div>\
             </div>\
           </div>\
-          <div class="simple-page__lockbox">\
-            <div class="simple-page__lockbox-tag">{{ t(\'main.simple.deal_flow_deal_title\') }}</div>\
-            <div class="simple-page__lockbox-head">\
-              <svg class="simple-page__svg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>\
-              <span class="simple-page__lockbox-brand">{{ t(\'main.simple.deal_flow_deal_title\') }}</span>\
-            </div>\
-            <div class="simple-page__flow-mono" style="margin-bottom:1rem">\
-              <span v-if="resolveDealPaymentRequestPk" style="color:var(--simple-muted);font-weight:800">#{{ resolveDealPaymentRequestPk }}</span>\
-              <span v-if="resolveDealPaymentRequestHeading" style="margin-left:0.45rem">{{ resolveDealPaymentRequestHeading }}</span>\
-              <span style="margin-left:0.45rem">{{ dealDealLabelPreview() }} · {{ resolveDeal.uid }}</span>\
-              <span v-if="resolveDeal && resolveDeal.status" style="margin-left:0.45rem;color:var(--simple-muted)">({{ resolveDeal.status }})</span>\
-            </div>\
-            <div class="simple-page__lockbox-inner">\
-              <svg class="simple-page__svg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 .552-.448 1-1 1s-1-.448-1-1 .448-1 1-1 1 .448 1 1zm8 10H4a2 2 0 01-2-2V5a2 2 0 012-2h16a2 2 0 012 2v14a2 2 0 01-2 2z"/></svg>\
-              <div style="display:flex;flex-direction:column;gap:0.25rem;min-width:0">\
-                <div><span style="font-weight:800">Sender:</span> {{ (resolveDeal && resolveDeal.signers && resolveDeal.signers.sender && resolveDeal.signers.sender.address) || \'—\' }}</div>\
-                <div><span style="font-weight:800">Receiver:</span> {{ (resolveDeal && resolveDeal.signers && resolveDeal.signers.receiver && resolveDeal.signers.receiver.address) || \'—\' }}</div>\
-                <div><span style="font-weight:800">Arbiter:</span> {{ (resolveDeal && resolveDeal.signers && resolveDeal.signers.arbiter && resolveDeal.signers.arbiter.address) || \'—\' }}</div>\
+            <div class="simple-page__lockbox">\
+              <div class="simple-page__lockbox-tag">{{ t(\'main.simple.deal_flow_deal_title\') }}</div>\
+              <div class="simple-page__lockbox-head">\
+                <svg class="simple-page__svg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>\
+                <span class="simple-page__lockbox-brand">{{ t(\'main.simple.deal_flow_deal_title\') }}</span>\
+              </div>\
+              <div class="simple-page__flow-mono" style="margin-bottom:1rem">\
+                <span v-if="resolveDealPaymentRequestPk" style="color:var(--simple-muted);font-weight:800">#{{ resolveDealPaymentRequestPk }}</span>\
+                <span v-if="resolveDealPaymentRequestHeading" style="margin-left:0.45rem">{{ resolveDealPaymentRequestHeading }}</span>\
+                <span style="margin-left:0.45rem">{{ dealDealLabelPreview() }} · {{ resolveDeal.uid }}</span>\
+                <span v-if="resolveDeal && resolveDeal.status" style="margin-left:0.45rem;color:var(--simple-muted)">({{ resolveDeal.status }})</span>\
+              </div>\
+              <div class="simple-page__lockbox-inner">\
+                <div v-if="dealEscrowInitializing()" class="simple-page__lockbox-spinner" aria-hidden="true"></div>\
+                <svg v-else class="simple-page__svg" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 11c0 .552-.448 1-1 1s-1-.448-1-1 .448-1 1-1 1 .448 1 1zm8 10H4a2 2 0 01-2-2V5a2 2 0 012-2h16a2 2 0 012 2v14a2 2 0 01-2 2z"/></svg>\
+                <div style="display:flex;flex-direction:column;gap:0.25rem;min-width:0">\
+                  <template v-if="resolveDeal && resolveDeal.escrow_address">\
+                    <div style="margin-bottom:0.5rem;border-bottom:1px solid var(--simple-border);padding-bottom:0.5rem">\
+                      <div>\
+                        <span style="font-weight:800">{{ t(\'main.simple.lockbox_multisig_address_label\') }}:</span>\
+                        <span style="font-family:monospace;font-size:0.85em;word-break:break-all">{{ resolveDeal.escrow_address }}</span>\
+                        <a v-if="dealEscrowAddressTronscanUrl()" :href="dealEscrowAddressTronscanUrl()" target="_blank" rel="noopener noreferrer" style="margin-left:0.5rem;color:var(--simple-primary);text-decoration:none" title="Tronscan Permissions">\
+                          <svg style="width:14px;height:14px;vertical-align:middle" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"/></svg>\
+                        </a>\
+                      </div>\
+                      <div v-if="dealEscrowStatusText()" style="margin-top:0.25rem;color:var(--simple-muted);font-size:0.875em">{{ dealEscrowStatusText() }}</div>\
+                      <div v-if="dealEscrowInitializing()" style="margin-top:0.75rem">\
+                        <p v-if="tronLinkFundError" style="margin-bottom:0.35rem;color:#ef4444;font-size:0.75em;font-weight:600">{{ tronLinkFundError }}</p>\
+                        <button type="button" @click="fundMultisigViaTronLink" :disabled="tronLinkFundingBusy" class="simple-page__lockbox-fund-btn">\
+                          {{ tronLinkFundingBusy ? \'Отправка...\' : \'Пополнить 150 TRX\' }}\
+                        </button>\
+                      </div>\
+                    </div>\
+                  </template>\
+                  <div><span style="font-weight:800">Sender:</span> {{ (resolveDeal && resolveDeal.signers && resolveDeal.signers.sender && resolveDeal.signers.sender.address) || \'—\' }}</div>\
+                  <div><span style="font-weight:800">Receiver:</span> {{ (resolveDeal && resolveDeal.signers && resolveDeal.signers.receiver && resolveDeal.signers.receiver.address) || \'—\' }}</div>\
+                  <div><span style="font-weight:800">Arbiter:</span> {{ (resolveDeal && resolveDeal.signers && resolveDeal.signers.arbiter && resolveDeal.signers.arbiter.address) || \'—\' }}</div>\
+                </div>\
               </div>\
             </div>\
-          </div>\
           </template>\
           <template v-else-if="orderId && !dealUid">\
           <div class="simple-page__stat-rail" role="region" :aria-label="t(\'main.simple.stat_carousel_aria\')">\

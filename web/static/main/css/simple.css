@@ -2048,6 +2048,20 @@
   flex-shrink: 0;
 }
 
+.simple-page__lockbox-fund-btn {
+  padding: 0.45rem 1rem;
+  border-radius: 0.65rem;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: #ef8a2e;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.simple-page__lockbox-fund-btn:hover { opacity: 0.9; }
+.simple-page__lockbox-fund-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
 .simple-page__lockbox-pending-text {
   margin: 0;
   max-width: 22rem;
