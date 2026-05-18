@@ -61,6 +61,28 @@ def test_build_permission_body_owner_keys_and_threshold():
     assert body["actives"][0]["threshold"] == 1
 
 
+def test_build_permission_body_custom_owner_threshold():
+    """Для escrow-сделок owner блок должен использовать кастомный threshold и все адреса участников."""
+    actors = [
+        "TSender111111111111111111111111111111111111",
+        "TReceiver1111111111111111111111111111111111",
+        "TArbiter111111111111111111111111111111111111",
+    ]
+    body = TronGridClient.build_permission_body(
+        owner_address="TEscrow111111111111111111111111111111111111",
+        owner_tron_addresses=actors,
+        actor_addresses=actors,
+        threshold=2,
+        permission_name="escrow_deal",
+        owner_threshold=2,
+    )
+    assert body["owner"]["threshold"] == 2
+    assert len(body["owner"]["keys"]) == 3
+    assert {k["address"] for k in body["owner"]["keys"]} == set(actors)
+    assert body["actives"][0]["threshold"] == 2
+    assert len(body["actives"][0]["keys"]) == 3
+
+
 def test_build_permission_body_empty_owner_raises():
     with pytest.raises(ValueError, match="owner_tron_addresses"):
         TronGridClient.build_permission_body(

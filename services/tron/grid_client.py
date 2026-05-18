@@ -111,16 +111,21 @@ class TronGridClient:
         actor_addresses: List[str],
         threshold: int,
         permission_name: str,
+        owner_threshold: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Тело для /wallet/accountpermissionupdate.
 
-        Блок ``owner``: адреса owner-ролей спейса (не адрес multisig), ``threshold`` = 1.
+        Блок ``owner``: адреса owner-ролей спейса (не адрес multisig).
+        По умолчанию ``threshold`` = 1 (для ramp-кошельков).
+        Для escrow-сделок передавайте ``owner_threshold`` = threshold активных (2-из-3),
+        а ``owner_tron_addresses`` = список всех участников сделки.
         """
+        resolved_owner_threshold = int(owner_threshold) if owner_threshold is not None else OWNER_PERMISSION_THRESHOLD
         owner_keys_raw = [a.strip() for a in owner_tron_addresses if (a or "").strip()]
         if not owner_keys_raw:
             raise ValueError("owner_tron_addresses must be non-empty")
         owner_keys = [{"address": a, "weight": 1} for a in owner_keys_raw]
-        if len(owner_keys) < OWNER_PERMISSION_THRESHOLD:
+        if len(owner_keys) < resolved_owner_threshold:
             raise ValueError("owner threshold exceeds number of owner keys")
         active_keys = [{"address": a.strip(), "weight": 1} for a in actor_addresses]
         if len(active_keys) < threshold:
@@ -131,7 +136,7 @@ class TronGridClient:
             "owner": {
                 "type": 0,
                 "permission_name": "owner",
-                "threshold": OWNER_PERMISSION_THRESHOLD,
+                "threshold": resolved_owner_threshold,
                 "keys": owner_keys,
             },
             "actives": [
@@ -448,6 +453,7 @@ class TronGridClient:
         threshold: int,
         permission_name: str,
         owner_private_key_hex: str,
+        owner_threshold: Optional[int] = None,
     ) -> Tuple[str, Dict[str, Any]]:
         """Полный цикл: build → create tx → sign → broadcast. Returns (tx_id, broadcast_response)."""
         body = self.build_permission_body(
@@ -456,6 +462,7 @@ class TronGridClient:
             actor_addresses=actor_addresses,
             threshold=threshold,
             permission_name=permission_name,
+            owner_threshold=owner_threshold,
         )
         resp = await self.create_permission_update_tx(body)
         raw_tx = self._unwrap_tx(resp)
@@ -473,6 +480,7 @@ class TronGridClient:
         threshold: int,
         permission_name: str,
         margin: float = 0.10,
+        owner_threshold: Optional[int] = None,
     ) -> int:
         """
         Оценка требуемых SUN для AccountPermissionUpdate (+margin).
@@ -488,6 +496,7 @@ class TronGridClient:
             actor_addresses=actor_addresses,
             threshold=threshold,
             permission_name=permission_name,
+            owner_threshold=owner_threshold,
         )
         tx_resp = await self.create_permission_update_tx(body)
         raw_tx = tx_resp.get("transaction") if isinstance(tx_resp.get("transaction"), dict) else tx_resp

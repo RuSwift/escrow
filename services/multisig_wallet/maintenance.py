@@ -667,11 +667,12 @@ class MultisigWalletMaintenanceService:
             try:
                 estimated_sun = await client.estimate_permission_update_sun(
                     owner_address=tron,
-                    owner_tron_addresses=[tron],
+                    owner_tron_addresses=list(actors),
                     actor_addresses=list(actors),
                     threshold=int(tn),
                     permission_name=perm_name,
                     margin=0.10,
+                    owner_threshold=int(tn),
                 )
             except Exception as e:
                 logger.warning("escrow id=%s estimate failed: %s", escrow.id, e)
@@ -704,11 +705,12 @@ class MultisigWalletMaintenanceService:
             try:
                 txid, bout = await client.permission_update_sign_and_broadcast(
                     owner_address=tron,
-                    owner_tron_addresses=[tron],
+                    owner_tron_addresses=list(actors),
                     actor_addresses=list(actors),
                     threshold=int(tn),
                     permission_name=perm_name,
                     owner_private_key_hex=pk_hex,
+                    owner_threshold=int(tn),
                 )
                 if not bout.get("result"):
                     raise RuntimeError(str(bout.get("message") or bout.get("code") or bout))

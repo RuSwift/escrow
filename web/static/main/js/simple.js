@@ -483,6 +483,7 @@
                 extendApplyToResolve: false,
                 extendLifetime: '72h',
                 _termsFeedbackTimer: null,
+                _resolvePollInterval: null,
                 /* Без префикса _: Vue 2 не проксирует data._* на this — иначе ++ даёт NaN. */
                 resolveFetchSeq: 0,
                 ordersItems: [],
@@ -578,6 +579,10 @@
                 clearTimeout(this._termsFeedbackTimer);
                 this._termsFeedbackTimer = null;
             }
+            if (this._resolvePollInterval != null) {
+                clearInterval(this._resolvePollInterval);
+                this._resolvePollInterval = null;
+            }
         },
         created: function() {
             var self = this;
@@ -588,6 +593,12 @@
             this._countdownInterval = setInterval(function() {
                 self.countdownTick = Date.now();
             }, 1000);
+
+            this._resolvePollInterval = setInterval(function() {
+                if (self.dealUid && self.dealEscrowInitializing && self.dealEscrowInitializing()) {
+                    self.fetchResolve();
+                }
+            }, 5000);
 
             var fromUrl = themeFromQuery();
             if (fromUrl) {
@@ -1114,6 +1125,13 @@
                 var primary = (this.profilePrimaryWalletAddress || '').trim();
                 if (!auth || !primary) return false;
                 return auth !== primary;
+            },
+            isMyAddress: function(addr) {
+                if (!addr) return false;
+                var primary = (this.profilePrimaryWalletAddress || '').trim().toLowerCase();
+                var current = (this.profileWalletAddress || '').trim().toLowerCase();
+                var target = String(addr).trim().toLowerCase();
+                return target && (target === primary || target === current);
             },
             closeWalletMismatchModal: function() {
                 this.showWalletMismatchModal = false;
@@ -3872,9 +3890,9 @@
                       </div>\
                     </div>\
                   </template>\
-                  <div><span style="font-weight:800">Sender:</span> {{ (resolveDeal && resolveDeal.signers && resolveDeal.signers.sender && resolveDeal.signers.sender.address) || \'—\' }}</div>\
-                  <div><span style="font-weight:800">Receiver:</span> {{ (resolveDeal && resolveDeal.signers && resolveDeal.signers.receiver && resolveDeal.signers.receiver.address) || \'—\' }}</div>\
-                  <div><span style="font-weight:800">Arbiter:</span> {{ (resolveDeal && resolveDeal.signers && resolveDeal.signers.arbiter && resolveDeal.signers.arbiter.address) || \'—\' }}</div>\
+                  <div :style="{ color: isMyAddress(resolveDeal && resolveDeal.signers && resolveDeal.signers.sender && resolveDeal.signers.sender.address) ? \'var(--simple-primary)\' : \'inherit\', fontWeight: isMyAddress(resolveDeal && resolveDeal.signers && resolveDeal.signers.sender && resolveDeal.signers.sender.address) ? \'800\' : \'normal\' }">{{ isMyAddress(resolveDeal && resolveDeal.signers && resolveDeal.signers.sender && resolveDeal.signers.sender.address) ? \'(Я) \' : \'\' }}<span style="font-weight:800">Sender:</span> {{ (resolveDeal && resolveDeal.signers && resolveDeal.signers.sender && resolveDeal.signers.sender.address) || \'—\' }}</div>\
+                  <div :style="{ color: isMyAddress(resolveDeal && resolveDeal.signers && resolveDeal.signers.receiver && resolveDeal.signers.receiver.address) ? \'var(--simple-primary)\' : \'inherit\', fontWeight: isMyAddress(resolveDeal && resolveDeal.signers && resolveDeal.signers.receiver && resolveDeal.signers.receiver.address) ? \'800\' : \'normal\' }">{{ isMyAddress(resolveDeal && resolveDeal.signers && resolveDeal.signers.receiver && resolveDeal.signers.receiver.address) ? \'(Я) \' : \'\' }}<span style="font-weight:800">Receiver:</span> {{ (resolveDeal && resolveDeal.signers && resolveDeal.signers.receiver && resolveDeal.signers.receiver.address) || \'—\' }}</div>\
+                  <div :style="{ color: isMyAddress(resolveDeal && resolveDeal.signers && resolveDeal.signers.arbiter && resolveDeal.signers.arbiter.address) ? \'var(--simple-primary)\' : \'inherit\', fontWeight: isMyAddress(resolveDeal && resolveDeal.signers && resolveDeal.signers.arbiter && resolveDeal.signers.arbiter.address) ? \'800\' : \'normal\' }">{{ isMyAddress(resolveDeal && resolveDeal.signers && resolveDeal.signers.arbiter && resolveDeal.signers.arbiter.address) ? \'(Я) \' : \'\' }}<span style="font-weight:800">Arbiter:</span> {{ (resolveDeal && resolveDeal.signers && resolveDeal.signers.arbiter && resolveDeal.signers.arbiter.address) || \'—\' }}</div>\
                 </div>\
               </div>\
             </div>\
